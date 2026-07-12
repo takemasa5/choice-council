@@ -37,5 +37,5 @@
 - `docs/product/`: プロダクト概要、ユースケース、MVP スコープ、成功判定。
 - `docs/design/`: ユーザー体験、状態機械、ロール、調査、メモ出力、ガードレール、プライバシー。
 - `docs/api/`: LLM 呼び出し単位、JSON schema、バリデーション。
-- `docs/prompts/`: LLM 呼び出しごとのプロンプト草案。
+- `docs/prompts/`: LLM 呼び出しごとのプロンプト契約と草案。
 - `docs/tasks/`: 未決事項、次に作る成果物、マイルストーン。
