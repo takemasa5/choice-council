@@ -1,0 +1,291 @@
+:root {
+  color: #21302a;
+  background: #f6f3ed;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 28px;
+}
+
+.top-bar {
+  align-items: center;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  margin: 0 auto 24px;
+  max-width: 1280px;
+}
+
+.eyebrow {
+  color: #587069;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  font-size: clamp(1.6rem, 3vw, 2.7rem);
+  line-height: 1.15;
+  margin-bottom: 0;
+}
+
+h2 {
+  font-size: 1.05rem;
+  margin-bottom: 16px;
+}
+
+h3 {
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.phase-pill {
+  background: #1f5f68;
+  border-radius: 999px;
+  color: #fff;
+  flex: 0 0 auto;
+  font-weight: 700;
+  padding: 10px 16px;
+}
+
+.workspace {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  margin: 0 auto;
+  max-width: 1280px;
+}
+
+.timeline {
+  display: grid;
+  gap: 16px;
+}
+
+.panel,
+.message-card {
+  background: #fffdf8;
+  border: 1px solid #ded8ca;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  color: #334841;
+  font-weight: 700;
+}
+
+textarea {
+  background: #fff;
+  border: 1px solid #c9c1b0;
+  border-radius: 6px;
+  color: #21302a;
+  line-height: 1.6;
+  min-width: 0;
+  padding: 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+textarea:focus {
+  border-color: #1f5f68;
+  outline: 3px solid rgba(31, 95, 104, 0.18);
+}
+
+.optional-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.primary-button,
+.secondary-button,
+.text-button,
+.option-list button {
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.primary-button,
+.secondary-button {
+  border: 1px solid transparent;
+  font-weight: 700;
+  padding: 11px 16px;
+}
+
+.primary-button {
+  background: #1f5f68;
+  color: white;
+}
+
+.secondary-button {
+  background: #f1ede4;
+  border-color: #c9c1b0;
+  color: #253731;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.text-button {
+  background: transparent;
+  border: 0;
+  color: #1f5f68;
+  font-weight: 700;
+  margin-top: 12px;
+  padding: 0;
+}
+
+.danger {
+  color: #a3382a;
+}
+
+.notice {
+  background: #eaf4f2;
+  border-radius: 6px;
+  color: #1d534d;
+  margin: 14px 0 0;
+  padding: 10px 12px;
+}
+
+.error {
+  background: #fbece8;
+  border-radius: 6px;
+  color: #8b291d;
+  margin: 14px 0 0;
+  padding: 10px 12px;
+}
+
+.message-label {
+  color: #587069;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.message-card p {
+  line-height: 1.8;
+  margin-bottom: 0;
+}
+
+.question-box {
+  background: #f6f3ed;
+  border-radius: 8px;
+  margin-top: 16px;
+  padding: 14px;
+}
+
+.option-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.option-list button {
+  background: #fff;
+  border: 1px solid #c9c1b0;
+  color: #21302a;
+  padding: 9px 12px;
+}
+
+.side-panel {
+  min-width: 0;
+}
+
+.side-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.privacy-note {
+  color: #587069;
+  font-size: 0.85rem;
+}
+
+.empty {
+  color: #6d746f;
+  line-height: 1.6;
+}
+
+.small {
+  font-size: 0.86rem;
+}
+
+.memo-list {
+  display: grid;
+  gap: 16px;
+}
+
+.memo-list ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.memo-list li {
+  line-height: 1.6;
+  margin-bottom: 4px;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    padding: 18px;
+  }
+
+  .top-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .optional-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
