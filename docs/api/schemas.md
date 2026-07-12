@@ -109,7 +109,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容は�
 | current_phase_label | 必須 | 画面表示用フェーズ名 |
 | phase_goal | 必須 | 現在フェーズで達成すること |
 | facilitator_message | 必須 | ユーザーに表示する進行コメント |
-| expert_requests | 必須 | 専門家コメント生成が必要な場合の依頼。不要な場合は空配列 |
+| expert_requests | 必須 | 専門家コメント生成が必要な場合の依頼。各要素は `role_name`, `viewpoint`, `request` を含む。不要な場合は空配列 |
 | user_question | 必須 | ユーザー回答が必要な場合の質問。不要な場合は `null` |
 | memo_updates | 必須 | この応答時点のセッションメモ案 |
 | next_action | 必須 | アプリへの候補行動 |
