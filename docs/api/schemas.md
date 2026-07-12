@@ -160,12 +160,13 @@ MVP では外部調査を実施しない。`needs_research: true` の内容は�
 
 | status | 対応する終了状態 |
 |---|---|
-| in_progress | 進行中 |
 | tentative_conclusion | 暫定結論 |
 | pending_decision | 判断保留 |
 | pending_research | 追加調査待ち |
 | pending_family_discussion | 家族・関係者相談待ち |
 | action_plan | 実行計画 |
+
+`in_progress` はセッション途中の表示状態であり、終了状態ではない。`finalMarkdown` 呼び出し時に `SessionMemo.status` が `in_progress` の場合、アプリ側は終了メモ生成へ進まず、方向性整理または次アクション確認へ戻す。
 
 ## Markdown 終了メモ
 
