@@ -72,6 +72,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容は�
   "expert_requests": [
     {
       "role_name": "家計・生活負担アドバイザー",
+      "viewpoint": "費用、送迎、親の時間、継続可能性",
       "request": "費用と生活負担の観点から重要な論点を挙げる"
     }
   ],
@@ -113,7 +114,11 @@ MVP では外部調査を実施しない。`needs_research: true` の内容は�
 | memo_updates | 必須 | この応答時点のセッションメモ案 |
 | next_action | 必須 | アプリへの候補行動 |
 
-`user_question.options` は2件以上とし、原則として「その他」を含める。`expert_requests` は、`next_action` が `request_experts` の場合に1件以上必要とする。
+`expert_requests` の各要素は、`role_name`, `viewpoint`, `request` を必須とする。`viewpoint` は専門家コメント呼び出しへそのまま渡す指定観点であり、専門家が推測で観点を補完しないために使う。
+
+`user_question.options` は2件以上とし、必ず「その他」を含める。「その他」を選んだ場合、アプリは自由入力欄を表示する。`user_question` が `null` ではないにもかかわらず `options` に「その他」が含まれない出力は、バリデーション失敗として扱う。
+
+`expert_requests` は、`next_action` が `request_experts` の場合に1件以上必要とする。
 
 `current_phase` と `next_action` はアプリ側が検証する。状態機械で許可されない遷移を示す出力は失敗として扱う。
 
@@ -124,7 +129,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容は�
 ```json
 {
   "theme": "",
-  "status": "in_progress | tentative_conclusion | pending_research | pending_discussion | action_plan",
+  "status": "in_progress | tentative_conclusion | pending_decision | pending_research | pending_family_discussion | action_plan",
   "facts": [],
   "values": [],
   "concerns": [],
@@ -157,8 +162,9 @@ MVP では外部調査を実施しない。`needs_research: true` の内容は�
 |---|---|
 | in_progress | 進行中 |
 | tentative_conclusion | 暫定結論 |
+| pending_decision | 判断保留 |
 | pending_research | 追加調査待ち |
-| pending_discussion | 判断保留、家族・関係者相談待ち |
+| pending_family_discussion | 家族・関係者相談待ち |
 | action_plan | 実行計画 |
 
 ## Markdown 終了メモ
