@@ -3,15 +3,42 @@ import { createRoot } from "react-dom/client";
 import type {
   ConsultationRequest,
   FacilitatorResponse,
+  Phase,
   SessionMemo
 } from "../shared/schemas/session";
 import "./styles.css";
 
 const storageKey = "choice-council-session";
+const phaseOrder: Phase[] = [
+  "consultation_input",
+  "premise",
+  "expert_selection",
+  "deliberation",
+  "direction",
+  "final_memo"
+];
+
+const phaseLabels: Record<Phase, string> = {
+  consultation_input: "相談入力",
+  premise: "前提整理",
+  expert_selection: "専門家選定",
+  deliberation: "検討",
+  direction: "方向性整理",
+  final_memo: "終了メモ"
+};
+
+const nextActionLabels: Record<FacilitatorResponse["next_action"], string> = {
+  wait_user: "ユーザー回答待ち",
+  request_experts: "専門家コメント生成候補",
+  update_memo: "セッションメモ更新候補",
+  move_phase: "次フェーズ候補",
+  finish: "終了候補"
+};
 
 type StoredSession = {
   request: ConsultationRequest;
   response: FacilitatorResponse | null;
+  currentPhase: Phase;
 };
 
 function App() {
@@ -22,6 +49,7 @@ function App() {
   const [expectedOutcome, setExpectedOutcome] = useState("");
   const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [response, setResponse] = useState<FacilitatorResponse | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [pauseRequested, setPauseRequested] = useState(false);
@@ -38,6 +66,7 @@ function App() {
       setConcerns(parsed.request.concerns ?? "");
       setExpectedOutcome(parsed.request.expectedOutcome ?? "");
       setResponse(parsed.response);
+      setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
     } catch {
       window.localStorage.removeItem(storageKey);
     }
@@ -45,13 +74,16 @@ function App() {
 
   useEffect(() => {
     const request = buildRequest();
-    const session: StoredSession = { request, response };
+    const session: StoredSession = { request, response, currentPhase };
     window.localStorage.setItem(storageKey, JSON.stringify(session));
-  }, [consultation, facts, values, concerns, expectedOutcome, response]);
+  }, [consultation, facts, values, concerns, expectedOutcome, response, currentPhase]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return response?.memo_updates ?? null;
   }, [response]);
+  const availableReturnPhases = useMemo(() => {
+    return getReturnablePhases(currentPhase);
+  }, [currentPhase]);
 
   async function startSession() {
     setErrorMessage("");
@@ -81,7 +113,14 @@ function App() {
         return;
       }
 
-      setResponse(body as FacilitatorResponse);
+      const facilitatorResponse = body as FacilitatorResponse;
+      if (!isAllowedModelPhase("consultation_input", facilitatorResponse.current_phase)) {
+        setErrorMessage("現在のフェーズから許可されていない応答が返されました。");
+        return;
+      }
+
+      setCurrentPhase(facilitatorResponse.current_phase);
+      setResponse(facilitatorResponse);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
     } finally {
@@ -107,6 +146,20 @@ function App() {
     setConcerns("");
     setExpectedOutcome("");
     setResponse(null);
+    setCurrentPhase("consultation_input");
+    setErrorMessage("");
+    setPauseRequested(false);
+  }
+
+  function returnToPhase(targetPhase: Phase) {
+    const confirmed = window.confirm(
+      "このフェーズに戻ると、以降の整理内容と生成結果は破棄されます。戻りますか？"
+    );
+
+    if (!confirmed) return;
+
+    setCurrentPhase(targetPhase);
+    setResponse(null);
     setErrorMessage("");
     setPauseRequested(false);
   }
@@ -119,7 +172,7 @@ function App() {
           <h1>複数の視点で、決めきれない相談を整理する</h1>
         </div>
         <div className="phase-pill">
-          {response ? response.current_phase_label : "相談入力"}
+          {phaseLabels[currentPhase]}
         </div>
       </section>
 
@@ -192,6 +245,7 @@ function App() {
             <article className="message-card">
               <div className="message-label">ファシリテーター</div>
               <p>{response.facilitator_message}</p>
+              <p className="next-action">候補行動: {nextActionLabels[response.next_action]}</p>
 
               {response.user_question && (
                 <div className="question-box">
@@ -206,6 +260,24 @@ function App() {
                 </div>
               )}
             </article>
+          )}
+
+          {availableReturnPhases.length > 0 && (
+            <section className="panel">
+              <h2>前フェーズへ戻る</h2>
+              <div className="phase-return-list">
+                {availableReturnPhases.map((phase) => (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    key={phase}
+                    onClick={() => returnToPhase(phase)}
+                  >
+                    {phaseLabels[phase]}へ戻る
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
         </section>
 
@@ -224,6 +296,20 @@ function App() {
       </section>
     </main>
   );
+}
+
+function getReturnablePhases(currentPhase: Phase) {
+  const currentIndex = phaseOrder.indexOf(currentPhase);
+  if (currentIndex <= 0) return [];
+
+  return phaseOrder.slice(0, currentIndex);
+}
+
+function isAllowedModelPhase(currentPhase: Phase, modelPhase: Phase) {
+  const currentIndex = phaseOrder.indexOf(currentPhase);
+  const modelIndex = phaseOrder.indexOf(modelPhase);
+
+  return modelIndex === currentIndex || modelIndex === currentIndex + 1;
 }
 
 function MemoView({ memo }: { memo: SessionMemo }) {
@@ -266,4 +352,3 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </React.StrictMode>
 );
-

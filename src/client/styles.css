@@ -210,6 +210,12 @@ button:disabled {
   margin-bottom: 0;
 }
 
+.next-action {
+  color: #587069;
+  font-size: 0.9rem;
+  margin-top: 12px;
+}
+
 .question-box {
   background: #f6f3ed;
   border-radius: 8px;
@@ -222,6 +228,12 @@ button:disabled {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.phase-return-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .option-list button {
@@ -288,4 +300,3 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
-
