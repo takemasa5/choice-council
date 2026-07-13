@@ -416,9 +416,20 @@ function App() {
   }
 
   function carryResearchNeedsToMemo(comments: ExpertComment[], targetPhase: Phase) {
-    const researchItems = comments
-      .filter((comment) => comment.needs_research)
-      .map((comment) => `${comment.role_name}: ${comment.concern}`);
+    const openQuestionItems = comments.flatMap((comment) => {
+      const items: string[] = [];
+      const questionToUser = comment.question_to_user.trim();
+
+      if (comment.needs_research) {
+        items.push(`${comment.role_name}: ${comment.concern}`);
+      }
+
+      if (questionToUser !== "なし") {
+        items.push(`${comment.role_name}: ${questionToUser}`);
+      }
+
+      return items;
+    });
 
     if (!response) return;
 
@@ -439,7 +450,7 @@ function App() {
           open_questions: replaceExpertMemoItems(
             currentResponse.memo_updates.open_questions,
             comments.map((comment) => comment.role_name),
-            researchItems
+            openQuestionItems
           )
         }
       };

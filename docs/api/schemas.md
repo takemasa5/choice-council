@@ -68,7 +68,7 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 | confidence | 必須 | `high`, `medium`, `low` のいずれか |
 | needs_research | 必須 | 外部情報の確認が必要なら `true` |
 
-MVP では外部調査を実施しない。`needs_research: true` の内容は、断定せずセッションメモの未確認事項へ送る。
+MVP では外部調査を実施しない。`needs_research: true` の内容と、「なし」以外の `question_to_user` は、断定せずセッションメモの未確認事項へ送る。
 
 ## ファシリテーター出力
 
