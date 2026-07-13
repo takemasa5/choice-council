@@ -173,6 +173,13 @@ function App() {
   const memo = useMemo<SessionMemo | null>(() => {
     return response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase);
   }, [response, responseHistory, currentPhase]);
+  const canGenerateFinalMarkdown =
+    Boolean(memo) &&
+    currentPhase === "direction" &&
+    !isLoading &&
+    !isUpdatingMemo &&
+    !isGeneratingExperts &&
+    !isGeneratingFinalMarkdown;
   const availableReturnPhases = useMemo(() => {
     return getReturnablePhases(currentPhase);
   }, [currentPhase]);
@@ -555,9 +562,6 @@ function App() {
 
     if (!isFinalSessionMemo(memo)) {
       setFinalMarkdownErrorMessage("終了メモ生成前に、方向性整理または次アクション確認まで進めてください。");
-      if (currentPhase !== "direction") {
-        setCurrentPhase("direction");
-      }
       return;
     }
 
@@ -1137,7 +1141,7 @@ function App() {
                 className="primary-button"
                 type="button"
                 onClick={generateFinalMarkdown}
-                disabled={!memo || isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown}
+                disabled={!canGenerateFinalMarkdown}
               >
                 {isGeneratingFinalMarkdown ? "終了メモ生成中..." : "終了メモを生成"}
               </button>
