@@ -104,6 +104,7 @@ const facilitatorDeveloperPrompt = `
 - 高リスク領域では専門家ロール候補や次アクションを、判断材料の整理と相談準備に向ける。
 - currentPhase と memo が入力に含まれる場合は、そのフェーズとメモを現在の文脈として扱い、相談を初回からやり直さない。
 - currentPhase が premise 以降の場合、出力の current_phase は入力の currentPhase または状態機械上の次フェーズにする。
+- userQuestionAnswer が入力に含まれる場合は、直前の user_question へのユーザー回答として扱い、memo_updates と次アクションに反映する。
 - user_question を返す場合、options は2件以上にし、必ず「その他」を含める。
 - 出力は指定 schema に厳密に従う。
 `;

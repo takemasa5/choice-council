@@ -72,8 +72,7 @@ function App() {
       setResponse(parsed.response);
       setResponseHistory(parsed.responseHistory ?? responseToHistory(parsed.response));
       setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
-      setSelectedQuestionOption("");
-      setOtherQuestionAnswer("");
+      restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
     } catch {
       window.localStorage.removeItem(storageKey);
     }
@@ -83,7 +82,18 @@ function App() {
     const request = buildRequest();
     const session: StoredSession = { request, response, responseHistory, currentPhase };
     window.localStorage.setItem(storageKey, JSON.stringify(session));
-  }, [consultation, facts, values, concerns, expectedOutcome, response, responseHistory, currentPhase]);
+  }, [
+    consultation,
+    facts,
+    values,
+    concerns,
+    expectedOutcome,
+    response,
+    responseHistory,
+    currentPhase,
+    selectedQuestionOption,
+    otherQuestionAnswer
+  ]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase);
@@ -98,6 +108,11 @@ function App() {
     const request = buildRequest();
     if (!request.consultation.trim()) {
       setErrorMessage("相談内容を入力してください。");
+      return;
+    }
+
+    if (response?.user_question?.required && !request.userQuestionAnswer) {
+      setErrorMessage("質問に回答してください。");
       return;
     }
 
@@ -149,9 +164,34 @@ function App() {
       values: emptyToUndefined(values),
       concerns: emptyToUndefined(concerns),
       expectedOutcome: emptyToUndefined(expectedOutcome),
+      userQuestionAnswer: getUserQuestionAnswer(),
       currentPhase,
       memo: response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase) ?? undefined
     };
+  }
+
+  function getUserQuestionAnswer() {
+    if (!selectedQuestionOption) return undefined;
+    if (selectedQuestionOption === "その他") return emptyToUndefined(otherQuestionAnswer);
+    return selectedQuestionOption;
+  }
+
+  function restoreQuestionAnswer(answer: string | undefined, storedResponse: FacilitatorResponse | null) {
+    const question = storedResponse?.user_question;
+    if (!answer || !question) {
+      setSelectedQuestionOption("");
+      setOtherQuestionAnswer("");
+      return;
+    }
+
+    if (question.options.includes(answer)) {
+      setSelectedQuestionOption(answer);
+      setOtherQuestionAnswer("");
+      return;
+    }
+
+    setSelectedQuestionOption("その他");
+    setOtherQuestionAnswer(answer);
   }
 
   function clearSession() {
