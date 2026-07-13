@@ -5,7 +5,9 @@ import {
   ConsultationRequestSchema,
   ExpertCommentRequestSchema,
   ExpertCommentSchema,
-  FacilitatorResponseSchema
+  FacilitatorResponseSchema,
+  SessionMemoRequestSchema,
+  SessionMemoSchema
 } from "../src/shared/schemas/session";
 
 const app = express();
@@ -159,6 +161,75 @@ app.post("/api/expert/comment", async (request, response) => {
   }
 });
 
+app.post("/api/session-memo/update", async (request, response) => {
+  const parsedRequest = SessionMemoRequestSchema.safeParse(request.body);
+
+  if (!parsedRequest.success) {
+    response.status(400).json({
+      error: "invalid_request",
+      details: parsedRequest.error.flatten()
+    });
+    return;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    response.status(500).json({
+      error: "missing_openai_api_key",
+      message: "OPENAI_API_KEY が設定されていません。"
+    });
+    return;
+  }
+
+  try {
+    const client = new OpenAI({ apiKey });
+    const result = await client.responses.parse({
+      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+      input: [
+        {
+          role: "developer",
+          content: [
+            {
+              type: "input_text",
+              text: sessionMemoDeveloperPrompt
+            }
+          ]
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify(parsedRequest.data, null, 2)
+            }
+          ]
+        }
+      ],
+      text: {
+        format: zodTextFormat(SessionMemoSchema, "session_memo")
+      }
+    });
+
+    const output = result.output_parsed;
+
+    if (!output) {
+      response.status(502).json({
+        error: "invalid_model_response",
+        message: "セッションメモの更新に失敗しました。"
+      });
+      return;
+    }
+
+    response.json(output);
+  } catch (error) {
+    response.status(502).json({
+      error: "openai_request_failed",
+      message: error instanceof Error ? error.message : "OpenAI API request failed."
+    });
+  }
+});
+
 app.listen(port, "127.0.0.1", () => {
   console.log(`Choice Council API listening on http://127.0.0.1:${port}`);
 });
@@ -198,5 +269,21 @@ const expertDeveloperPrompt = `
 - 必要な場合のみ question_to_user にユーザーへの質問を1つ出す。不要な場合は「なし」とする。
 - 外部調査が必要な内容は断定せず、needs_research を true にする。
 - 医療、法律、投資、生命安全、虐待、DVなどの高リスク領域では、断定的助言ではなく判断材料の整理と相談準備に限定する。
+- 出力は指定 schema に厳密に従う。
+`;
+
+const sessionMemoDeveloperPrompt = `
+あなたは Choice Council のセッションメモ更新担当です。
+フェーズ区切り、または重要な整理が終わったタイミングで、これまでの文脈をセッションメモに反映します。
+
+守ること:
+- 日本語で簡潔に整理する。
+- previousMemo がある場合は、丸ごと捨てずに新しい整理内容を反映した最新版にする。
+- facilitatorResponse がある場合は、facilitator_message、user_question、memo_updates、next_action を現在の整理として扱う。
+- expertComments がある場合は、専門家コメントの要約、要点、懸念を expert_summaries に反映する。
+- needs_research が true の専門家懸念と、「なし」以外の question_to_user は open_questions に残す。
+- userAction がある場合は、ユーザー操作として次アクションや未確認事項へ必要な範囲で反映する。
+- 外部調査は実施できない。必要な情報は未確認事項として残す。
+- 医療、法律、投資、生命安全、虐待、DVなどの高リスク領域では、断定的助言ではなく判断材料の整理と相談準備に留める。
 - 出力は指定 schema に厳密に従う。
 `;
