@@ -71,6 +71,7 @@ export const ConsultationRequestSchema = z.strictObject({
   values: nonEmptyString.optional(),
   concerns: nonEmptyString.optional(),
   expectedOutcome: nonEmptyString.optional(),
+  userQuestion: UserQuestionSchema.optional(),
   userQuestionAnswer: nonEmptyString.optional(),
   currentPhase: PhaseSchema.optional(),
   memo: SessionMemoSchema.optional()

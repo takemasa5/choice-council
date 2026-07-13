@@ -164,6 +164,7 @@ function App() {
       values: emptyToUndefined(values),
       concerns: emptyToUndefined(concerns),
       expectedOutcome: emptyToUndefined(expectedOutcome),
+      userQuestion: response?.user_question ?? undefined,
       userQuestionAnswer: getUserQuestionAnswer(),
       currentPhase,
       memo: response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase) ?? undefined

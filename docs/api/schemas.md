@@ -72,11 +72,12 @@ MVP では外部調査を実施しない。`needs_research: true` の内容は�
 | values | 任意 | ユーザーが重視したいこと |
 | concerns | 任意 | ユーザーの不安なこと |
 | expectedOutcome | 任意 | 期待する結果 |
+| userQuestion | 任意 | 直前に提示した `user_question` の質問文、選択肢、必須フラグ |
 | userQuestionAnswer | 任意 | 直前の `user_question` に対するユーザー回答。選択肢または「その他」の自由入力 |
 | currentPhase | 任意 | 再開時のアプリ側現在フェーズ |
 | memo | 任意 | 再開時点までに保持しているセッションメモ |
 
-`currentPhase` と `memo` が入力に含まれる場合、ファシリテーターはそのフェーズとメモを現在の文脈として扱い、初回の前提整理からやり直さない。`userQuestionAnswer` が入力に含まれる場合は、直前の質問への回答として扱い、メモ更新と次アクションに反映する。
+`currentPhase` と `memo` が入力に含まれる場合、ファシリテーターはそのフェーズとメモを現在の文脈として扱い、初回の前提整理からやり直さない。`userQuestion` と `userQuestionAnswer` が入力に含まれる場合は、その質問への回答として扱い、メモ更新と次アクションに反映する。
 
 ```json
 {
