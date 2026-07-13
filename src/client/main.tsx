@@ -164,7 +164,6 @@ function App() {
 
       setCurrentPhase(acceptedPhase);
       setResponse(facilitatorResponse);
-      setExpertComments([]);
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
       setResponseHistory((current) => ({
@@ -261,6 +260,8 @@ function App() {
   }
 
   function updateExpertDraft(index: number, field: keyof ExpertRequest, value: string) {
+    if (isGeneratingExperts) return;
+
     resetConfirmedExperts();
     setExpertDrafts((current) => {
       return current.map((expert, currentIndex) => {
@@ -270,6 +271,8 @@ function App() {
   }
 
   function addExpertDraft() {
+    if (isGeneratingExperts) return;
+
     resetConfirmedExperts();
     setExpertDrafts((current) => [
       ...current,
@@ -282,11 +285,15 @@ function App() {
   }
 
   function removeExpertDraft(index: number) {
+    if (isGeneratingExperts) return;
+
     resetConfirmedExperts();
     setExpertDrafts((current) => current.filter((_, currentIndex) => currentIndex !== index));
   }
 
   function replaceExpertDraft(index: number) {
+    if (isGeneratingExperts) return;
+
     resetConfirmedExperts();
     setExpertDrafts((current) => {
       return current.map((expert, currentIndex) => {
@@ -302,12 +309,21 @@ function App() {
   }
 
   function resetConfirmedExperts() {
+    if (isGeneratingExperts) return;
+
     setConfirmedExperts([]);
     setExpertComments([]);
     setExpertErrorMessage("");
   }
 
   function confirmExpertDrafts() {
+    if (isGeneratingExperts) return;
+
+    if (response?.user_question?.required && !getUserQuestionAnswer()) {
+      setExpertErrorMessage("先に質問へ回答してください。");
+      return;
+    }
+
     const validExperts = expertDrafts
       .map((expert) => ({
         role_name: expert.role_name.trim(),
@@ -335,6 +351,11 @@ function App() {
 
     if (confirmedExperts.length === 0) {
       setExpertErrorMessage("先に専門家ロールを確定してください。");
+      return;
+    }
+
+    if (response?.user_question?.required && !getUserQuestionAnswer()) {
+      setExpertErrorMessage("先に質問へ回答してください。");
       return;
     }
 
@@ -542,6 +563,7 @@ function App() {
                           <input
                             value={expertRequest.role_name}
                             onChange={(event) => updateExpertDraft(index, "role_name", event.target.value)}
+                            disabled={isGeneratingExperts}
                           />
                         </label>
                         <label className="field compact-field">
@@ -550,6 +572,7 @@ function App() {
                             value={expertRequest.viewpoint}
                             onChange={(event) => updateExpertDraft(index, "viewpoint", event.target.value)}
                             rows={2}
+                            disabled={isGeneratingExperts}
                           />
                         </label>
                         <label className="field compact-field">
@@ -558,13 +581,24 @@ function App() {
                             value={expertRequest.request}
                             onChange={(event) => updateExpertDraft(index, "request", event.target.value)}
                             rows={2}
+                            disabled={isGeneratingExperts}
                           />
                         </label>
                         <div className="expert-row-actions">
-                          <button className="text-button" type="button" onClick={() => replaceExpertDraft(index)}>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => replaceExpertDraft(index)}
+                            disabled={isGeneratingExperts}
+                          >
                             入れ替え
                           </button>
-                          <button className="text-button danger" type="button" onClick={() => removeExpertDraft(index)}>
+                          <button
+                            className="text-button danger"
+                            type="button"
+                            onClick={() => removeExpertDraft(index)}
+                            disabled={isGeneratingExperts}
+                          >
                             外す
                           </button>
                         </div>
@@ -572,13 +606,28 @@ function App() {
                     ))}
                   </div>
                   <div className="expert-actions">
-                    <button className="secondary-button" type="button" onClick={addExpertDraft}>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={addExpertDraft}
+                      disabled={isGeneratingExperts}
+                    >
                       専門家を追加する
                     </button>
-                    <button className="secondary-button" type="button" onClick={confirmExpertDrafts}>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={confirmExpertDrafts}
+                      disabled={isGeneratingExperts}
+                    >
                       おまかせで進める
                     </button>
-                    <button className="primary-button" type="button" onClick={confirmExpertDrafts}>
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={confirmExpertDrafts}
+                      disabled={isGeneratingExperts}
+                    >
                       このまま進める
                     </button>
                   </div>
