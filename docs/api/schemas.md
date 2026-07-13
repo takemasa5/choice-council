@@ -153,6 +153,17 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 
 状態: `決定`
 
+セッションメモ更新呼び出しの入力は、既存メモと新しく追加された整理内容である。
+
+| フィールド | 必須 | 内容 |
+|---|---:|---|
+| consultation | 必須 | ユーザーの相談内容 |
+| currentPhase | 必須 | アプリ側の現在フェーズ |
+| previousMemo | 任意 | 更新前のセッションメモ |
+| facilitatorResponse | 任意 | 新しく追加されたファシリテーター整理 |
+| expertComments | 任意 | 新しく追加された専門家コメント |
+| userAction | 任意 | ユーザーの回答または操作 |
+
 ```json
 {
   "theme": "",

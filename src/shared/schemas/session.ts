@@ -109,6 +109,17 @@ export const ExpertCommentSchema = z.strictObject({
 
 export type ExpertComment = z.infer<typeof ExpertCommentSchema>;
 
+export const SessionMemoRequestSchema = z.strictObject({
+  consultation: nonEmptyString,
+  currentPhase: PhaseSchema,
+  previousMemo: SessionMemoSchema.optional(),
+  facilitatorResponse: z.lazy(() => FacilitatorResponseSchema).optional(),
+  expertComments: z.array(ExpertCommentSchema).optional(),
+  userAction: nonEmptyString.optional()
+});
+
+export type SessionMemoRequest = z.infer<typeof SessionMemoRequestSchema>;
+
 export const FacilitatorResponseSchema = z.strictObject({
   current_phase: PhaseSchema,
   current_phase_label: nonEmptyString,

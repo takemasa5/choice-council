@@ -402,6 +402,19 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+.memo-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+.memo-actions span {
+  color: #587069;
+  font-size: 0.85rem;
+}
+
 .empty {
   color: #6d746f;
   line-height: 1.6;

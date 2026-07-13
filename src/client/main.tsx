@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
   ConsultationRequest,
@@ -7,7 +7,8 @@ import type {
   ExpertRequest,
   FacilitatorResponse,
   Phase,
-  SessionMemo
+  SessionMemo,
+  SessionMemoRequest
 } from "../shared/schemas/session";
 import "./styles.css";
 
@@ -38,12 +39,26 @@ const nextActionLabels: Record<FacilitatorResponse["next_action"], string> = {
   finish: "終了候補"
 };
 
+const interruptionOptions = [
+  "前提を修正したい",
+  "この論点を深掘りしたい",
+  "外部情報を調べたい",
+  "別の選択肢を追加したい",
+  "いったんまとめたい",
+  "その他"
+];
+
 type StoredSession = {
   request: ConsultationRequest;
   response: FacilitatorResponse | null;
   responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
   currentPhase: Phase;
   expertComments?: ExpertComment[];
+  interruption?: {
+    isReady: boolean;
+    selectedOption: string;
+    otherAnswer: string;
+  };
 };
 
 function App() {
@@ -56,9 +71,17 @@ function App() {
   const [response, setResponse] = useState<FacilitatorResponse | null>(null);
   const [responseHistory, setResponseHistory] = useState<Partial<Record<Phase, FacilitatorResponse>>>({});
   const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
+  const [hasRestoredSession, setHasRestoredSession] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [pauseRequested, setPauseRequested] = useState(false);
+  const pauseRequestedRef = useRef(false);
+  const [isInterruptionReady, setIsInterruptionReady] = useState(false);
+  const [selectedInterruptionOption, setSelectedInterruptionOption] = useState("");
+  const [interruptionOtherAnswer, setInterruptionOtherAnswer] = useState("");
+  const [isUpdatingMemo, setIsUpdatingMemo] = useState(false);
+  const [memoNotice, setMemoNotice] = useState("");
+  const [memoErrorMessage, setMemoErrorMessage] = useState("");
   const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
   const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
   const [expertDrafts, setExpertDrafts] = useState<ExpertRequest[]>([]);
@@ -66,13 +89,17 @@ function App() {
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
+  const canRequestPause = isLoading || isGeneratingExperts;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(storageKey);
-    if (!stored) return;
+    if (!stored) {
+      setHasRestoredSession(true);
+      return;
+    }
 
     try {
       const parsed = JSON.parse(stored) as StoredSession;
@@ -86,14 +113,33 @@ function App() {
       setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
       setExpertComments(parsed.expertComments ?? []);
       restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
+      restoreInterruption(parsed.interruption);
     } catch {
       window.localStorage.removeItem(storageKey);
+    } finally {
+      setHasRestoredSession(true);
     }
   }, []);
 
   useEffect(() => {
-    const request = buildRequest();
-    const session: StoredSession = { request, response, responseHistory, currentPhase, expertComments };
+    if (!hasRestoredSession) return;
+
+    const hasSessionContent =
+      consultation.trim() ||
+      facts.trim() ||
+      values.trim() ||
+      concerns.trim() ||
+      expectedOutcome.trim() ||
+      response ||
+      Object.keys(responseHistory).length > 0 ||
+      expertComments.length > 0;
+
+    if (!hasSessionContent) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+
+    const session = buildStoredSession();
     window.localStorage.setItem(storageKey, JSON.stringify(session));
   }, [
     consultation,
@@ -106,7 +152,10 @@ function App() {
     currentPhase,
     expertComments,
     selectedQuestionOption,
-    otherQuestionAnswer
+    otherQuestionAnswer,
+    selectedInterruptionOption,
+    interruptionOtherAnswer,
+    hasRestoredSession
   ]);
 
   useEffect(() => {
@@ -131,13 +180,16 @@ function App() {
       return;
     }
 
-    if (response?.user_question?.required && !request.userQuestionAnswer) {
+    if (getActiveUserQuestion()?.required && !request.userQuestionAnswer) {
       setErrorMessage("質問に回答してください。");
       return;
     }
 
     setIsLoading(true);
     setPauseRequested(false);
+    pauseRequestedRef.current = false;
+    setMemoNotice("");
+    setMemoErrorMessage("");
 
     try {
       const apiResponse = await fetch("/api/facilitator/start", {
@@ -162,15 +214,21 @@ function App() {
         return;
       }
 
+      const responseWithMemo = await updateSessionMemoForResponse(facilitatorResponse, acceptedPhase);
+
       setCurrentPhase(acceptedPhase);
-      setResponse(facilitatorResponse);
+      setResponse(responseWithMemo);
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
+      setIsInterruptionReady(false);
+      setSelectedInterruptionOption("");
+      setInterruptionOtherAnswer("");
       setExpertComments([]);
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
-        [acceptedPhase]: facilitatorResponse
+        [acceptedPhase]: responseWithMemo
       }));
+      showInterruptionOptionsIfPaused();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
     } finally {
@@ -185,7 +243,7 @@ function App() {
       values: emptyToUndefined(values),
       concerns: emptyToUndefined(concerns),
       expectedOutcome: emptyToUndefined(expectedOutcome),
-      userQuestion: response?.user_question ?? undefined,
+      userQuestion: getActiveUserQuestion(),
       userQuestionAnswer: getUserQuestionAnswer(),
       currentPhase,
       memo: response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase) ?? undefined
@@ -193,9 +251,33 @@ function App() {
   }
 
   function getUserQuestionAnswer() {
-    if (!selectedQuestionOption) return undefined;
-    if (selectedQuestionOption === "その他") return emptyToUndefined(otherQuestionAnswer);
-    return selectedQuestionOption;
+    if (selectedInterruptionOption && selectedInterruptionOption !== "その他") {
+      return selectedInterruptionOption;
+    }
+
+    return getResponseQuestionAnswer();
+  }
+
+  function getResponseQuestionAnswer() {
+    if (response?.user_question) {
+      if (!selectedQuestionOption) return undefined;
+      if (selectedQuestionOption === "その他") return emptyToUndefined(otherQuestionAnswer);
+      return selectedQuestionOption;
+    }
+
+    return undefined;
+  }
+
+  function getActiveUserQuestion() {
+    if (selectedInterruptionOption && selectedInterruptionOption !== "その他") {
+      return {
+        question: "割り込み後にどこから調整しますか？",
+        options: interruptionOptions,
+        required: false
+      };
+    }
+
+    return response?.user_question ?? undefined;
   }
 
   function getPendingRequiredQuestionMessage() {
@@ -224,8 +306,16 @@ function App() {
     setOtherQuestionAnswer(answer);
   }
 
+  function restoreInterruption(interruption: StoredSession["interruption"]) {
+    if (!interruption) return;
+
+    setIsInterruptionReady(interruption.isReady);
+    setSelectedInterruptionOption(interruption.selectedOption);
+    setInterruptionOtherAnswer(interruption.otherAnswer);
+  }
+
   function clearSession() {
-    if (isGeneratingExperts) return;
+    if (isLoading || isUpdatingMemo || isGeneratingExperts) return;
 
     window.localStorage.removeItem(storageKey);
     setConsultation("");
@@ -238,6 +328,12 @@ function App() {
     setCurrentPhase("consultation_input");
     setErrorMessage("");
     setPauseRequested(false);
+    pauseRequestedRef.current = false;
+    setIsInterruptionReady(false);
+    setSelectedInterruptionOption("");
+    setInterruptionOtherAnswer("");
+    setMemoNotice("");
+    setMemoErrorMessage("");
     setSelectedQuestionOption("");
     setOtherQuestionAnswer("");
     setExpertDrafts([]);
@@ -247,7 +343,7 @@ function App() {
   }
 
   function returnToPhase(targetPhase: Phase) {
-    if (isLoading || isGeneratingExperts) return;
+    if (isLoading || isUpdatingMemo || isGeneratingExperts) return;
 
     const confirmed = window.confirm(
       "このフェーズに戻ると、以降の整理内容と生成結果は破棄されます。戻りますか？"
@@ -262,6 +358,12 @@ function App() {
     setResponseHistory(nextResponseHistory);
     setErrorMessage("");
     setPauseRequested(false);
+    pauseRequestedRef.current = false;
+    setIsInterruptionReady(false);
+    setSelectedInterruptionOption("");
+    setInterruptionOtherAnswer("");
+    setMemoNotice("");
+    setMemoErrorMessage("");
     setSelectedQuestionOption("");
     setOtherQuestionAnswer("");
     setExpertDrafts([]);
@@ -420,7 +522,8 @@ function App() {
       );
 
       setExpertComments(comments);
-      carryResearchNeedsToMemo(comments, expertCommentPhase);
+      await carryResearchNeedsToMemo(comments, expertCommentPhase);
+      showInterruptionOptionsIfPaused();
     } catch (error) {
       setExpertErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
     } finally {
@@ -428,7 +531,7 @@ function App() {
     }
   }
 
-  function carryResearchNeedsToMemo(comments: ExpertComment[], targetPhase: Phase) {
+  async function carryResearchNeedsToMemo(comments: ExpertComment[], targetPhase: Phase) {
     const openQuestionItems = comments.flatMap((comment) => {
       const items: string[] = [];
       const questionToUser = comment.question_to_user.trim();
@@ -447,34 +550,144 @@ function App() {
     if (!response) return;
 
     setCurrentPhase(targetPhase);
-    setResponse((currentResponse) => {
-      if (!currentResponse) return currentResponse;
+    const nextResponse = {
+      ...response,
+      current_phase: targetPhase,
+      memo_updates: {
+        ...response.memo_updates,
+        expert_summaries: replaceExpertMemoItems(
+          response.memo_updates.expert_summaries,
+          comments.map((comment) => comment.role_name),
+          comments.map(formatExpertMemoSummary)
+        ),
+        open_questions: replaceExpertMemoItems(
+          response.memo_updates.open_questions,
+          comments.map((comment) => comment.role_name),
+          openQuestionItems
+        )
+      }
+    };
 
-      const nextResponse = {
-        ...currentResponse,
-        current_phase: targetPhase,
-        memo_updates: {
-          ...currentResponse.memo_updates,
-          expert_summaries: replaceExpertMemoItems(
-            currentResponse.memo_updates.expert_summaries,
-            comments.map((comment) => comment.role_name),
-            comments.map(formatExpertMemoSummary)
-          ),
-          open_questions: replaceExpertMemoItems(
-            currentResponse.memo_updates.open_questions,
-            comments.map((comment) => comment.role_name),
-            openQuestionItems
-          )
-        }
+    const responseWithMemo = await updateSessionMemoForResponse(nextResponse, targetPhase, comments);
+
+    setResponse(responseWithMemo);
+    setResponseHistory((current) => ({
+      ...current,
+      [targetPhase]: responseWithMemo
+    }));
+  }
+
+  async function updateSessionMemoForResponse(
+    facilitatorResponse: FacilitatorResponse,
+    targetPhase: Phase,
+    comments: ExpertComment[] = [],
+    userAction?: string
+  ) {
+    setIsUpdatingMemo(true);
+    setMemoErrorMessage("");
+
+    const request: SessionMemoRequest = {
+      consultation,
+      currentPhase: targetPhase,
+      previousMemo: memo ?? undefined,
+      facilitatorResponse,
+      expertComments: comments.length > 0 ? comments : undefined,
+      userAction
+    };
+
+    try {
+      const apiResponse = await fetch("/api/session-memo/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(request)
+      });
+      const body = await apiResponse.json();
+
+      if (!apiResponse.ok) {
+        setMemoErrorMessage(body.message ?? "セッションメモの更新に失敗しました。");
+        return facilitatorResponse;
+      }
+
+      setMemoNotice("メモを更新しました。");
+      return {
+        ...facilitatorResponse,
+        memo_updates: body as SessionMemo
       };
+    } catch (error) {
+      setMemoErrorMessage(error instanceof Error ? error.message : "セッションメモの更新に失敗しました。");
+      return facilitatorResponse;
+    } finally {
+      setIsUpdatingMemo(false);
+    }
+  }
 
-      setResponseHistory((current) => ({
-        ...current,
-        [targetPhase]: nextResponse
-      }));
+  function requestPause() {
+    if (!canRequestPause) return;
 
-      return nextResponse;
-    });
+    pauseRequestedRef.current = true;
+    setPauseRequested(true);
+  }
+
+  function showInterruptionOptionsIfPaused() {
+    if (!pauseRequestedRef.current) return;
+
+    setIsInterruptionReady(true);
+    setPauseRequested(false);
+    pauseRequestedRef.current = false;
+  }
+
+  function chooseInterruptionOption(option: string) {
+    if (option === "その他") {
+      setSelectedInterruptionOption(option);
+      return;
+    }
+
+    setSelectedInterruptionOption(option);
+    setInterruptionOtherAnswer("");
+    setIsInterruptionReady(false);
+    setPauseRequested(false);
+    pauseRequestedRef.current = false;
+    setMemoNotice("選択内容を確認しました。次の整理で反映してください。");
+  }
+
+  function submitInterruptionOther() {
+    const answer = emptyToUndefined(interruptionOtherAnswer);
+    if (!answer) return;
+
+    chooseInterruptionOption(answer);
+  }
+
+  function saveCurrentSession() {
+    const session = buildStoredSession();
+    window.localStorage.setItem(storageKey, JSON.stringify(session));
+    setMemoNotice("この端末に一時保存しました。");
+  }
+
+  function buildStoredSession(): StoredSession {
+    const request = {
+      ...buildRequest(),
+      userQuestion: response?.user_question ?? undefined,
+      userQuestionAnswer: getResponseQuestionAnswer()
+    };
+    const hasInterruptionState =
+      isInterruptionReady || Boolean(selectedInterruptionOption) || Boolean(interruptionOtherAnswer);
+
+    return {
+      request,
+      response,
+      responseHistory,
+      currentPhase,
+      expertComments,
+      interruption: hasInterruptionState
+        ? {
+            isReady: isInterruptionReady,
+            selectedOption: selectedInterruptionOption,
+            otherAnswer: interruptionOtherAnswer
+          }
+        : undefined
+    };
   }
 
   function clearExpertMemoItems(roleNames: string[]) {
@@ -591,8 +804,8 @@ function App() {
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => setPauseRequested(true)}
-                disabled={!isLoading}
+                onClick={requestPause}
+                disabled={!canRequestPause}
               >
                 ちょっと待って
               </button>
@@ -773,6 +986,37 @@ function App() {
                   )}
                 </div>
               )}
+
+              {isInterruptionReady && (
+                <div className="question-box">
+                  <strong>どこから調整しますか？</strong>
+                  <div className="option-list">
+                    {interruptionOptions.map((option) => (
+                      <button
+                        type="button"
+                        key={option}
+                        className={selectedInterruptionOption === option ? "selected" : undefined}
+                        onClick={() => chooseInterruptionOption(option)}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                  {selectedInterruptionOption === "その他" && (
+                    <label className="field inline-field">
+                      <span>自由入力</span>
+                      <textarea
+                        value={interruptionOtherAnswer}
+                        onChange={(event) => setInterruptionOtherAnswer(event.target.value)}
+                        rows={3}
+                      />
+                      <button className="secondary-button" type="button" onClick={submitInterruptionOther}>
+                        反映する
+                      </button>
+                    </label>
+                  )}
+                </div>
+              )}
             </article>
           )}
 
@@ -786,7 +1030,7 @@ function App() {
                     type="button"
                     key={phase}
                     onClick={() => returnToPhase(phase)}
-                    disabled={isLoading || isGeneratingExperts}
+                    disabled={isLoading || isUpdatingMemo || isGeneratingExperts}
                   >
                     {phaseLabels[phase]}へ戻る
                   </button>
@@ -804,12 +1048,20 @@ function App() {
                 className="text-button danger"
                 type="button"
                 onClick={clearSession}
-                disabled={isGeneratingExperts}
+                disabled={isLoading || isUpdatingMemo || isGeneratingExperts}
               >
                 削除
               </button>
             </div>
             <p className="privacy-note">この端末に一時保存されます。</p>
+            <div className="memo-actions">
+              <button className="secondary-button" type="button" onClick={saveCurrentSession}>
+                一時保存
+              </button>
+              {isUpdatingMemo && <span>メモ更新中...</span>}
+            </div>
+            {memoNotice && <p className="notice">{memoNotice}</p>}
+            {memoErrorMessage && <p className="error">{memoErrorMessage}</p>}
             {memo ? <MemoView memo={memo} /> : <p className="empty">相談を開始すると、前提や未確認事項をここに整理します。</p>}
           </div>
         </aside>
