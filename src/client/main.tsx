@@ -114,7 +114,7 @@ function App() {
       }
 
       const facilitatorResponse = body as FacilitatorResponse;
-      if (!isAllowedModelPhase("consultation_input", facilitatorResponse.current_phase)) {
+      if (!isAllowedModelPhase(currentPhase, facilitatorResponse.current_phase)) {
         setErrorMessage("現在のフェーズから許可されていない応答が返されました。");
         return;
       }
