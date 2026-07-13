@@ -234,7 +234,7 @@ function App() {
   }
 
   function returnToPhase(targetPhase: Phase) {
-    if (isLoading) return;
+    if (isLoading || isGeneratingExperts) return;
 
     const confirmed = window.confirm(
       "このフェーズに戻ると、以降の整理内容と生成結果は破棄されます。戻りますか？"
@@ -376,23 +376,33 @@ function App() {
 
     if (!response) return;
 
-    const nextResponse = {
-      ...response,
-      memo_updates: {
-        ...response.memo_updates,
-        expert_summaries: [
-          ...response.memo_updates.expert_summaries,
-          ...comments.map((comment) => `${comment.role_name}: ${comment.key_point}`)
-        ],
-        open_questions: [...response.memo_updates.open_questions, ...researchItems]
-      }
-    };
+    setResponse((currentResponse) => {
+      if (!currentResponse) return currentResponse;
 
-    setResponse(nextResponse);
-    setResponseHistory((current) => ({
-      ...current,
-      [nextResponse.current_phase]: nextResponse
-    }));
+      const nextResponse = {
+        ...currentResponse,
+        memo_updates: {
+          ...currentResponse.memo_updates,
+          expert_summaries: replaceExpertMemoItems(
+            currentResponse.memo_updates.expert_summaries,
+            comments.map((comment) => comment.role_name),
+            comments.map((comment) => `${comment.role_name}: ${comment.key_point}`)
+          ),
+          open_questions: replaceExpertMemoItems(
+            currentResponse.memo_updates.open_questions,
+            comments.map((comment) => comment.role_name),
+            researchItems
+          )
+        }
+      };
+
+      setResponseHistory((current) => ({
+        ...current,
+        [nextResponse.current_phase]: nextResponse
+      }));
+
+      return nextResponse;
+    });
   }
 
   return (
@@ -455,7 +465,12 @@ function App() {
             )}
 
             <div className="action-row">
-              <button className="primary-button" type="button" onClick={startSession} disabled={isLoading}>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={startSession}
+                disabled={isLoading || isGeneratingExperts}
+              >
                 {isLoading ? "整理中..." : response ? "もう一度整理する" : "相談を開始する"}
               </button>
               <button
@@ -628,7 +643,7 @@ function App() {
                     type="button"
                     key={phase}
                     onClick={() => returnToPhase(phase)}
-                    disabled={isLoading}
+                    disabled={isLoading || isGeneratingExperts}
                   >
                     {phaseLabels[phase]}へ戻る
                   </button>
@@ -720,6 +735,17 @@ function getLatestMemoBeforePhase(
   }
 
   return null;
+}
+
+function replaceExpertMemoItems(items: string[], roleNames: string[], nextItems: string[]) {
+  const rolePrefixes = new Set(roleNames.map((roleName) => `${roleName}:`));
+
+  return [
+    ...items.filter((item) => {
+      return !Array.from(rolePrefixes).some((prefix) => item.startsWith(prefix));
+    }),
+    ...nextItems
+  ];
 }
 
 function MemoView({ memo }: { memo: SessionMemo }) {
