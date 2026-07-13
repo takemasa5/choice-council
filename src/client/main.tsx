@@ -224,6 +224,8 @@ function App() {
   }
 
   function clearSession() {
+    if (isGeneratingExperts) return;
+
     window.localStorage.removeItem(storageKey);
     setConsultation("");
     setFacts("");
@@ -379,31 +381,30 @@ function App() {
     setIsGeneratingExperts(true);
 
     try {
-      const comments: ExpertComment[] = [];
+      const comments = await Promise.all(
+        confirmedExperts.map(async (expert) => {
+          const request: ExpertCommentRequest = {
+            consultation,
+            currentPhase: expertCommentPhase,
+            memo: memo ?? undefined,
+            expert
+          };
+          const apiResponse = await fetch("/api/expert/comment", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(request)
+          });
+          const body = await apiResponse.json();
 
-      for (const expert of confirmedExperts) {
-        const request: ExpertCommentRequest = {
-          consultation,
-          currentPhase: expertCommentPhase,
-          memo: memo ?? undefined,
-          expert
-        };
-        const apiResponse = await fetch("/api/expert/comment", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(request)
-        });
-        const body = await apiResponse.json();
+          if (!apiResponse.ok) {
+            throw new Error(body.message ?? "専門家コメントの生成に失敗しました。");
+          }
 
-        if (!apiResponse.ok) {
-          setExpertErrorMessage(body.message ?? "専門家コメントの生成に失敗しました。");
-          return;
-        }
-
-        comments.push(body as ExpertComment);
-      }
+          return body as ExpertComment;
+        })
+      );
 
       setExpertComments(comments);
       carryResearchNeedsToMemo(comments, expertCommentPhase);
@@ -751,7 +752,12 @@ function App() {
           <div className="panel">
             <div className="side-header">
               <h2>セッションメモ</h2>
-              <button className="text-button danger" type="button" onClick={clearSession}>
+              <button
+                className="text-button danger"
+                type="button"
+                onClick={clearSession}
+                disabled={isGeneratingExperts}
+              >
                 削除
               </button>
             </div>
