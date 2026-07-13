@@ -322,9 +322,12 @@ function App() {
     }
 
     setConfirmedExperts(validExperts);
-    setCurrentPhase("deliberation");
     setExpertComments([]);
     setExpertErrorMessage("");
+
+    if (currentPhase === "premise") {
+      moveResponseToPhase("expert_selection");
+    }
   }
 
   async function generateExpertComments() {
@@ -335,6 +338,13 @@ function App() {
       return;
     }
 
+    if (currentPhase === "premise") {
+      setExpertErrorMessage("先に専門家ロールを確定してください。");
+      return;
+    }
+
+    const expertCommentPhase = currentPhase === "expert_selection" ? "deliberation" : currentPhase;
+
     setIsGeneratingExperts(true);
 
     try {
@@ -343,7 +353,7 @@ function App() {
       for (const expert of confirmedExperts) {
         const request: ExpertCommentRequest = {
           consultation,
-          currentPhase,
+          currentPhase: expertCommentPhase,
           memo: memo ?? undefined,
           expert
         };
@@ -365,7 +375,7 @@ function App() {
       }
 
       setExpertComments(comments);
-      carryResearchNeedsToMemo(comments);
+      carryResearchNeedsToMemo(comments, expertCommentPhase);
     } catch (error) {
       setExpertErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
     } finally {
@@ -373,19 +383,20 @@ function App() {
     }
   }
 
-  function carryResearchNeedsToMemo(comments: ExpertComment[]) {
+  function carryResearchNeedsToMemo(comments: ExpertComment[], targetPhase: Phase) {
     const researchItems = comments
       .filter((comment) => comment.needs_research)
       .map((comment) => `${comment.role_name}: ${comment.concern}`);
 
     if (!response) return;
 
+    setCurrentPhase(targetPhase);
     setResponse((currentResponse) => {
       if (!currentResponse) return currentResponse;
 
       const nextResponse = {
         ...currentResponse,
-        current_phase: currentPhase,
+        current_phase: targetPhase,
         memo_updates: {
           ...currentResponse.memo_updates,
           expert_summaries: replaceExpertMemoItems(
@@ -403,7 +414,26 @@ function App() {
 
       setResponseHistory((current) => ({
         ...current,
-        [currentPhase]: nextResponse
+        [targetPhase]: nextResponse
+      }));
+
+      return nextResponse;
+    });
+  }
+
+  function moveResponseToPhase(nextPhase: Phase) {
+    setCurrentPhase(nextPhase);
+    setResponse((currentResponse) => {
+      if (!currentResponse) return currentResponse;
+
+      const nextResponse = {
+        ...currentResponse,
+        current_phase: nextPhase
+      };
+
+      setResponseHistory((current) => ({
+        ...keepResponsesThroughPhase(current, currentPhase),
+        [nextPhase]: nextResponse
       }));
 
       return nextResponse;
