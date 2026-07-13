@@ -117,16 +117,17 @@ function App() {
       }
 
       const facilitatorResponse = body as FacilitatorResponse;
-      if (!isAllowedModelPhase(currentPhase, facilitatorResponse.current_phase)) {
+      const acceptedPhase = getAcceptedModelPhase(currentPhase, facilitatorResponse);
+      if (!acceptedPhase) {
         setErrorMessage("現在のフェーズから許可されていない応答が返されました。");
         return;
       }
 
-      setCurrentPhase(facilitatorResponse.current_phase);
+      setCurrentPhase(acceptedPhase);
       setResponse(facilitatorResponse);
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
-        [facilitatorResponse.current_phase]: facilitatorResponse
+        [acceptedPhase]: facilitatorResponse
       }));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
@@ -321,11 +322,19 @@ function getReturnablePhases(currentPhase: Phase) {
   return phaseOrder.slice(0, currentIndex);
 }
 
-function isAllowedModelPhase(currentPhase: Phase, modelPhase: Phase) {
+function getAcceptedModelPhase(currentPhase: Phase, response: FacilitatorResponse) {
+  const modelPhase = response.current_phase;
   const currentIndex = phaseOrder.indexOf(currentPhase);
   const modelIndex = phaseOrder.indexOf(modelPhase);
 
-  return modelIndex === currentIndex || modelIndex === currentIndex + 1;
+  if (modelIndex === currentIndex) return modelPhase;
+  if (modelIndex !== currentIndex + 1) return null;
+
+  if (currentPhase === "consultation_input") return modelPhase;
+  if (response.user_question?.required) return null;
+  if (response.next_action === "move_phase" || response.next_action === "finish") return modelPhase;
+
+  return null;
 }
 
 function keepResponsesThroughPhase(
