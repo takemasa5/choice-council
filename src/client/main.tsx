@@ -197,6 +197,14 @@ function App() {
     return selectedQuestionOption;
   }
 
+  function getPendingRequiredQuestionMessage() {
+    if (!response?.user_question?.required) return "";
+
+    return getUserQuestionAnswer()
+      ? "質問への回答をファシリテーターに送信してから進めてください。"
+      : "先に質問へ回答してください。";
+  }
+
   function restoreQuestionAnswer(answer: string | undefined, storedResponse: FacilitatorResponse | null) {
     const question = storedResponse?.user_question;
     if (!answer || !question) {
@@ -319,8 +327,9 @@ function App() {
   function confirmExpertDrafts() {
     if (isGeneratingExperts) return;
 
-    if (response?.user_question?.required && !getUserQuestionAnswer()) {
-      setExpertErrorMessage("先に質問へ回答してください。");
+    const requiredQuestionMessage = getPendingRequiredQuestionMessage();
+    if (requiredQuestionMessage) {
+      setExpertErrorMessage(requiredQuestionMessage);
       return;
     }
 
@@ -349,13 +358,14 @@ function App() {
   async function generateExpertComments() {
     setExpertErrorMessage("");
 
-    if (confirmedExperts.length === 0) {
-      setExpertErrorMessage("先に専門家ロールを確定してください。");
+    const requiredQuestionMessage = getPendingRequiredQuestionMessage();
+    if (requiredQuestionMessage) {
+      setExpertErrorMessage(requiredQuestionMessage);
       return;
     }
 
-    if (response?.user_question?.required && !getUserQuestionAnswer()) {
-      setExpertErrorMessage("先に質問へ回答してください。");
+    if (confirmedExperts.length === 0) {
+      setExpertErrorMessage("先に専門家ロールを確定してください。");
       return;
     }
 
