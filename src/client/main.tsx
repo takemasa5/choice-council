@@ -55,6 +55,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [pauseRequested, setPauseRequested] = useState(false);
+  const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
+  const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
 
   useEffect(() => {
     const stored = window.localStorage.getItem(storageKey);
@@ -70,6 +72,8 @@ function App() {
       setResponse(parsed.response);
       setResponseHistory(parsed.responseHistory ?? responseToHistory(parsed.response));
       setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
+      setSelectedQuestionOption("");
+      setOtherQuestionAnswer("");
     } catch {
       window.localStorage.removeItem(storageKey);
     }
@@ -125,6 +129,8 @@ function App() {
 
       setCurrentPhase(acceptedPhase);
       setResponse(facilitatorResponse);
+      setSelectedQuestionOption("");
+      setOtherQuestionAnswer("");
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
         [acceptedPhase]: facilitatorResponse
@@ -160,6 +166,8 @@ function App() {
     setCurrentPhase("consultation_input");
     setErrorMessage("");
     setPauseRequested(false);
+    setSelectedQuestionOption("");
+    setOtherQuestionAnswer("");
   }
 
   function returnToPhase(targetPhase: Phase) {
@@ -178,6 +186,8 @@ function App() {
     setResponseHistory(nextResponseHistory);
     setErrorMessage("");
     setPauseRequested(false);
+    setSelectedQuestionOption("");
+    setOtherQuestionAnswer("");
   }
 
   return (
@@ -268,11 +278,26 @@ function App() {
                   <strong>{response.user_question.question}</strong>
                   <div className="option-list">
                     {response.user_question.options.map((option) => (
-                      <button type="button" key={option}>
+                      <button
+                        type="button"
+                        key={option}
+                        className={selectedQuestionOption === option ? "selected" : undefined}
+                        onClick={() => setSelectedQuestionOption(option)}
+                      >
                         {option}
                       </button>
                     ))}
                   </div>
+                  {selectedQuestionOption === "その他" && (
+                    <label className="field inline-field">
+                      <span>自由入力</span>
+                      <textarea
+                        value={otherQuestionAnswer}
+                        onChange={(event) => setOtherQuestionAnswer(event.target.value)}
+                        rows={3}
+                      />
+                    </label>
+                  )}
                 </div>
               )}
             </article>

@@ -243,6 +243,16 @@ button:disabled {
   padding: 9px 12px;
 }
 
+.option-list button.selected {
+  background: #1f5f68;
+  border-color: #1f5f68;
+  color: #fff;
+}
+
+.inline-field {
+  margin-top: 12px;
+}
+
 .side-panel {
   min-width: 0;
 }
