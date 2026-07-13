@@ -43,6 +43,7 @@ type StoredSession = {
   response: FacilitatorResponse | null;
   responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
   currentPhase: Phase;
+  expertComments?: ExpertComment[];
 };
 
 function App() {
@@ -83,6 +84,7 @@ function App() {
       setResponse(parsed.response);
       setResponseHistory(parsed.responseHistory ?? responseToHistory(parsed.response));
       setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
+      setExpertComments(parsed.expertComments ?? []);
       restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
     } catch {
       window.localStorage.removeItem(storageKey);
@@ -91,7 +93,7 @@ function App() {
 
   useEffect(() => {
     const request = buildRequest();
-    const session: StoredSession = { request, response, responseHistory, currentPhase };
+    const session: StoredSession = { request, response, responseHistory, currentPhase, expertComments };
     window.localStorage.setItem(storageKey, JSON.stringify(session));
   }, [
     consultation,
@@ -102,6 +104,7 @@ function App() {
     response,
     responseHistory,
     currentPhase,
+    expertComments,
     selectedQuestionOption,
     otherQuestionAnswer
   ]);
@@ -109,7 +112,6 @@ function App() {
   useEffect(() => {
     setExpertDrafts(response?.expert_requests ?? []);
     setConfirmedExperts([]);
-    setExpertComments([]);
     setExpertErrorMessage("");
   }, [expertRequestKey]);
 
@@ -162,6 +164,7 @@ function App() {
 
       setCurrentPhase(acceptedPhase);
       setResponse(facilitatorResponse);
+      setExpertComments([]);
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
       setResponseHistory((current) => ({
@@ -319,6 +322,7 @@ function App() {
     }
 
     setConfirmedExperts(validExperts);
+    setCurrentPhase("deliberation");
     setExpertComments([]);
     setExpertErrorMessage("");
   }
@@ -381,6 +385,7 @@ function App() {
 
       const nextResponse = {
         ...currentResponse,
+        current_phase: currentPhase,
         memo_updates: {
           ...currentResponse.memo_updates,
           expert_summaries: replaceExpertMemoItems(
@@ -398,7 +403,7 @@ function App() {
 
       setResponseHistory((current) => ({
         ...current,
-        [nextResponse.current_phase]: nextResponse
+        [currentPhase]: nextResponse
       }));
 
       return nextResponse;
