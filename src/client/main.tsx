@@ -55,6 +55,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [pauseRequested, setPauseRequested] = useState(false);
+  const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
+  const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
 
   useEffect(() => {
     const stored = window.localStorage.getItem(storageKey);
@@ -70,6 +72,7 @@ function App() {
       setResponse(parsed.response);
       setResponseHistory(parsed.responseHistory ?? responseToHistory(parsed.response));
       setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
+      restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
     } catch {
       window.localStorage.removeItem(storageKey);
     }
@@ -79,7 +82,18 @@ function App() {
     const request = buildRequest();
     const session: StoredSession = { request, response, responseHistory, currentPhase };
     window.localStorage.setItem(storageKey, JSON.stringify(session));
-  }, [consultation, facts, values, concerns, expectedOutcome, response, responseHistory, currentPhase]);
+  }, [
+    consultation,
+    facts,
+    values,
+    concerns,
+    expectedOutcome,
+    response,
+    responseHistory,
+    currentPhase,
+    selectedQuestionOption,
+    otherQuestionAnswer
+  ]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase);
@@ -94,6 +108,11 @@ function App() {
     const request = buildRequest();
     if (!request.consultation.trim()) {
       setErrorMessage("相談内容を入力してください。");
+      return;
+    }
+
+    if (response?.user_question?.required && !request.userQuestionAnswer) {
+      setErrorMessage("質問に回答してください。");
       return;
     }
 
@@ -125,6 +144,8 @@ function App() {
 
       setCurrentPhase(acceptedPhase);
       setResponse(facilitatorResponse);
+      setSelectedQuestionOption("");
+      setOtherQuestionAnswer("");
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
         [acceptedPhase]: facilitatorResponse
@@ -143,9 +164,35 @@ function App() {
       values: emptyToUndefined(values),
       concerns: emptyToUndefined(concerns),
       expectedOutcome: emptyToUndefined(expectedOutcome),
+      userQuestion: response?.user_question ?? undefined,
+      userQuestionAnswer: getUserQuestionAnswer(),
       currentPhase,
       memo: response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase) ?? undefined
     };
+  }
+
+  function getUserQuestionAnswer() {
+    if (!selectedQuestionOption) return undefined;
+    if (selectedQuestionOption === "その他") return emptyToUndefined(otherQuestionAnswer);
+    return selectedQuestionOption;
+  }
+
+  function restoreQuestionAnswer(answer: string | undefined, storedResponse: FacilitatorResponse | null) {
+    const question = storedResponse?.user_question;
+    if (!answer || !question) {
+      setSelectedQuestionOption("");
+      setOtherQuestionAnswer("");
+      return;
+    }
+
+    if (question.options.includes(answer)) {
+      setSelectedQuestionOption(answer);
+      setOtherQuestionAnswer("");
+      return;
+    }
+
+    setSelectedQuestionOption("その他");
+    setOtherQuestionAnswer(answer);
   }
 
   function clearSession() {
@@ -160,6 +207,8 @@ function App() {
     setCurrentPhase("consultation_input");
     setErrorMessage("");
     setPauseRequested(false);
+    setSelectedQuestionOption("");
+    setOtherQuestionAnswer("");
   }
 
   function returnToPhase(targetPhase: Phase) {
@@ -178,6 +227,8 @@ function App() {
     setResponseHistory(nextResponseHistory);
     setErrorMessage("");
     setPauseRequested(false);
+    setSelectedQuestionOption("");
+    setOtherQuestionAnswer("");
   }
 
   return (
@@ -263,16 +314,57 @@ function App() {
               <p>{response.facilitator_message}</p>
               <p className="next-action">候補行動: {nextActionLabels[response.next_action]}</p>
 
+              {response.expert_requests.length > 0 && (
+                <section className="expert-request-box" aria-label="専門家ロール候補">
+                  <h3>専門家ロール候補</h3>
+                  <div className="expert-request-list">
+                    {response.expert_requests.map((expertRequest) => (
+                      <article
+                        className="expert-request-item"
+                        key={`${expertRequest.role_name}-${expertRequest.viewpoint}`}
+                      >
+                        <strong>{expertRequest.role_name}</strong>
+                        <dl>
+                          <div>
+                            <dt>観点</dt>
+                            <dd>{expertRequest.viewpoint}</dd>
+                          </div>
+                          <div>
+                            <dt>依頼</dt>
+                            <dd>{expertRequest.request}</dd>
+                          </div>
+                        </dl>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+
               {response.user_question && (
                 <div className="question-box">
                   <strong>{response.user_question.question}</strong>
                   <div className="option-list">
                     {response.user_question.options.map((option) => (
-                      <button type="button" key={option}>
+                      <button
+                        type="button"
+                        key={option}
+                        className={selectedQuestionOption === option ? "selected" : undefined}
+                        onClick={() => setSelectedQuestionOption(option)}
+                      >
                         {option}
                       </button>
                     ))}
                   </div>
+                  {selectedQuestionOption === "その他" && (
+                    <label className="field inline-field">
+                      <span>自由入力</span>
+                      <textarea
+                        value={otherQuestionAnswer}
+                        onChange={(event) => setOtherQuestionAnswer(event.target.value)}
+                        rows={3}
+                      />
+                    </label>
+                  )}
                 </div>
               )}
             </article>
