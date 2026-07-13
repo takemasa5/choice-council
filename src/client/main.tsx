@@ -162,13 +162,15 @@ function App() {
   }
 
   function returnToPhase(targetPhase: Phase) {
+    if (isLoading) return;
+
     const confirmed = window.confirm(
       "このフェーズに戻ると、以降の整理内容と生成結果は破棄されます。戻りますか？"
     );
 
     if (!confirmed) return;
 
-    const nextResponseHistory = keepResponsesThroughPhase(responseHistory, targetPhase);
+    const nextResponseHistory = keepResponsesBeforePhase(responseHistory, targetPhase);
 
     setCurrentPhase(targetPhase);
     setResponse(nextResponseHistory[targetPhase] ?? null);
@@ -285,6 +287,7 @@ function App() {
                     type="button"
                     key={phase}
                     onClick={() => returnToPhase(phase)}
+                    disabled={isLoading}
                   >
                     {phaseLabels[phase]}へ戻る
                   </button>
@@ -334,6 +337,19 @@ function keepResponsesThroughPhase(
   return Object.fromEntries(
     Object.entries(responseHistory).filter(([phase]) => {
       return phaseOrder.indexOf(phase as Phase) <= targetIndex;
+    })
+  ) as Partial<Record<Phase, FacilitatorResponse>>;
+}
+
+function keepResponsesBeforePhase(
+  responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
+  targetPhase: Phase
+) {
+  const targetIndex = phaseOrder.indexOf(targetPhase);
+
+  return Object.fromEntries(
+    Object.entries(responseHistory).filter(([phase]) => {
+      return phaseOrder.indexOf(phase as Phase) < targetIndex;
     })
   ) as Partial<Record<Phase, FacilitatorResponse>>;
 }
