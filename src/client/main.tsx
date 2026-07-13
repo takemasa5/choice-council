@@ -314,6 +314,32 @@ function App() {
               <p>{response.facilitator_message}</p>
               <p className="next-action">候補行動: {nextActionLabels[response.next_action]}</p>
 
+              {response.expert_requests.length > 0 && (
+                <section className="expert-request-box" aria-label="専門家ロール候補">
+                  <h3>専門家ロール候補</h3>
+                  <div className="expert-request-list">
+                    {response.expert_requests.map((expertRequest) => (
+                      <article
+                        className="expert-request-item"
+                        key={`${expertRequest.role_name}-${expertRequest.viewpoint}`}
+                      >
+                        <strong>{expertRequest.role_name}</strong>
+                        <dl>
+                          <div>
+                            <dt>観点</dt>
+                            <dd>{expertRequest.viewpoint}</dd>
+                          </div>
+                          <div>
+                            <dt>依頼</dt>
+                            <dd>{expertRequest.request}</dd>
+                          </div>
+                        </dl>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+
               {response.user_question && (
                 <div className="question-box">
                   <strong>{response.user_question.question}</strong>

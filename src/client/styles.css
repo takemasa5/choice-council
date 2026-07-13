@@ -223,6 +223,51 @@ button:disabled {
   padding: 14px;
 }
 
+.expert-request-box {
+  background: #f4f8f7;
+  border-radius: 8px;
+  margin-top: 16px;
+  padding: 14px;
+}
+
+.expert-request-box h3 {
+  margin-bottom: 12px;
+}
+
+.expert-request-list {
+  display: grid;
+  gap: 12px;
+}
+
+.expert-request-item {
+  background: #fff;
+  border: 1px solid #d7e4e1;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.expert-request-item dl {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.expert-request-item div {
+  display: grid;
+  gap: 2px;
+}
+
+.expert-request-item dt {
+  color: #587069;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.expert-request-item dd {
+  line-height: 1.6;
+  margin: 0;
+}
+
 .option-list {
   display: flex;
   flex-wrap: wrap;
