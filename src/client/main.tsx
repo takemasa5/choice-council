@@ -166,6 +166,7 @@ function App() {
       setResponse(facilitatorResponse);
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
+      setExpertComments([]);
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
         [acceptedPhase]: facilitatorResponse
@@ -341,15 +342,26 @@ function App() {
         role_name: expert.role_name.trim(),
         viewpoint: expert.viewpoint.trim(),
         request: expert.request.trim()
-      }))
-      .filter((expert) => expert.role_name && expert.viewpoint && expert.request);
+      }));
 
-    if (validExperts.length === 0) {
+    const hasIncompleteExpert = validExperts.some((expert) => {
+      const enteredFields = [expert.role_name, expert.viewpoint, expert.request].filter(Boolean).length;
+      return enteredFields > 0 && enteredFields < 3;
+    });
+
+    if (hasIncompleteExpert) {
+      setExpertErrorMessage("追加した専門家ロールの役割名、観点、依頼をすべて入力してください。");
+      return;
+    }
+
+    const completedExperts = validExperts.filter((expert) => expert.role_name && expert.viewpoint && expert.request);
+
+    if (completedExperts.length === 0) {
       setExpertErrorMessage("確定する専門家ロールを1件以上入力してください。");
       return;
     }
 
-    setConfirmedExperts(validExperts);
+    setConfirmedExperts(completedExperts);
     setExpertComments([]);
     setExpertErrorMessage("");
 
