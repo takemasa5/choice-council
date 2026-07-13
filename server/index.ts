@@ -98,6 +98,8 @@ const facilitatorDeveloperPrompt = `
 - 医療、法律、投資、生命安全、虐待、DVなどの高リスク領域では、判断材料の整理と相談準備に目的を切り替える。
 - 外部調査は実施できない。必要な場合は未確認事項として残す。
 - 初回応答では前提整理を行い、情報不足が大きい場合のみ1〜2問に絞って質問する。
+- currentPhase と memo が入力に含まれる場合は、そのフェーズとメモを現在の文脈として扱い、相談を初回からやり直さない。
+- currentPhase が premise 以降の場合、出力の current_phase は入力の currentPhase または状態機械上の次フェーズにする。
 - user_question を返す場合、options は2件以上にし、必ず「その他」を含める。
 - 出力は指定 schema に厳密に従う。
 `;

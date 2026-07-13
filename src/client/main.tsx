@@ -38,6 +38,7 @@ const nextActionLabels: Record<FacilitatorResponse["next_action"], string> = {
 type StoredSession = {
   request: ConsultationRequest;
   response: FacilitatorResponse | null;
+  responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
   currentPhase: Phase;
 };
 
@@ -49,6 +50,7 @@ function App() {
   const [expectedOutcome, setExpectedOutcome] = useState("");
   const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [response, setResponse] = useState<FacilitatorResponse | null>(null);
+  const [responseHistory, setResponseHistory] = useState<Partial<Record<Phase, FacilitatorResponse>>>({});
   const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -66,6 +68,7 @@ function App() {
       setConcerns(parsed.request.concerns ?? "");
       setExpectedOutcome(parsed.request.expectedOutcome ?? "");
       setResponse(parsed.response);
+      setResponseHistory(parsed.responseHistory ?? responseToHistory(parsed.response));
       setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
     } catch {
       window.localStorage.removeItem(storageKey);
@@ -74,9 +77,9 @@ function App() {
 
   useEffect(() => {
     const request = buildRequest();
-    const session: StoredSession = { request, response, currentPhase };
+    const session: StoredSession = { request, response, responseHistory, currentPhase };
     window.localStorage.setItem(storageKey, JSON.stringify(session));
-  }, [consultation, facts, values, concerns, expectedOutcome, response, currentPhase]);
+  }, [consultation, facts, values, concerns, expectedOutcome, response, responseHistory, currentPhase]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return response?.memo_updates ?? null;
@@ -121,6 +124,10 @@ function App() {
 
       setCurrentPhase(facilitatorResponse.current_phase);
       setResponse(facilitatorResponse);
+      setResponseHistory((current) => ({
+        ...keepResponsesThroughPhase(current, currentPhase),
+        [facilitatorResponse.current_phase]: facilitatorResponse
+      }));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
     } finally {
@@ -134,7 +141,9 @@ function App() {
       facts: emptyToUndefined(facts),
       values: emptyToUndefined(values),
       concerns: emptyToUndefined(concerns),
-      expectedOutcome: emptyToUndefined(expectedOutcome)
+      expectedOutcome: emptyToUndefined(expectedOutcome),
+      currentPhase,
+      memo: response?.memo_updates
     };
   }
 
@@ -146,6 +155,7 @@ function App() {
     setConcerns("");
     setExpectedOutcome("");
     setResponse(null);
+    setResponseHistory({});
     setCurrentPhase("consultation_input");
     setErrorMessage("");
     setPauseRequested(false);
@@ -158,8 +168,11 @@ function App() {
 
     if (!confirmed) return;
 
+    const nextResponseHistory = keepResponsesThroughPhase(responseHistory, targetPhase);
+
     setCurrentPhase(targetPhase);
-    setResponse(null);
+    setResponse(nextResponseHistory[targetPhase] ?? null);
+    setResponseHistory(nextResponseHistory);
     setErrorMessage("");
     setPauseRequested(false);
   }
@@ -310,6 +323,23 @@ function isAllowedModelPhase(currentPhase: Phase, modelPhase: Phase) {
   const modelIndex = phaseOrder.indexOf(modelPhase);
 
   return modelIndex === currentIndex || modelIndex === currentIndex + 1;
+}
+
+function keepResponsesThroughPhase(
+  responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
+  targetPhase: Phase
+) {
+  const targetIndex = phaseOrder.indexOf(targetPhase);
+
+  return Object.fromEntries(
+    Object.entries(responseHistory).filter(([phase]) => {
+      return phaseOrder.indexOf(phase as Phase) <= targetIndex;
+    })
+  ) as Partial<Record<Phase, FacilitatorResponse>>;
+}
+
+function responseToHistory(response: FacilitatorResponse | null) {
+  return response ? { [response.current_phase]: response } : {};
 }
 
 function MemoView({ memo }: { memo: SessionMemo }) {
