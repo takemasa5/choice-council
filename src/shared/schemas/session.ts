@@ -14,16 +14,6 @@ export const PhaseSchema = z.enum([
 
 export type Phase = z.infer<typeof PhaseSchema>;
 
-export const ConsultationRequestSchema = z.strictObject({
-  consultation: nonEmptyString,
-  facts: nonEmptyString.optional(),
-  values: nonEmptyString.optional(),
-  concerns: nonEmptyString.optional(),
-  expectedOutcome: nonEmptyString.optional()
-});
-
-export type ConsultationRequest = z.infer<typeof ConsultationRequestSchema>;
-
 export const UserQuestionSchema = z.strictObject({
   question: nonEmptyString,
   options: nonEmptyStringArray.min(2),
@@ -74,6 +64,18 @@ export const SessionMemoSchema = z.strictObject({
 });
 
 export type SessionMemo = z.infer<typeof SessionMemoSchema>;
+
+export const ConsultationRequestSchema = z.strictObject({
+  consultation: nonEmptyString,
+  facts: nonEmptyString.optional(),
+  values: nonEmptyString.optional(),
+  concerns: nonEmptyString.optional(),
+  expectedOutcome: nonEmptyString.optional(),
+  currentPhase: PhaseSchema.optional(),
+  memo: SessionMemoSchema.optional()
+});
+
+export type ConsultationRequest = z.infer<typeof ConsultationRequestSchema>;
 
 export const ExpertRequestSchema = z.strictObject({
   role_name: nonEmptyString,
