@@ -84,6 +84,7 @@ function App() {
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
+  const canRequestPause = isLoading || isGeneratingExperts;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
@@ -221,11 +222,7 @@ function App() {
         ...keepResponsesThroughPhase(current, currentPhase),
         [acceptedPhase]: responseWithMemo
       }));
-      if (pauseRequestedRef.current) {
-        setIsInterruptionReady(true);
-        setPauseRequested(false);
-        pauseRequestedRef.current = false;
-      }
+      showInterruptionOptionsIfPaused();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
     } finally {
@@ -508,6 +505,7 @@ function App() {
 
       setExpertComments(comments);
       await carryResearchNeedsToMemo(comments, expertCommentPhase);
+      showInterruptionOptionsIfPaused();
     } catch (error) {
       setExpertErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
     } finally {
@@ -608,10 +606,18 @@ function App() {
   }
 
   function requestPause() {
-    if (!isLoading) return;
+    if (!canRequestPause) return;
 
     pauseRequestedRef.current = true;
     setPauseRequested(true);
+  }
+
+  function showInterruptionOptionsIfPaused() {
+    if (!pauseRequestedRef.current) return;
+
+    setIsInterruptionReady(true);
+    setPauseRequested(false);
+    pauseRequestedRef.current = false;
   }
 
   function chooseInterruptionOption(option: string) {
@@ -757,7 +763,7 @@ function App() {
                 className="secondary-button"
                 type="button"
                 onClick={requestPause}
-                disabled={!isLoading}
+                disabled={!canRequestPause}
               >
                 ちょっと待って
               </button>
