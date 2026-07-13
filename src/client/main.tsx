@@ -82,8 +82,8 @@ function App() {
   }, [consultation, facts, values, concerns, expectedOutcome, response, responseHistory, currentPhase]);
 
   const memo = useMemo<SessionMemo | null>(() => {
-    return response?.memo_updates ?? null;
-  }, [response]);
+    return response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase);
+  }, [response, responseHistory, currentPhase]);
   const availableReturnPhases = useMemo(() => {
     return getReturnablePhases(currentPhase);
   }, [currentPhase]);
@@ -144,7 +144,7 @@ function App() {
       concerns: emptyToUndefined(concerns),
       expectedOutcome: emptyToUndefined(expectedOutcome),
       currentPhase,
-      memo: response?.memo_updates
+      memo: response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase) ?? undefined
     };
   }
 
@@ -365,6 +365,21 @@ function keepResponsesBeforePhase(
 
 function responseToHistory(response: FacilitatorResponse | null) {
   return response ? { [response.current_phase]: response } : {};
+}
+
+function getLatestMemoBeforePhase(
+  responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
+  targetPhase: Phase
+) {
+  const targetIndex = phaseOrder.indexOf(targetPhase);
+
+  for (let index = targetIndex - 1; index >= 0; index -= 1) {
+    const phase = phaseOrder[index];
+    const memo = responseHistory[phase]?.memo_updates;
+    if (memo) return memo;
+  }
+
+  return null;
 }
 
 function MemoView({ memo }: { memo: SessionMemo }) {
