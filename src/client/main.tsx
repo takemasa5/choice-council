@@ -57,6 +57,7 @@ type StoredSession = {
   responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
   currentPhase: Phase;
   expertComments?: ExpertComment[];
+  finalMarkdown?: string;
   interruption?: {
     isReady: boolean;
     selectedOption: string;
@@ -118,6 +119,7 @@ function App() {
       setResponseHistory(parsed.responseHistory ?? responseToHistory(parsed.response));
       setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
       setExpertComments(parsed.expertComments ?? []);
+      setFinalMarkdown(parsed.finalMarkdown ?? "");
       restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
       restoreInterruption(parsed.interruption);
     } catch {
@@ -138,7 +140,8 @@ function App() {
       expectedOutcome.trim() ||
       response ||
       Object.keys(responseHistory).length > 0 ||
-      expertComments.length > 0;
+      expertComments.length > 0 ||
+      finalMarkdown;
 
     if (!hasSessionContent) {
       window.localStorage.removeItem(storageKey);
@@ -157,6 +160,7 @@ function App() {
     responseHistory,
     currentPhase,
     expertComments,
+    finalMarkdown,
     selectedQuestionOption,
     otherQuestionAnswer,
     selectedInterruptionOption,
@@ -176,6 +180,7 @@ function App() {
   const canGenerateFinalMarkdown =
     Boolean(memo) &&
     currentPhase === "direction" &&
+    !getPendingRequiredQuestionMessage() &&
     !isLoading &&
     !isUpdatingMemo &&
     !isGeneratingExperts &&
@@ -555,6 +560,12 @@ function App() {
   async function generateFinalMarkdown() {
     setFinalMarkdownErrorMessage("");
 
+    const requiredQuestionMessage = getPendingRequiredQuestionMessage();
+    if (requiredQuestionMessage) {
+      setFinalMarkdownErrorMessage(requiredQuestionMessage);
+      return;
+    }
+
     if (!memo) {
       setFinalMarkdownErrorMessage("終了メモを作るためのセッションメモがまだありません。");
       return;
@@ -759,6 +770,7 @@ function App() {
       responseHistory,
       currentPhase,
       expertComments,
+      finalMarkdown: finalMarkdown || undefined,
       interruption: hasInterruptionState
         ? {
             isReady: isInterruptionReady,
