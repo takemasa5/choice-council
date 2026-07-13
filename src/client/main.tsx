@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
   ConsultationRequest,
+  ExpertComment,
+  ExpertCommentRequest,
+  ExpertRequest,
   FacilitatorResponse,
   Phase,
   SessionMemo
@@ -57,6 +60,14 @@ function App() {
   const [pauseRequested, setPauseRequested] = useState(false);
   const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
   const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
+  const [expertDrafts, setExpertDrafts] = useState<ExpertRequest[]>([]);
+  const [confirmedExperts, setConfirmedExperts] = useState<ExpertRequest[]>([]);
+  const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
+  const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
+  const [expertErrorMessage, setExpertErrorMessage] = useState("");
+  const expertRequestKey = useMemo(() => {
+    return JSON.stringify(response?.expert_requests ?? []);
+  }, [response?.expert_requests]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(storageKey);
@@ -94,6 +105,13 @@ function App() {
     selectedQuestionOption,
     otherQuestionAnswer
   ]);
+
+  useEffect(() => {
+    setExpertDrafts(response?.expert_requests ?? []);
+    setConfirmedExperts([]);
+    setExpertComments([]);
+    setExpertErrorMessage("");
+  }, [expertRequestKey]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase);
@@ -209,6 +227,10 @@ function App() {
     setPauseRequested(false);
     setSelectedQuestionOption("");
     setOtherQuestionAnswer("");
+    setExpertDrafts([]);
+    setConfirmedExperts([]);
+    setExpertComments([]);
+    setExpertErrorMessage("");
   }
 
   function returnToPhase(targetPhase: Phase) {
@@ -229,6 +251,148 @@ function App() {
     setPauseRequested(false);
     setSelectedQuestionOption("");
     setOtherQuestionAnswer("");
+    setExpertDrafts([]);
+    setConfirmedExperts([]);
+    setExpertComments([]);
+    setExpertErrorMessage("");
+  }
+
+  function updateExpertDraft(index: number, field: keyof ExpertRequest, value: string) {
+    resetConfirmedExperts();
+    setExpertDrafts((current) => {
+      return current.map((expert, currentIndex) => {
+        return currentIndex === index ? { ...expert, [field]: value } : expert;
+      });
+    });
+  }
+
+  function addExpertDraft() {
+    resetConfirmedExperts();
+    setExpertDrafts((current) => [
+      ...current,
+      {
+        role_name: "",
+        viewpoint: "",
+        request: ""
+      }
+    ]);
+  }
+
+  function removeExpertDraft(index: number) {
+    resetConfirmedExperts();
+    setExpertDrafts((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }
+
+  function replaceExpertDraft(index: number) {
+    resetConfirmedExperts();
+    setExpertDrafts((current) => {
+      return current.map((expert, currentIndex) => {
+        return currentIndex === index
+          ? {
+              role_name: "",
+              viewpoint: "",
+              request: expert.request
+            }
+          : expert;
+      });
+    });
+  }
+
+  function resetConfirmedExperts() {
+    setConfirmedExperts([]);
+    setExpertComments([]);
+    setExpertErrorMessage("");
+  }
+
+  function confirmExpertDrafts() {
+    const validExperts = expertDrafts
+      .map((expert) => ({
+        role_name: expert.role_name.trim(),
+        viewpoint: expert.viewpoint.trim(),
+        request: expert.request.trim()
+      }))
+      .filter((expert) => expert.role_name && expert.viewpoint && expert.request);
+
+    if (validExperts.length === 0) {
+      setExpertErrorMessage("確定する専門家ロールを1件以上入力してください。");
+      return;
+    }
+
+    setConfirmedExperts(validExperts);
+    setExpertComments([]);
+    setExpertErrorMessage("");
+  }
+
+  async function generateExpertComments() {
+    setExpertErrorMessage("");
+
+    if (confirmedExperts.length === 0) {
+      setExpertErrorMessage("先に専門家ロールを確定してください。");
+      return;
+    }
+
+    setIsGeneratingExperts(true);
+
+    try {
+      const comments: ExpertComment[] = [];
+
+      for (const expert of confirmedExperts) {
+        const request: ExpertCommentRequest = {
+          consultation,
+          currentPhase,
+          memo: memo ?? undefined,
+          expert
+        };
+        const apiResponse = await fetch("/api/expert/comment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(request)
+        });
+        const body = await apiResponse.json();
+
+        if (!apiResponse.ok) {
+          setExpertErrorMessage(body.message ?? "専門家コメントの生成に失敗しました。");
+          return;
+        }
+
+        comments.push(body as ExpertComment);
+      }
+
+      setExpertComments(comments);
+      carryResearchNeedsToMemo(comments);
+    } catch (error) {
+      setExpertErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
+    } finally {
+      setIsGeneratingExperts(false);
+    }
+  }
+
+  function carryResearchNeedsToMemo(comments: ExpertComment[]) {
+    const researchItems = comments
+      .filter((comment) => comment.needs_research)
+      .map((comment) => `${comment.role_name}: ${comment.concern}`);
+
+    if (!response) return;
+
+    const nextResponse = {
+      ...response,
+      memo_updates: {
+        ...response.memo_updates,
+        expert_summaries: [
+          ...response.memo_updates.expert_summaries,
+          ...comments.map((comment) => `${comment.role_name}: ${comment.key_point}`)
+        ],
+        open_questions: [...response.memo_updates.open_questions, ...researchItems]
+      }
+    };
+
+    setResponse(nextResponse);
+    setResponseHistory((current) => ({
+      ...current,
+      [nextResponse.current_phase]: nextResponse
+    }));
   }
 
   return (
@@ -318,22 +482,106 @@ function App() {
                 <section className="expert-request-box" aria-label="専門家ロール候補">
                   <h3>専門家ロール候補</h3>
                   <div className="expert-request-list">
-                    {response.expert_requests.map((expertRequest) => (
+                    {expertDrafts.map((expertRequest, index) => (
                       <article
                         className="expert-request-item"
-                        key={`${expertRequest.role_name}-${expertRequest.viewpoint}`}
+                        key={`${expertRequest.role_name}-${expertRequest.viewpoint}-${index}`}
                       >
-                        <strong>{expertRequest.role_name}</strong>
+                        <label className="field compact-field">
+                          <span>専門家</span>
+                          <input
+                            value={expertRequest.role_name}
+                            onChange={(event) => updateExpertDraft(index, "role_name", event.target.value)}
+                          />
+                        </label>
+                        <label className="field compact-field">
+                          <span>観点</span>
+                          <textarea
+                            value={expertRequest.viewpoint}
+                            onChange={(event) => updateExpertDraft(index, "viewpoint", event.target.value)}
+                            rows={2}
+                          />
+                        </label>
+                        <label className="field compact-field">
+                          <span>依頼</span>
+                          <textarea
+                            value={expertRequest.request}
+                            onChange={(event) => updateExpertDraft(index, "request", event.target.value)}
+                            rows={2}
+                          />
+                        </label>
+                        <div className="expert-row-actions">
+                          <button className="text-button" type="button" onClick={() => replaceExpertDraft(index)}>
+                            入れ替え
+                          </button>
+                          <button className="text-button danger" type="button" onClick={() => removeExpertDraft(index)}>
+                            外す
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="expert-actions">
+                    <button className="secondary-button" type="button" onClick={addExpertDraft}>
+                      専門家を追加する
+                    </button>
+                    <button className="secondary-button" type="button" onClick={confirmExpertDrafts}>
+                      おまかせで進める
+                    </button>
+                    <button className="primary-button" type="button" onClick={confirmExpertDrafts}>
+                      このまま進める
+                    </button>
+                  </div>
+                  {confirmedExperts.length > 0 && (
+                    <div className="confirmed-experts">
+                      <strong>確定済み</strong>
+                      <ul>
+                        {confirmedExperts.map((expert) => (
+                          <li key={`${expert.role_name}-${expert.viewpoint}`}>
+                            {expert.role_name} / {expert.viewpoint}
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={generateExpertComments}
+                        disabled={isGeneratingExperts}
+                      >
+                        {isGeneratingExperts ? "生成中..." : "専門家コメントを生成する"}
+                      </button>
+                    </div>
+                  )}
+                  {expertErrorMessage && <p className="error">{expertErrorMessage}</p>}
+                </section>
+              )}
+
+              {expertComments.length > 0 && (
+                <section className="expert-comment-box" aria-label="専門家コメント">
+                  <h3>専門家コメント</h3>
+                  <div className="expert-comment-list">
+                    {expertComments.map((comment) => (
+                      <article className="expert-comment-item" key={`${comment.role_name}-${comment.viewpoint}`}>
+                        <div className="expert-comment-header">
+                          <strong>{comment.role_name}</strong>
+                          <span>{comment.confidence}</span>
+                        </div>
+                        <p>{comment.summary}</p>
                         <dl>
                           <div>
-                            <dt>観点</dt>
-                            <dd>{expertRequest.viewpoint}</dd>
+                            <dt>最重要ポイント</dt>
+                            <dd>{comment.key_point}</dd>
                           </div>
                           <div>
-                            <dt>依頼</dt>
-                            <dd>{expertRequest.request}</dd>
+                            <dt>懸念・不明点</dt>
+                            <dd>{comment.concern}</dd>
+                          </div>
+                          <div>
+                            <dt>質問</dt>
+                            <dd>{comment.question_to_user}</dd>
                           </div>
                         </dl>
+                        {comment.needs_research && <p className="research-note">未確認事項として後続整理へ渡します。</p>}
                       </article>
                     ))}
                   </div>
