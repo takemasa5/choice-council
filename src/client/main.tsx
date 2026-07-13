@@ -321,6 +321,7 @@ function App() {
   function resetConfirmedExperts() {
     if (isGeneratingExperts) return;
 
+    clearExpertMemoItems(expertComments.map((comment) => comment.role_name));
     setConfirmedExperts([]);
     setExpertComments([]);
     setExpertErrorMessage("");
@@ -461,6 +462,30 @@ function App() {
       }));
 
       return nextResponse;
+    });
+  }
+
+  function clearExpertMemoItems(roleNames: string[]) {
+    if (roleNames.length === 0) return;
+
+    const clearFromResponse = (currentResponse: FacilitatorResponse) => ({
+      ...currentResponse,
+      memo_updates: {
+        ...currentResponse.memo_updates,
+        expert_summaries: replaceExpertMemoItems(currentResponse.memo_updates.expert_summaries, roleNames, []),
+        open_questions: replaceExpertMemoItems(currentResponse.memo_updates.open_questions, roleNames, [])
+      }
+    });
+
+    setResponse((currentResponse) => {
+      return currentResponse ? clearFromResponse(currentResponse) : currentResponse;
+    });
+    setResponseHistory((current) => {
+      return Object.fromEntries(
+        Object.entries(current).map(([phase, currentResponse]) => {
+          return [phase, currentResponse ? clearFromResponse(currentResponse) : currentResponse];
+        })
+      ) as Partial<Record<Phase, FacilitatorResponse>>;
     });
   }
 
