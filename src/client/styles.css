@@ -415,6 +415,27 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+.final-markdown-preview {
+  background: #f6f3ed;
+  border-radius: 8px;
+  margin: 16px 0;
+  padding: 14px;
+}
+
+.final-markdown-preview pre {
+  background: #fff;
+  border: 1px solid #ded8ca;
+  border-radius: 6px;
+  color: #21302a;
+  line-height: 1.6;
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .empty {
   color: #6d746f;
   line-height: 1.6;

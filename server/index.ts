@@ -6,6 +6,8 @@ import {
   ExpertCommentRequestSchema,
   ExpertCommentSchema,
   FacilitatorResponseSchema,
+  FinalMarkdownRequestSchema,
+  FinalMarkdownSchema,
   SessionMemoRequestSchema,
   SessionMemoSchema
 } from "../src/shared/schemas/session";
@@ -230,6 +232,83 @@ app.post("/api/session-memo/update", async (request, response) => {
   }
 });
 
+app.post("/api/final-markdown/generate", async (request, response) => {
+  const parsedRequest = FinalMarkdownRequestSchema.safeParse(request.body);
+
+  if (!parsedRequest.success) {
+    response.status(400).json({
+      error: "invalid_request",
+      details: parsedRequest.error.flatten()
+    });
+    return;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    response.status(500).json({
+      error: "missing_openai_api_key",
+      message: "OPENAI_API_KEY が設定されていません。"
+    });
+    return;
+  }
+
+  try {
+    const client = new OpenAI({ apiKey });
+    const result = await client.responses.parse({
+      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+      input: [
+        {
+          role: "developer",
+          content: [
+            {
+              type: "input_text",
+              text: finalMarkdownDeveloperPrompt
+            }
+          ]
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: JSON.stringify(parsedRequest.data, null, 2)
+            }
+          ]
+        }
+      ],
+      text: {
+        format: zodTextFormat(FinalMarkdownSchema, "final_markdown")
+      }
+    });
+
+    const output = result.output_parsed;
+
+    if (!output) {
+      response.status(502).json({
+        error: "invalid_model_response",
+        message: "終了メモの生成に失敗しました。"
+      });
+      return;
+    }
+
+    if (!output.markdown.includes(finalMemoStatusLabels[parsedRequest.data.memo.status])) {
+      response.status(502).json({
+        error: "invalid_model_response",
+        message: "終了メモの現時点の状態がセッションメモと一致しません。"
+      });
+      return;
+    }
+
+    response.json(output);
+  } catch (error) {
+    response.status(502).json({
+      error: "openai_request_failed",
+      message: error instanceof Error ? error.message : "OpenAI API request failed."
+    });
+  }
+});
+
 app.listen(port, "127.0.0.1", () => {
   console.log(`Choice Council API listening on http://127.0.0.1:${port}`);
 });
@@ -287,3 +366,27 @@ const sessionMemoDeveloperPrompt = `
 - 医療、法律、投資、生命安全、虐待、DVなどの高リスク領域では、断定的助言ではなく判断材料の整理と相談準備に留める。
 - 出力は指定 schema に厳密に従う。
 `;
+
+const finalMarkdownDeveloperPrompt = `
+あなたは Choice Council の終了メモ作成担当です。
+ユーザーが後で見返せる意思決定メモを Markdown 形式で作成します。
+
+守ること:
+- 日本語で簡潔に整理する。
+- 最終結論が出ていない場合も、memo.status に対応する現時点の状態を明示する。
+- memo.status が pending_decision の場合は「判断保留」、pending_family_discussion の場合は「家族・関係者相談待ち」として区別する。
+- 相談テーマ、現時点の状態、重視した価値観、未確認事項、次アクションを必ず含める。
+- Markdown の見出し構成は docs/design/memo-and-output.md の Markdown 終了メモに合わせる。
+- 専門家コメントは要点だけに整理する。
+- 断定できないことを断定しない。
+- 医療、法律、投資、生命安全、虐待、DVなどの高リスク領域では、断定的助言ではなく判断材料の整理と相談準備に留める。
+- 出力は指定 schema に厳密に従う。
+`;
+
+const finalMemoStatusLabels = {
+  tentative_conclusion: "暫定結論",
+  pending_decision: "判断保留",
+  pending_research: "追加調査待ち",
+  pending_family_discussion: "家族・関係者相談待ち",
+  action_plan: "実行計画"
+} as const;

@@ -2,6 +2,28 @@ import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);
 const nonEmptyStringArray = z.array(nonEmptyString);
+const finalMarkdownRequiredHeadings = [
+  "# 意思決定メモ",
+  "## 相談テーマ",
+  "## 現時点の状態",
+  "## 重視した価値観",
+  "## 整理した事実",
+  "## 検討した選択肢",
+  "## 主な判断軸",
+  "## 専門家コメント要約",
+  "## 意見が割れた点",
+  "## 未確認事項",
+  "## 次アクション",
+  "## セッションログ要約"
+] as const;
+
+const finalMemoStatusLabels = [
+  "暫定結論",
+  "判断保留",
+  "追加調査待ち",
+  "家族・関係者相談待ち",
+  "実行計画"
+] as const;
 
 export const PhaseSchema = z.enum([
   "consultation_input",
@@ -64,6 +86,12 @@ export const SessionMemoSchema = z.strictObject({
 });
 
 export type SessionMemo = z.infer<typeof SessionMemoSchema>;
+
+export const FinalSessionMemoSchema = SessionMemoSchema.extend({
+  status: FinalMemoStatusSchema
+});
+
+export type FinalSessionMemo = z.infer<typeof FinalSessionMemoSchema>;
 
 export const ConsultationRequestSchema = z.strictObject({
   consultation: nonEmptyString,
@@ -149,6 +177,32 @@ export type FacilitatorResponse = z.infer<typeof FacilitatorResponseSchema>;
 
 export const FinalMarkdownSchema = z.strictObject({
   markdown: nonEmptyString
+}).superRefine((output, context) => {
+  for (const heading of finalMarkdownRequiredHeadings) {
+    if (!output.markdown.includes(heading)) {
+      context.addIssue({
+        code: "custom",
+        message: `markdown must include ${heading}`,
+        path: ["markdown"]
+      });
+    }
+  }
+
+  if (!finalMemoStatusLabels.some((label) => output.markdown.includes(label))) {
+    context.addIssue({
+      code: "custom",
+      message: "markdown must include a final memo status label",
+      path: ["markdown"]
+    });
+  }
 });
 
 export type FinalMarkdown = z.infer<typeof FinalMarkdownSchema>;
+
+export const FinalMarkdownRequestSchema = z.strictObject({
+  consultation: nonEmptyString,
+  memo: FinalSessionMemoSchema,
+  expertComments: z.array(ExpertCommentSchema).optional()
+});
+
+export type FinalMarkdownRequest = z.infer<typeof FinalMarkdownRequestSchema>;

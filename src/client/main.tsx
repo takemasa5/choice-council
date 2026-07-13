@@ -6,6 +6,9 @@ import type {
   ExpertCommentRequest,
   ExpertRequest,
   FacilitatorResponse,
+  FinalMarkdown,
+  FinalMarkdownRequest,
+  FinalSessionMemo,
   Phase,
   SessionMemo,
   SessionMemoRequest
@@ -89,6 +92,9 @@ function App() {
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
+  const [finalMarkdown, setFinalMarkdown] = useState("");
+  const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] = useState(false);
+  const [finalMarkdownErrorMessage, setFinalMarkdownErrorMessage] = useState("");
   const canRequestPause = isLoading || isGeneratingExperts;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
@@ -190,6 +196,8 @@ function App() {
     pauseRequestedRef.current = false;
     setMemoNotice("");
     setMemoErrorMessage("");
+    setFinalMarkdown("");
+    setFinalMarkdownErrorMessage("");
 
     try {
       const apiResponse = await fetch("/api/facilitator/start", {
@@ -315,7 +323,7 @@ function App() {
   }
 
   function clearSession() {
-    if (isLoading || isUpdatingMemo || isGeneratingExperts) return;
+    if (isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown) return;
 
     window.localStorage.removeItem(storageKey);
     setConsultation("");
@@ -340,10 +348,12 @@ function App() {
     setConfirmedExperts([]);
     setExpertComments([]);
     setExpertErrorMessage("");
+    setFinalMarkdown("");
+    setFinalMarkdownErrorMessage("");
   }
 
   function returnToPhase(targetPhase: Phase) {
-    if (isLoading || isUpdatingMemo || isGeneratingExperts) return;
+    if (isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown) return;
 
     const confirmed = window.confirm(
       "このフェーズに戻ると、以降の整理内容と生成結果は破棄されます。戻りますか？"
@@ -370,6 +380,8 @@ function App() {
     setConfirmedExperts([]);
     setExpertComments([]);
     setExpertErrorMessage("");
+    setFinalMarkdown("");
+    setFinalMarkdownErrorMessage("");
   }
 
   function updateExpertDraft(index: number, field: keyof ExpertRequest, value: string) {
@@ -494,6 +506,8 @@ function App() {
     const expertCommentPhase = currentPhase === "expert_selection" ? "deliberation" : currentPhase;
 
     setIsGeneratingExperts(true);
+    setFinalMarkdown("");
+    setFinalMarkdownErrorMessage("");
 
     try {
       const comments = await Promise.all(
@@ -529,6 +543,67 @@ function App() {
     } finally {
       setIsGeneratingExperts(false);
     }
+  }
+
+  async function generateFinalMarkdown() {
+    setFinalMarkdownErrorMessage("");
+
+    if (!memo) {
+      setFinalMarkdownErrorMessage("終了メモを作るためのセッションメモがまだありません。");
+      return;
+    }
+
+    if (!isFinalSessionMemo(memo)) {
+      setFinalMarkdownErrorMessage("終了メモ生成前に、方向性整理または次アクション確認まで進めてください。");
+      if (currentPhase !== "direction") {
+        setCurrentPhase("direction");
+      }
+      return;
+    }
+
+    const request: FinalMarkdownRequest = {
+      consultation,
+      memo,
+      expertComments: expertComments.length > 0 ? expertComments : undefined
+    };
+
+    setIsGeneratingFinalMarkdown(true);
+
+    try {
+      const apiResponse = await fetch("/api/final-markdown/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(request)
+      });
+      const body = await apiResponse.json();
+
+      if (!apiResponse.ok) {
+        setFinalMarkdownErrorMessage(body.message ?? "終了メモの生成に失敗しました。");
+        return;
+      }
+
+      const generated = body as FinalMarkdown;
+      setFinalMarkdown(generated.markdown);
+      moveResponseToPhase("final_memo");
+    } catch (error) {
+      setFinalMarkdownErrorMessage(error instanceof Error ? error.message : "終了メモの生成に失敗しました。");
+    } finally {
+      setIsGeneratingFinalMarkdown(false);
+    }
+  }
+
+  function downloadFinalMarkdown() {
+    if (!finalMarkdown) return;
+
+    const blob = new Blob([finalMarkdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "choice-council-memo.md";
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   async function carryResearchNeedsToMemo(comments: ExpertComment[], targetPhase: Phase) {
@@ -797,7 +872,7 @@ function App() {
                 className="primary-button"
                 type="button"
                 onClick={startSession}
-                disabled={isLoading || isGeneratingExperts}
+                disabled={isLoading || isGeneratingExperts || isGeneratingFinalMarkdown}
               >
                 {isLoading ? "整理中..." : response ? "もう一度整理する" : "相談を開始する"}
               </button>
@@ -1030,7 +1105,7 @@ function App() {
                     type="button"
                     key={phase}
                     onClick={() => returnToPhase(phase)}
-                    disabled={isLoading || isUpdatingMemo || isGeneratingExperts}
+                    disabled={isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown}
                   >
                     {phaseLabels[phase]}へ戻る
                   </button>
@@ -1048,7 +1123,7 @@ function App() {
                 className="text-button danger"
                 type="button"
                 onClick={clearSession}
-                disabled={isLoading || isUpdatingMemo || isGeneratingExperts}
+                disabled={isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown}
               >
                 削除
               </button>
@@ -1058,10 +1133,30 @@ function App() {
               <button className="secondary-button" type="button" onClick={saveCurrentSession}>
                 一時保存
               </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={generateFinalMarkdown}
+                disabled={!memo || isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown}
+              >
+                {isGeneratingFinalMarkdown ? "終了メモ生成中..." : "終了メモを生成"}
+              </button>
+              {finalMarkdown && (
+                <button className="secondary-button" type="button" onClick={downloadFinalMarkdown}>
+                  Markdown保存
+                </button>
+              )}
               {isUpdatingMemo && <span>メモ更新中...</span>}
             </div>
             {memoNotice && <p className="notice">{memoNotice}</p>}
             {memoErrorMessage && <p className="error">{memoErrorMessage}</p>}
+            {finalMarkdownErrorMessage && <p className="error">{finalMarkdownErrorMessage}</p>}
+            {finalMarkdown && (
+              <section className="final-markdown-preview" aria-label="Markdown終了メモ">
+                <h3>Markdown終了メモ</h3>
+                <pre>{finalMarkdown}</pre>
+              </section>
+            )}
             {memo ? <MemoView memo={memo} /> : <p className="empty">相談を開始すると、前提や未確認事項をここに整理します。</p>}
           </div>
         </aside>
@@ -1154,6 +1249,10 @@ function formatExpertMemoSummary(comment: ExpertComment) {
     `最重要ポイント: ${comment.key_point}`,
     `懸念・不明点: ${comment.concern}`
   ].join(" / ");
+}
+
+function isFinalSessionMemo(memo: SessionMemo): memo is FinalSessionMemo {
+  return memo.status !== "in_progress";
 }
 
 function MemoView({ memo }: { memo: SessionMemo }) {
