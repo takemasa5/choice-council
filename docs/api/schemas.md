@@ -178,7 +178,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 | concerns | 必須 | 不安や懸念 |
 | options | 必須 | 検討した選択肢 |
 | decision_axes | 必須 | 判断軸 |
-| expert_summaries | 必須 | 専門家コメントの要点 |
+| expert_summaries | 必須 | 専門家コメントの要約、要点、懸念 |
 | conflicts | 必須 | 意見が割れた点 |
 | open_questions | 必須 | 未確認事項 |
 | next_actions | 必須 | 次アクション候補 |

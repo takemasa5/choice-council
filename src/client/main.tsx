@@ -446,7 +446,7 @@ function App() {
           expert_summaries: replaceExpertMemoItems(
             currentResponse.memo_updates.expert_summaries,
             comments.map((comment) => comment.role_name),
-            comments.map((comment) => `${comment.role_name}: ${comment.key_point}`)
+            comments.map(formatExpertMemoSummary)
           ),
           open_questions: replaceExpertMemoItems(
             currentResponse.memo_updates.open_questions,
@@ -882,6 +882,14 @@ function replaceExpertMemoItems(items: string[], roleNames: string[], nextItems:
     }),
     ...nextItems
   ];
+}
+
+function formatExpertMemoSummary(comment: ExpertComment) {
+  return [
+    `${comment.role_name}: ${comment.summary}`,
+    `最重要ポイント: ${comment.key_point}`,
+    `懸念・不明点: ${comment.concern}`
+  ].join(" / ");
 }
 
 function MemoView({ memo }: { memo: SessionMemo }) {
