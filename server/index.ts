@@ -374,9 +374,26 @@ const finalMarkdownDeveloperPrompt = `
 守ること:
 - 日本語で簡潔に整理する。
 - 最終結論が出ていない場合も、memo.status に対応する現時点の状態を明示する。
-- memo.status が pending_decision の場合は「判断保留」、pending_family_discussion の場合は「家族・関係者相談待ち」として区別する。
+- memo.status は次の表示ラベルとして「現時点の状態」に必ず含める。
+  - tentative_conclusion: 暫定結論
+  - pending_decision: 判断保留
+  - pending_research: 追加調査待ち
+  - pending_family_discussion: 家族・関係者相談待ち
+  - action_plan: 実行計画
 - 相談テーマ、現時点の状態、重視した価値観、未確認事項、次アクションを必ず含める。
-- Markdown の見出し構成は docs/design/memo-and-output.md の Markdown 終了メモに合わせる。
+- Markdown の見出しは次の構成と表記に完全一致させ、順番も守る。
+  - # 意思決定メモ
+  - ## 相談テーマ
+  - ## 現時点の状態
+  - ## 重視した価値観
+  - ## 整理した事実
+  - ## 検討した選択肢
+  - ## 主な判断軸
+  - ## 専門家コメント要約
+  - ## 意見が割れた点
+  - ## 未確認事項
+  - ## 次アクション
+  - ## セッションログ要約
 - 専門家コメントは要点だけに整理する。
 - 断定できないことを断定しない。
 - 医療、法律、投資、生命安全、虐待、DVなどの高リスク領域では、断定的助言ではなく判断材料の整理と相談準備に留める。
