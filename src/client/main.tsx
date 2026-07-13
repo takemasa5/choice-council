@@ -54,6 +54,11 @@ type StoredSession = {
   responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
   currentPhase: Phase;
   expertComments?: ExpertComment[];
+  interruption?: {
+    isReady: boolean;
+    selectedOption: string;
+    otherAnswer: string;
+  };
 };
 
 function App() {
@@ -108,6 +113,7 @@ function App() {
       setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
       setExpertComments(parsed.expertComments ?? []);
       restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
+      restoreInterruption(parsed.interruption);
     } catch {
       window.localStorage.removeItem(storageKey);
     } finally {
@@ -133,8 +139,7 @@ function App() {
       return;
     }
 
-    const request = buildRequest();
-    const session: StoredSession = { request, response, responseHistory, currentPhase, expertComments };
+    const session = buildStoredSession();
     window.localStorage.setItem(storageKey, JSON.stringify(session));
   }, [
     consultation,
@@ -249,6 +254,10 @@ function App() {
       return selectedInterruptionOption;
     }
 
+    return getResponseQuestionAnswer();
+  }
+
+  function getResponseQuestionAnswer() {
     if (response?.user_question) {
       if (!selectedQuestionOption) return undefined;
       if (selectedQuestionOption === "その他") return emptyToUndefined(otherQuestionAnswer);
@@ -294,6 +303,14 @@ function App() {
 
     setSelectedQuestionOption("その他");
     setOtherQuestionAnswer(answer);
+  }
+
+  function restoreInterruption(interruption: StoredSession["interruption"]) {
+    if (!interruption) return;
+
+    setIsInterruptionReady(interruption.isReady);
+    setSelectedInterruptionOption(interruption.selectedOption);
+    setInterruptionOtherAnswer(interruption.otherAnswer);
   }
 
   function clearSession() {
@@ -642,10 +659,34 @@ function App() {
   }
 
   function saveCurrentSession() {
-    const request = buildRequest();
-    const session: StoredSession = { request, response, responseHistory, currentPhase, expertComments };
+    const session = buildStoredSession();
     window.localStorage.setItem(storageKey, JSON.stringify(session));
     setMemoNotice("この端末に一時保存しました。");
+  }
+
+  function buildStoredSession(): StoredSession {
+    const request = {
+      ...buildRequest(),
+      userQuestion: response?.user_question ?? undefined,
+      userQuestionAnswer: getResponseQuestionAnswer()
+    };
+    const hasInterruptionState =
+      isInterruptionReady || Boolean(selectedInterruptionOption) || Boolean(interruptionOtherAnswer);
+
+    return {
+      request,
+      response,
+      responseHistory,
+      currentPhase,
+      expertComments,
+      interruption: hasInterruptionState
+        ? {
+            isReady: isInterruptionReady,
+            selectedOption: selectedInterruptionOption,
+            otherAnswer: interruptionOtherAnswer
+          }
+        : undefined
+    };
   }
 
   function clearExpertMemoItems(roleNames: string[]) {
