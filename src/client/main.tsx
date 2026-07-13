@@ -154,6 +154,7 @@ function App() {
     selectedQuestionOption,
     otherQuestionAnswer,
     selectedInterruptionOption,
+    interruptionOtherAnswer,
     hasRestoredSession
   ]);
 
