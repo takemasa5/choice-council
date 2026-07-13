@@ -146,7 +146,11 @@ app.post("/api/expert/comment", async (request, response) => {
       return;
     }
 
-    response.json(output);
+    response.json({
+      ...output,
+      role_name: parsedRequest.data.expert.role_name,
+      viewpoint: parsedRequest.data.expert.viewpoint
+    });
   } catch (error) {
     response.status(502).json({
       error: "openai_request_failed",
