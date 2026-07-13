@@ -188,9 +188,6 @@ function App() {
     setIsLoading(true);
     setPauseRequested(false);
     pauseRequestedRef.current = false;
-    setIsInterruptionReady(false);
-    setSelectedInterruptionOption("");
-    setInterruptionOtherAnswer("");
     setMemoNotice("");
     setMemoErrorMessage("");
 
@@ -223,6 +220,9 @@ function App() {
       setResponse(responseWithMemo);
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
+      setIsInterruptionReady(false);
+      setSelectedInterruptionOption("");
+      setInterruptionOtherAnswer("");
       setExpertComments([]);
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
