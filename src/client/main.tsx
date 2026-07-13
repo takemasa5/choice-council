@@ -119,7 +119,9 @@ function App() {
         return;
       }
 
-      setCurrentPhase(facilitatorResponse.current_phase);
+      if (shouldAdoptModelPhase(facilitatorResponse.next_action)) {
+        setCurrentPhase(facilitatorResponse.current_phase);
+      }
       setResponse(facilitatorResponse);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
@@ -310,6 +312,10 @@ function isAllowedModelPhase(currentPhase: Phase, modelPhase: Phase) {
   const modelIndex = phaseOrder.indexOf(modelPhase);
 
   return modelIndex === currentIndex || modelIndex === currentIndex + 1;
+}
+
+function shouldAdoptModelPhase(nextAction: FacilitatorResponse["next_action"]) {
+  return nextAction === "move_phase" || nextAction === "finish";
 }
 
 function MemoView({ memo }: { memo: SessionMemo }) {
