@@ -87,6 +87,15 @@ export const ExpertRequestSchema = z.strictObject({
 
 export type ExpertRequest = z.infer<typeof ExpertRequestSchema>;
 
+export const ExpertCommentRequestSchema = z.strictObject({
+  consultation: nonEmptyString,
+  currentPhase: PhaseSchema,
+  memo: SessionMemoSchema.optional(),
+  expert: ExpertRequestSchema
+});
+
+export type ExpertCommentRequest = z.infer<typeof ExpertCommentRequestSchema>;
+
 export const ExpertCommentSchema = z.strictObject({
   role_name: nonEmptyString,
   viewpoint: nonEmptyString,

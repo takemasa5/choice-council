@@ -33,6 +33,17 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 
 専門家コメントは、専門家ごとの個別 LLM 呼び出しで生成する。専門家は人間的なキャラクターではなく、役割と観点として扱う。
 
+専門家コメント呼び出しの入力は、確定済み専門家ロールと現在文脈である。
+
+| フィールド | 必須 | 内容 |
+|---|---:|---|
+| consultation | 必須 | ユーザーの相談内容 |
+| currentPhase | 必須 | アプリ側の現在フェーズ |
+| memo | 任意 | 現時点までのセッションメモ |
+| expert | 必須 | 確定済み専門家ロール。`role_name`, `viewpoint`, `request` を含む |
+
+`expert.viewpoint` は専門家へそのまま渡す指定観点であり、専門家は観点を推測で補完しない。
+
 ```json
 {
   "role_name": "家計・生活負担アドバイザー",
@@ -57,7 +68,7 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 | confidence | 必須 | `high`, `medium`, `low` のいずれか |
 | needs_research | 必須 | 外部情報の確認が必要なら `true` |
 
-MVP では外部調査を実施しない。`needs_research: true` の内容は、断定せずセッションメモの未確認事項へ送る。
+MVP では外部調査を実施しない。`needs_research: true` の内容と、「なし」以外の `question_to_user` は、断定せずセッションメモの未確認事項へ送る。
 
 ## ファシリテーター出力
 
@@ -167,7 +178,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容は�
 | concerns | 必須 | 不安や懸念 |
 | options | 必須 | 検討した選択肢 |
 | decision_axes | 必須 | 判断軸 |
-| expert_summaries | 必須 | 専門家コメントの要点 |
+| expert_summaries | 必須 | 専門家コメントの要約、要点、懸念 |
 | conflicts | 必須 | 意見が割れた点 |
 | open_questions | 必須 | 未確認事項 |
 | next_actions | 必須 | 次アクション候補 |
