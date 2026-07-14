@@ -292,7 +292,10 @@ app.post("/api/final-markdown/generate", async (request, response) => {
       return;
     }
 
-    if (!output.markdown.includes(finalMemoStatusLabels[parsedRequest.data.memo.status])) {
+    const expectedStatusLabel = finalMemoStatusLabels[parsedRequest.data.memo.status];
+    const currentStatusSection = getMarkdownSection(output.markdown, "## 現時点の状態");
+
+    if (!currentStatusSection.includes(expectedStatusLabel)) {
       response.status(502).json({
         error: "invalid_model_response",
         message: "終了メモの現時点の状態がセッションメモと一致しません。"
@@ -407,3 +410,24 @@ const finalMemoStatusLabels = {
   pending_family_discussion: "家族・関係者相談待ち",
   action_plan: "実行計画"
 } as const;
+
+function getMarkdownSection(markdown: string, heading: string): string {
+  const lines = markdown.split(/\r?\n/);
+  const startIndex = lines.findIndex((line) => line.trim() === heading);
+
+  if (startIndex === -1) {
+    return "";
+  }
+
+  const sectionLines: string[] = [];
+
+  for (const line of lines.slice(startIndex + 1)) {
+    if (/^#{1,2}\s/.test(line.trim())) {
+      break;
+    }
+
+    sectionLines.push(line);
+  }
+
+  return sectionLines.join("\n");
+}
