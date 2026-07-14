@@ -1,6 +1,7 @@
 import express, { type Response } from "express";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
+import { ZodError } from "zod";
 import {
   ConsultationRequestSchema,
   ExpertCommentRequestSchema,
@@ -308,7 +309,18 @@ async function parseStructuredOutputOnceWithRetry<T>(
   isValid: (output: T) => boolean = () => true
 ) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await request();
+    const result = await request().catch((error: unknown) => {
+      if (isStructuredOutputParseError(error)) {
+        return null;
+      }
+
+      throw error;
+    });
+
+    if (!result) {
+      continue;
+    }
+
     const output = result.output_parsed;
 
     if (output && isValid(output)) {
@@ -324,6 +336,10 @@ function sendInvalidModelResponse(response: Response) {
     error: "invalid_model_response",
     message: invalidModelResponseMessage
   });
+}
+
+function isStructuredOutputParseError(error: unknown) {
+  return error instanceof SyntaxError || error instanceof ZodError;
 }
 
 const facilitatorDeveloperPrompt = `
