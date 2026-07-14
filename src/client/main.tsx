@@ -11,19 +11,20 @@ import type {
   FinalSessionMemo,
   Phase,
   SessionMemo,
-  SessionMemoRequest
+  SessionMemoRequest,
 } from "../shared/schemas/session";
 import "./styles.css";
 
 const storageKey = "choice-council-session";
-const invalidGenerationMessage = "この発言の生成に失敗しました。再生成できます。";
+const invalidGenerationMessage =
+  "この発言の生成に失敗しました。再生成できます。";
 const phaseOrder: Phase[] = [
   "consultation_input",
   "premise",
   "expert_selection",
   "deliberation",
   "direction",
-  "final_memo"
+  "final_memo",
 ];
 
 const phaseLabels: Record<Phase, string> = {
@@ -32,7 +33,7 @@ const phaseLabels: Record<Phase, string> = {
   expert_selection: "専門家選定",
   deliberation: "検討",
   direction: "方向性整理",
-  final_memo: "終了メモ"
+  final_memo: "終了メモ",
 };
 
 const nextActionLabels: Record<FacilitatorResponse["next_action"], string> = {
@@ -40,7 +41,7 @@ const nextActionLabels: Record<FacilitatorResponse["next_action"], string> = {
   request_experts: "専門家コメント生成候補",
   update_memo: "セッションメモ更新候補",
   move_phase: "次フェーズ候補",
-  finish: "終了候補"
+  finish: "終了候補",
 };
 
 const interruptionOptions = [
@@ -49,7 +50,7 @@ const interruptionOptions = [
   "外部情報を調べたい",
   "別の選択肢を追加したい",
   "いったんまとめたい",
-  "その他"
+  "その他",
 ];
 
 type StoredSession = {
@@ -74,7 +75,9 @@ function App() {
   const [expectedOutcome, setExpectedOutcome] = useState("");
   const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [response, setResponse] = useState<FacilitatorResponse | null>(null);
-  const [responseHistory, setResponseHistory] = useState<Partial<Record<Phase, FacilitatorResponse>>>({});
+  const [responseHistory, setResponseHistory] = useState<
+    Partial<Record<Phase, FacilitatorResponse>>
+  >({});
   const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
   const [hasRestoredSession, setHasRestoredSession] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -82,7 +85,8 @@ function App() {
   const [pauseRequested, setPauseRequested] = useState(false);
   const pauseRequestedRef = useRef(false);
   const [isInterruptionReady, setIsInterruptionReady] = useState(false);
-  const [selectedInterruptionOption, setSelectedInterruptionOption] = useState("");
+  const [selectedInterruptionOption, setSelectedInterruptionOption] =
+    useState("");
   const [interruptionOtherAnswer, setInterruptionOtherAnswer] = useState("");
   const [isUpdatingMemo, setIsUpdatingMemo] = useState(false);
   const [memoNotice, setMemoNotice] = useState("");
@@ -95,8 +99,10 @@ function App() {
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
   const [finalMarkdown, setFinalMarkdown] = useState("");
-  const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] = useState(false);
-  const [finalMarkdownErrorMessage, setFinalMarkdownErrorMessage] = useState("");
+  const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] =
+    useState(false);
+  const [finalMarkdownErrorMessage, setFinalMarkdownErrorMessage] =
+    useState("");
   const canRequestPause = isLoading || isGeneratingExperts;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
@@ -117,8 +123,14 @@ function App() {
       setConcerns(parsed.request.concerns ?? "");
       setExpectedOutcome(parsed.request.expectedOutcome ?? "");
       setResponse(parsed.response);
-      setResponseHistory(parsed.responseHistory ?? responseToHistory(parsed.response));
-      setCurrentPhase(parsed.currentPhase ?? parsed.response?.current_phase ?? "consultation_input");
+      setResponseHistory(
+        parsed.responseHistory ?? responseToHistory(parsed.response),
+      );
+      setCurrentPhase(
+        parsed.currentPhase ??
+          parsed.response?.current_phase ??
+          "consultation_input",
+      );
       setExpertComments(parsed.expertComments ?? []);
       setFinalMarkdown(parsed.finalMarkdown ?? "");
       restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
@@ -166,7 +178,7 @@ function App() {
     otherQuestionAnswer,
     selectedInterruptionOption,
     interruptionOtherAnswer,
-    hasRestoredSession
+    hasRestoredSession,
   ]);
 
   useEffect(() => {
@@ -176,7 +188,10 @@ function App() {
   }, [expertRequestKey]);
 
   const memo = useMemo<SessionMemo | null>(() => {
-    return response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase);
+    return (
+      response?.memo_updates ??
+      getLatestMemoBeforePhase(responseHistory, currentPhase)
+    );
   }, [response, responseHistory, currentPhase]);
   const canGenerateFinalMarkdown =
     Boolean(memo) &&
@@ -216,9 +231,9 @@ function App() {
       const apiResponse = await fetch("/api/facilitator/start", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
       });
 
       const body = await apiResponse.json();
@@ -229,13 +244,21 @@ function App() {
       }
 
       const facilitatorResponse = body as FacilitatorResponse;
-      const acceptedPhase = getAcceptedModelPhase(currentPhase, facilitatorResponse);
+      const acceptedPhase = getAcceptedModelPhase(
+        currentPhase,
+        facilitatorResponse,
+      );
       if (!acceptedPhase) {
-        setErrorMessage("現在のフェーズから許可されていない応答が返されました。");
+        setErrorMessage(
+          "現在のフェーズから許可されていない応答が返されました。",
+        );
         return;
       }
 
-      const responseWithMemo = await updateSessionMemoForResponse(facilitatorResponse, acceptedPhase);
+      const responseWithMemo = await updateSessionMemoForResponse(
+        facilitatorResponse,
+        acceptedPhase,
+      );
 
       setCurrentPhase(acceptedPhase);
       setResponse(responseWithMemo);
@@ -247,11 +270,13 @@ function App() {
       setExpertComments([]);
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
-        [acceptedPhase]: responseWithMemo
+        [acceptedPhase]: responseWithMemo,
       }));
       showInterruptionOptionsIfPaused();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
+      setErrorMessage(
+        error instanceof Error ? error.message : "通信に失敗しました。",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -267,7 +292,10 @@ function App() {
       userQuestion: getActiveUserQuestion(),
       userQuestionAnswer: getUserQuestionAnswer(),
       currentPhase,
-      memo: response?.memo_updates ?? getLatestMemoBeforePhase(responseHistory, currentPhase) ?? undefined
+      memo:
+        response?.memo_updates ??
+        getLatestMemoBeforePhase(responseHistory, currentPhase) ??
+        undefined,
     };
   }
 
@@ -282,7 +310,8 @@ function App() {
   function getResponseQuestionAnswer() {
     if (response?.user_question) {
       if (!selectedQuestionOption) return undefined;
-      if (selectedQuestionOption === "その他") return emptyToUndefined(otherQuestionAnswer);
+      if (selectedQuestionOption === "その他")
+        return emptyToUndefined(otherQuestionAnswer);
       return selectedQuestionOption;
     }
 
@@ -294,7 +323,7 @@ function App() {
       return {
         question: "割り込み後にどこから調整しますか？",
         options: interruptionOptions,
-        required: false
+        required: false,
       };
     }
 
@@ -309,7 +338,10 @@ function App() {
       : "先に質問へ回答してください。";
   }
 
-  function restoreQuestionAnswer(answer: string | undefined, storedResponse: FacilitatorResponse | null) {
+  function restoreQuestionAnswer(
+    answer: string | undefined,
+    storedResponse: FacilitatorResponse | null,
+  ) {
     const question = storedResponse?.user_question;
     if (!answer || !question) {
       setSelectedQuestionOption("");
@@ -336,7 +368,13 @@ function App() {
   }
 
   function clearSession() {
-    if (isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown) return;
+    if (
+      isLoading ||
+      isUpdatingMemo ||
+      isGeneratingExperts ||
+      isGeneratingFinalMarkdown
+    )
+      return;
 
     window.localStorage.removeItem(storageKey);
     setConsultation("");
@@ -366,15 +404,24 @@ function App() {
   }
 
   function returnToPhase(targetPhase: Phase) {
-    if (isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown) return;
+    if (
+      isLoading ||
+      isUpdatingMemo ||
+      isGeneratingExperts ||
+      isGeneratingFinalMarkdown
+    )
+      return;
 
     const confirmed = window.confirm(
-      "このフェーズに戻ると、以降の整理内容と生成結果は破棄されます。戻りますか？"
+      "このフェーズに戻ると、以降の整理内容と生成結果は破棄されます。戻りますか？",
     );
 
     if (!confirmed) return;
 
-    const nextResponseHistory = keepResponsesBeforePhase(responseHistory, targetPhase);
+    const nextResponseHistory = keepResponsesBeforePhase(
+      responseHistory,
+      targetPhase,
+    );
 
     setCurrentPhase(targetPhase);
     setResponse(nextResponseHistory[targetPhase] ?? null);
@@ -397,7 +444,11 @@ function App() {
     setFinalMarkdownErrorMessage("");
   }
 
-  function updateExpertDraft(index: number, field: keyof ExpertRequest, value: string) {
+  function updateExpertDraft(
+    index: number,
+    field: keyof ExpertRequest,
+    value: string,
+  ) {
     if (isGeneratingExperts) return;
 
     resetConfirmedExperts();
@@ -417,8 +468,8 @@ function App() {
       {
         role_name: "",
         viewpoint: "",
-        request: ""
-      }
+        request: "",
+      },
     ]);
   }
 
@@ -426,7 +477,9 @@ function App() {
     if (isGeneratingExperts) return;
 
     resetConfirmedExperts();
-    setExpertDrafts((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setExpertDrafts((current) =>
+      current.filter((_, currentIndex) => currentIndex !== index),
+    );
   }
 
   function replaceExpertDraft(index: number) {
@@ -439,7 +492,7 @@ function App() {
           ? {
               role_name: "",
               viewpoint: "",
-              request: expert.request
+              request: expert.request,
             }
           : expert;
       });
@@ -464,24 +517,31 @@ function App() {
       return;
     }
 
-    const validExperts = expertDrafts
-      .map((expert) => ({
-        role_name: expert.role_name.trim(),
-        viewpoint: expert.viewpoint.trim(),
-        request: expert.request.trim()
-      }));
+    const validExperts = expertDrafts.map((expert) => ({
+      role_name: expert.role_name.trim(),
+      viewpoint: expert.viewpoint.trim(),
+      request: expert.request.trim(),
+    }));
 
     const hasIncompleteExpert = validExperts.some((expert) => {
-      const enteredFields = [expert.role_name, expert.viewpoint, expert.request].filter(Boolean).length;
+      const enteredFields = [
+        expert.role_name,
+        expert.viewpoint,
+        expert.request,
+      ].filter(Boolean).length;
       return enteredFields > 0 && enteredFields < 3;
     });
 
     if (hasIncompleteExpert) {
-      setExpertErrorMessage("追加した専門家ロールの役割名、観点、依頼をすべて入力してください。");
+      setExpertErrorMessage(
+        "追加した専門家ロールの役割名、観点、依頼をすべて入力してください。",
+      );
       return;
     }
 
-    const completedExperts = validExperts.filter((expert) => expert.role_name && expert.viewpoint && expert.request);
+    const completedExperts = validExperts.filter(
+      (expert) => expert.role_name && expert.viewpoint && expert.request,
+    );
 
     if (completedExperts.length === 0) {
       setExpertErrorMessage("確定する専門家ロールを1件以上入力してください。");
@@ -516,7 +576,8 @@ function App() {
       return;
     }
 
-    const expertCommentPhase = currentPhase === "expert_selection" ? "deliberation" : currentPhase;
+    const expertCommentPhase =
+      currentPhase === "expert_selection" ? "deliberation" : currentPhase;
 
     setIsGeneratingExperts(true);
     setFinalMarkdown("");
@@ -529,14 +590,14 @@ function App() {
             consultation,
             currentPhase: expertCommentPhase,
             memo: memo ?? undefined,
-            expert
+            expert,
           };
           const apiResponse = await fetch("/api/expert/comment", {
             method: "POST",
             headers: {
-              "Content-Type": "application/json"
+              "Content-Type": "application/json",
             },
-            body: JSON.stringify(request)
+            body: JSON.stringify(request),
           });
           const body = await apiResponse.json();
 
@@ -545,14 +606,16 @@ function App() {
           }
 
           return body as ExpertComment;
-        })
+        }),
       );
 
       setExpertComments(comments);
       await carryResearchNeedsToMemo(comments, expertCommentPhase);
       showInterruptionOptionsIfPaused();
     } catch (error) {
-      setExpertErrorMessage(error instanceof Error ? error.message : "通信に失敗しました。");
+      setExpertErrorMessage(
+        error instanceof Error ? error.message : "通信に失敗しました。",
+      );
     } finally {
       setIsGeneratingExperts(false);
     }
@@ -568,19 +631,23 @@ function App() {
     }
 
     if (!memo) {
-      setFinalMarkdownErrorMessage("終了メモを作るためのセッションメモがまだありません。");
+      setFinalMarkdownErrorMessage(
+        "終了メモを作るためのセッションメモがまだありません。",
+      );
       return;
     }
 
     if (!isFinalSessionMemo(memo)) {
-      setFinalMarkdownErrorMessage("終了メモ生成前に、方向性整理または次アクション確認まで進めてください。");
+      setFinalMarkdownErrorMessage(
+        "終了メモ生成前に、方向性整理または次アクション確認まで進めてください。",
+      );
       return;
     }
 
     const request: FinalMarkdownRequest = {
       consultation,
       memo,
-      expertComments: expertComments.length > 0 ? expertComments : undefined
+      expertComments: expertComments.length > 0 ? expertComments : undefined,
     };
 
     setIsGeneratingFinalMarkdown(true);
@@ -589,9 +656,9 @@ function App() {
       const apiResponse = await fetch("/api/final-markdown/generate", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
       });
       const body = await apiResponse.json();
 
@@ -604,7 +671,11 @@ function App() {
       setFinalMarkdown(generated.markdown);
       moveResponseToPhase("final_memo");
     } catch (error) {
-      setFinalMarkdownErrorMessage(error instanceof Error ? error.message : "終了メモの生成に失敗しました。");
+      setFinalMarkdownErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "終了メモの生成に失敗しました。",
+      );
     } finally {
       setIsGeneratingFinalMarkdown(false);
     }
@@ -613,7 +684,9 @@ function App() {
   function downloadFinalMarkdown() {
     if (!finalMarkdown) return;
 
-    const blob = new Blob([finalMarkdown], { type: "text/markdown;charset=utf-8" });
+    const blob = new Blob([finalMarkdown], {
+      type: "text/markdown;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -622,7 +695,10 @@ function App() {
     URL.revokeObjectURL(url);
   }
 
-  async function carryResearchNeedsToMemo(comments: ExpertComment[], targetPhase: Phase) {
+  async function carryResearchNeedsToMemo(
+    comments: ExpertComment[],
+    targetPhase: Phase,
+  ) {
     const openQuestionItems = comments.flatMap((comment) => {
       const items: string[] = [];
       const questionToUser = comment.question_to_user.trim();
@@ -649,22 +725,26 @@ function App() {
         expert_summaries: replaceExpertMemoItems(
           response.memo_updates.expert_summaries,
           comments.map((comment) => comment.role_name),
-          comments.map(formatExpertMemoSummary)
+          comments.map(formatExpertMemoSummary),
         ),
         open_questions: replaceExpertMemoItems(
           response.memo_updates.open_questions,
           comments.map((comment) => comment.role_name),
-          openQuestionItems
-        )
-      }
+          openQuestionItems,
+        ),
+      },
     };
 
-    const responseWithMemo = await updateSessionMemoForResponse(nextResponse, targetPhase, comments);
+    const responseWithMemo = await updateSessionMemoForResponse(
+      nextResponse,
+      targetPhase,
+      comments,
+    );
 
     setResponse(responseWithMemo);
     setResponseHistory((current) => ({
       ...current,
-      [targetPhase]: responseWithMemo
+      [targetPhase]: responseWithMemo,
     }));
   }
 
@@ -672,7 +752,7 @@ function App() {
     facilitatorResponse: FacilitatorResponse,
     targetPhase: Phase,
     comments: ExpertComment[] = [],
-    userAction?: string
+    userAction?: string,
   ) {
     setIsUpdatingMemo(true);
     setMemoErrorMessage("");
@@ -683,16 +763,16 @@ function App() {
       previousMemo: memo ?? undefined,
       facilitatorResponse,
       expertComments: comments.length > 0 ? comments : undefined,
-      userAction
+      userAction,
     };
 
     try {
       const apiResponse = await fetch("/api/session-memo/update", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
       });
       const body = await apiResponse.json();
 
@@ -704,10 +784,14 @@ function App() {
       setMemoNotice("メモを更新しました。");
       return {
         ...facilitatorResponse,
-        memo_updates: body as SessionMemo
+        memo_updates: body as SessionMemo,
       };
     } catch (error) {
-      setMemoErrorMessage(error instanceof Error ? error.message : "セッションメモの更新に失敗しました。");
+      setMemoErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "セッションメモの更新に失敗しました。",
+      );
       return facilitatorResponse;
     } finally {
       setIsUpdatingMemo(false);
@@ -760,10 +844,12 @@ function App() {
     const request = {
       ...buildRequest(),
       userQuestion: response?.user_question ?? undefined,
-      userQuestionAnswer: getResponseQuestionAnswer()
+      userQuestionAnswer: getResponseQuestionAnswer(),
     };
     const hasInterruptionState =
-      isInterruptionReady || Boolean(selectedInterruptionOption) || Boolean(interruptionOtherAnswer);
+      isInterruptionReady ||
+      Boolean(selectedInterruptionOption) ||
+      Boolean(interruptionOtherAnswer);
 
     return {
       request,
@@ -776,9 +862,9 @@ function App() {
         ? {
             isReady: isInterruptionReady,
             selectedOption: selectedInterruptionOption,
-            otherAnswer: interruptionOtherAnswer
+            otherAnswer: interruptionOtherAnswer,
           }
-        : undefined
+        : undefined,
     };
   }
 
@@ -789,19 +875,34 @@ function App() {
       ...currentResponse,
       memo_updates: {
         ...currentResponse.memo_updates,
-        expert_summaries: replaceExpertMemoItems(currentResponse.memo_updates.expert_summaries, roleNames, []),
-        open_questions: replaceExpertMemoItems(currentResponse.memo_updates.open_questions, roleNames, [])
-      }
+        expert_summaries: replaceExpertMemoItems(
+          currentResponse.memo_updates.expert_summaries,
+          roleNames,
+          [],
+        ),
+        open_questions: replaceExpertMemoItems(
+          currentResponse.memo_updates.open_questions,
+          roleNames,
+          [],
+        ),
+      },
     });
 
     setResponse((currentResponse) => {
-      return currentResponse ? clearFromResponse(currentResponse) : currentResponse;
+      return currentResponse
+        ? clearFromResponse(currentResponse)
+        : currentResponse;
     });
     setResponseHistory((current) => {
       return Object.fromEntries(
         Object.entries(current).map(([phase, currentResponse]) => {
-          return [phase, currentResponse ? clearFromResponse(currentResponse) : currentResponse];
-        })
+          return [
+            phase,
+            currentResponse
+              ? clearFromResponse(currentResponse)
+              : currentResponse,
+          ];
+        }),
       ) as Partial<Record<Phase, FacilitatorResponse>>;
     });
   }
@@ -813,12 +914,12 @@ function App() {
 
       const nextResponse = {
         ...currentResponse,
-        current_phase: nextPhase
+        current_phase: nextPhase,
       };
 
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
-        [nextPhase]: nextResponse
+        [nextPhase]: nextResponse,
       }));
 
       return nextResponse;
@@ -832,9 +933,7 @@ function App() {
           <p className="eyebrow">Choice Council</p>
           <h1>複数の視点で、決めきれない相談を整理する</h1>
         </div>
-        <div className="phase-pill">
-          {phaseLabels[currentPhase]}
-        </div>
+        <div className="phase-pill">{phaseLabels[currentPhase]}</div>
       </section>
 
       <section className="workspace">
@@ -863,15 +962,27 @@ function App() {
               <div className="optional-grid">
                 <label className="field">
                   <span>事実・背景</span>
-                  <textarea value={facts} onChange={(event) => setFacts(event.target.value)} rows={3} />
+                  <textarea
+                    value={facts}
+                    onChange={(event) => setFacts(event.target.value)}
+                    rows={3}
+                  />
                 </label>
                 <label className="field">
                   <span>重視したいこと</span>
-                  <textarea value={values} onChange={(event) => setValues(event.target.value)} rows={3} />
+                  <textarea
+                    value={values}
+                    onChange={(event) => setValues(event.target.value)}
+                    rows={3}
+                  />
                 </label>
                 <label className="field">
                   <span>不安なこと</span>
-                  <textarea value={concerns} onChange={(event) => setConcerns(event.target.value)} rows={3} />
+                  <textarea
+                    value={concerns}
+                    onChange={(event) => setConcerns(event.target.value)}
+                    rows={3}
+                  />
                 </label>
                 <label className="field">
                   <span>期待する結果</span>
@@ -889,9 +1000,15 @@ function App() {
                 className="primary-button"
                 type="button"
                 onClick={startSession}
-                disabled={isLoading || isGeneratingExperts || isGeneratingFinalMarkdown}
+                disabled={
+                  isLoading || isGeneratingExperts || isGeneratingFinalMarkdown
+                }
               >
-                {isLoading ? "整理中..." : response ? "もう一度整理する" : "相談を開始する"}
+                {isLoading
+                  ? "整理中..."
+                  : response
+                    ? "もう一度整理する"
+                    : "相談を開始する"}
               </button>
               <button
                 className="secondary-button"
@@ -911,10 +1028,15 @@ function App() {
             <article className="message-card">
               <div className="message-label">ファシリテーター</div>
               <p>{response.facilitator_message}</p>
-              <p className="next-action">候補行動: {nextActionLabels[response.next_action]}</p>
+              <p className="next-action">
+                候補行動: {nextActionLabels[response.next_action]}
+              </p>
 
               {response.expert_requests.length > 0 && (
-                <section className="expert-request-box" aria-label="専門家ロール候補">
+                <section
+                  className="expert-request-box"
+                  aria-label="専門家ロール候補"
+                >
                   <h3>専門家ロール候補</h3>
                   <div className="expert-request-list">
                     {expertDrafts.map((expertRequest, index) => (
@@ -926,7 +1048,13 @@ function App() {
                           <span>専門家</span>
                           <input
                             value={expertRequest.role_name}
-                            onChange={(event) => updateExpertDraft(index, "role_name", event.target.value)}
+                            onChange={(event) =>
+                              updateExpertDraft(
+                                index,
+                                "role_name",
+                                event.target.value,
+                              )
+                            }
                             disabled={isGeneratingExperts}
                           />
                         </label>
@@ -934,7 +1062,13 @@ function App() {
                           <span>観点</span>
                           <textarea
                             value={expertRequest.viewpoint}
-                            onChange={(event) => updateExpertDraft(index, "viewpoint", event.target.value)}
+                            onChange={(event) =>
+                              updateExpertDraft(
+                                index,
+                                "viewpoint",
+                                event.target.value,
+                              )
+                            }
                             rows={2}
                             disabled={isGeneratingExperts}
                           />
@@ -943,7 +1077,13 @@ function App() {
                           <span>依頼</span>
                           <textarea
                             value={expertRequest.request}
-                            onChange={(event) => updateExpertDraft(index, "request", event.target.value)}
+                            onChange={(event) =>
+                              updateExpertDraft(
+                                index,
+                                "request",
+                                event.target.value,
+                              )
+                            }
                             rows={2}
                             disabled={isGeneratingExperts}
                           />
@@ -1011,20 +1151,30 @@ function App() {
                         onClick={generateExpertComments}
                         disabled={isGeneratingExperts}
                       >
-                        {isGeneratingExperts ? "生成中..." : "専門家コメントを生成する"}
+                        {isGeneratingExperts
+                          ? "生成中..."
+                          : "専門家コメントを生成する"}
                       </button>
                     </div>
                   )}
-                  {expertErrorMessage && <p className="error">{expertErrorMessage}</p>}
+                  {expertErrorMessage && (
+                    <p className="error">{expertErrorMessage}</p>
+                  )}
                 </section>
               )}
 
               {expertComments.length > 0 && (
-                <section className="expert-comment-box" aria-label="専門家コメント">
+                <section
+                  className="expert-comment-box"
+                  aria-label="専門家コメント"
+                >
                   <h3>専門家コメント</h3>
                   <div className="expert-comment-list">
                     {expertComments.map((comment) => (
-                      <article className="expert-comment-item" key={`${comment.role_name}-${comment.viewpoint}`}>
+                      <article
+                        className="expert-comment-item"
+                        key={`${comment.role_name}-${comment.viewpoint}`}
+                      >
                         <div className="expert-comment-header">
                           <strong>{comment.role_name}</strong>
                           <span>{comment.confidence}</span>
@@ -1044,7 +1194,11 @@ function App() {
                             <dd>{comment.question_to_user}</dd>
                           </div>
                         </dl>
-                        {comment.needs_research && <p className="research-note">未確認事項として後続整理へ渡します。</p>}
+                        {comment.needs_research && (
+                          <p className="research-note">
+                            未確認事項として後続整理へ渡します。
+                          </p>
+                        )}
                       </article>
                     ))}
                   </div>
@@ -1059,7 +1213,11 @@ function App() {
                       <button
                         type="button"
                         key={option}
-                        className={selectedQuestionOption === option ? "selected" : undefined}
+                        className={
+                          selectedQuestionOption === option
+                            ? "selected"
+                            : undefined
+                        }
                         onClick={() => setSelectedQuestionOption(option)}
                       >
                         {option}
@@ -1071,7 +1229,9 @@ function App() {
                       <span>自由入力</span>
                       <textarea
                         value={otherQuestionAnswer}
-                        onChange={(event) => setOtherQuestionAnswer(event.target.value)}
+                        onChange={(event) =>
+                          setOtherQuestionAnswer(event.target.value)
+                        }
                         rows={3}
                       />
                     </label>
@@ -1087,7 +1247,11 @@ function App() {
                       <button
                         type="button"
                         key={option}
-                        className={selectedInterruptionOption === option ? "selected" : undefined}
+                        className={
+                          selectedInterruptionOption === option
+                            ? "selected"
+                            : undefined
+                        }
                         onClick={() => chooseInterruptionOption(option)}
                       >
                         {option}
@@ -1099,10 +1263,16 @@ function App() {
                       <span>自由入力</span>
                       <textarea
                         value={interruptionOtherAnswer}
-                        onChange={(event) => setInterruptionOtherAnswer(event.target.value)}
+                        onChange={(event) =>
+                          setInterruptionOtherAnswer(event.target.value)
+                        }
                         rows={3}
                       />
-                      <button className="secondary-button" type="button" onClick={submitInterruptionOther}>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={submitInterruptionOther}
+                      >
                         反映する
                       </button>
                     </label>
@@ -1122,7 +1292,12 @@ function App() {
                     type="button"
                     key={phase}
                     onClick={() => returnToPhase(phase)}
-                    disabled={isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown}
+                    disabled={
+                      isLoading ||
+                      isUpdatingMemo ||
+                      isGeneratingExperts ||
+                      isGeneratingFinalMarkdown
+                    }
                   >
                     {phaseLabels[phase]}へ戻る
                   </button>
@@ -1140,14 +1315,23 @@ function App() {
                 className="text-button danger"
                 type="button"
                 onClick={clearSession}
-                disabled={isLoading || isUpdatingMemo || isGeneratingExperts || isGeneratingFinalMarkdown}
+                disabled={
+                  isLoading ||
+                  isUpdatingMemo ||
+                  isGeneratingExperts ||
+                  isGeneratingFinalMarkdown
+                }
               >
                 削除
               </button>
             </div>
             <p className="privacy-note">この端末に一時保存されます。</p>
             <div className="memo-actions">
-              <button className="secondary-button" type="button" onClick={saveCurrentSession}>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={saveCurrentSession}
+              >
                 一時保存
               </button>
               <button
@@ -1156,10 +1340,16 @@ function App() {
                 onClick={generateFinalMarkdown}
                 disabled={!canGenerateFinalMarkdown}
               >
-                {isGeneratingFinalMarkdown ? "終了メモ生成中..." : "終了メモを生成"}
+                {isGeneratingFinalMarkdown
+                  ? "終了メモ生成中..."
+                  : "終了メモを生成"}
               </button>
               {finalMarkdown && (
-                <button className="secondary-button" type="button" onClick={downloadFinalMarkdown}>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={downloadFinalMarkdown}
+                >
                   Markdown保存
                 </button>
               )}
@@ -1167,14 +1357,25 @@ function App() {
             </div>
             {memoNotice && <p className="notice">{memoNotice}</p>}
             {memoErrorMessage && <p className="error">{memoErrorMessage}</p>}
-            {finalMarkdownErrorMessage && <p className="error">{finalMarkdownErrorMessage}</p>}
+            {finalMarkdownErrorMessage && (
+              <p className="error">{finalMarkdownErrorMessage}</p>
+            )}
             {finalMarkdown && (
-              <section className="final-markdown-preview" aria-label="Markdown終了メモ">
+              <section
+                className="final-markdown-preview"
+                aria-label="Markdown終了メモ"
+              >
                 <h3>Markdown終了メモ</h3>
                 <pre>{finalMarkdown}</pre>
               </section>
             )}
-            {memo ? <MemoView memo={memo} /> : <p className="empty">相談を開始すると、前提や未確認事項をここに整理します。</p>}
+            {memo ? (
+              <MemoView memo={memo} />
+            ) : (
+              <p className="empty">
+                相談を開始すると、前提や未確認事項をここに整理します。
+              </p>
+            )}
           </div>
         </aside>
       </section>
@@ -1189,7 +1390,10 @@ function getReturnablePhases(currentPhase: Phase) {
   return phaseOrder.slice(0, currentIndex);
 }
 
-function getAcceptedModelPhase(currentPhase: Phase, response: FacilitatorResponse) {
+function getAcceptedModelPhase(
+  currentPhase: Phase,
+  response: FacilitatorResponse,
+) {
   const modelPhase = response.current_phase;
   const currentIndex = phaseOrder.indexOf(currentPhase);
   const modelIndex = phaseOrder.indexOf(modelPhase);
@@ -1199,34 +1403,38 @@ function getAcceptedModelPhase(currentPhase: Phase, response: FacilitatorRespons
 
   if (currentPhase === "consultation_input") return modelPhase;
   if (response.user_question?.required) return null;
-  if (response.next_action === "move_phase" || response.next_action === "finish") return modelPhase;
+  if (
+    response.next_action === "move_phase" ||
+    response.next_action === "finish"
+  )
+    return modelPhase;
 
   return null;
 }
 
 function keepResponsesThroughPhase(
   responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
-  targetPhase: Phase
+  targetPhase: Phase,
 ) {
   const targetIndex = phaseOrder.indexOf(targetPhase);
 
   return Object.fromEntries(
     Object.entries(responseHistory).filter(([phase]) => {
       return phaseOrder.indexOf(phase as Phase) <= targetIndex;
-    })
+    }),
   ) as Partial<Record<Phase, FacilitatorResponse>>;
 }
 
 function keepResponsesBeforePhase(
   responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
-  targetPhase: Phase
+  targetPhase: Phase,
 ) {
   const targetIndex = phaseOrder.indexOf(targetPhase);
 
   return Object.fromEntries(
     Object.entries(responseHistory).filter(([phase]) => {
       return phaseOrder.indexOf(phase as Phase) < targetIndex;
-    })
+    }),
   ) as Partial<Record<Phase, FacilitatorResponse>>;
 }
 
@@ -1236,7 +1444,7 @@ function responseToHistory(response: FacilitatorResponse | null) {
 
 function getLatestMemoBeforePhase(
   responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
-  targetPhase: Phase
+  targetPhase: Phase,
 ) {
   const targetIndex = phaseOrder.indexOf(targetPhase);
 
@@ -1249,14 +1457,20 @@ function getLatestMemoBeforePhase(
   return null;
 }
 
-function replaceExpertMemoItems(items: string[], roleNames: string[], nextItems: string[]) {
+function replaceExpertMemoItems(
+  items: string[],
+  roleNames: string[],
+  nextItems: string[],
+) {
   const rolePrefixes = new Set(roleNames.map((roleName) => `${roleName}:`));
 
   return [
     ...items.filter((item) => {
-      return !Array.from(rolePrefixes).some((prefix) => item.startsWith(prefix));
+      return !Array.from(rolePrefixes).some((prefix) =>
+        item.startsWith(prefix),
+      );
     }),
-    ...nextItems
+    ...nextItems,
   ];
 }
 
@@ -1264,7 +1478,7 @@ function formatExpertMemoSummary(comment: ExpertComment) {
   return [
     `${comment.role_name}: ${comment.summary}`,
     `最重要ポイント: ${comment.key_point}`,
-    `懸念・不明点: ${comment.concern}`
+    `懸念・不明点: ${comment.concern}`,
   ].join(" / ");
 }
 
@@ -1310,5 +1524,5 @@ function emptyToUndefined(value: string) {
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>
+  </React.StrictMode>,
 );

@@ -1,0 +1,6 @@
+.codex/environments/
+.env*
+.git/
+DO_NOT_READ/
+dist/
+node_modules/
