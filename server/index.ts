@@ -458,3 +458,30 @@ const finalMarkdownDeveloperPrompt = `
 `;
 
 const finalMemoStatusLabels = {
+  tentative_conclusion: "暫定結論",
+  pending_decision: "判断保留",
+  pending_research: "追加調査待ち",
+  pending_family_discussion: "家族・関係者相談待ち",
+  action_plan: "実行計画"
+} as const;
+
+function getMarkdownSection(markdown: string, heading: string): string {
+  const lines = markdown.split(/\r?\n/);
+  const startIndex = lines.findIndex((line) => line.trim() === heading);
+
+  if (startIndex === -1) {
+    return "";
+  }
+
+  const sectionLines: string[] = [];
+
+  for (const line of lines.slice(startIndex + 1)) {
+    if (/^#{1,2}\s/.test(line.trim())) {
+      break;
+    }
+
+    sectionLines.push(line);
+  }
+
+  return sectionLines.join("\n");
+}
