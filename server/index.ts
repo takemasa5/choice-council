@@ -16,12 +16,21 @@ import type {
   ExpertComment,
   FacilitatorResponse,
   FinalMarkdown,
+  Phase,
   SessionMemo
 } from "../src/shared/schemas/session";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
 const invalidModelResponseMessage = "この発言の生成に失敗しました。再生成できます。";
+const phaseOrder: Phase[] = [
+  "consultation_input",
+  "premise",
+  "expert_selection",
+  "deliberation",
+  "direction",
+  "final_memo"
+];
 
 app.use(express.json({ limit: "1mb" }));
 
@@ -52,8 +61,9 @@ app.post("/api/facilitator/start", async (request, response) => {
 
   try {
     const client = new OpenAI({ apiKey });
-    const output = await parseStructuredOutputOnceWithRetry<FacilitatorResponse>(() =>
-      client.responses.parse({
+    const output = await parseStructuredOutputOnceWithRetry<FacilitatorResponse>(
+      () =>
+        client.responses.parse({
         model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
         input: [
           {
@@ -78,7 +88,8 @@ app.post("/api/facilitator/start", async (request, response) => {
         text: {
           format: zodTextFormat(FacilitatorResponseSchema, "facilitator_response")
         }
-      })
+        }),
+      (response) => isAcceptedFacilitatorResponse(parsedRequest.data.currentPhase, response)
     );
 
     if (!output) {
@@ -342,6 +353,23 @@ function isStructuredOutputParseError(error: unknown) {
   return error instanceof SyntaxError || error instanceof ZodError;
 }
 
+function isAcceptedFacilitatorResponse(
+  currentPhase: Phase | undefined,
+  response: FacilitatorResponse
+) {
+  const activePhase = currentPhase ?? "consultation_input";
+  const currentIndex = phaseOrder.indexOf(activePhase);
+  const modelIndex = phaseOrder.indexOf(response.current_phase);
+
+  if (modelIndex === currentIndex) return true;
+  if (modelIndex !== currentIndex + 1) return false;
+
+  if (activePhase === "consultation_input") return true;
+  if (response.user_question?.required) return false;
+
+  return response.next_action === "move_phase" || response.next_action === "finish";
+}
+
 const facilitatorDeveloperPrompt = `
 あなたは Choice Council のファシリテーターです。
 目的は、ユーザーの意思決定を代行することではなく、相談前よりも意思決定が前に進んだ状態を作ることです。
@@ -430,30 +458,3 @@ const finalMarkdownDeveloperPrompt = `
 `;
 
 const finalMemoStatusLabels = {
-  tentative_conclusion: "暫定結論",
-  pending_decision: "判断保留",
-  pending_research: "追加調査待ち",
-  pending_family_discussion: "家族・関係者相談待ち",
-  action_plan: "実行計画"
-} as const;
-
-function getMarkdownSection(markdown: string, heading: string): string {
-  const lines = markdown.split(/\r?\n/);
-  const startIndex = lines.findIndex((line) => line.trim() === heading);
-
-  if (startIndex === -1) {
-    return "";
-  }
-
-  const sectionLines: string[] = [];
-
-  for (const line of lines.slice(startIndex + 1)) {
-    if (/^#{1,2}\s/.test(line.trim())) {
-      break;
-    }
-
-    sectionLines.push(line);
-  }
-
-  return sectionLines.join("\n");
-}
