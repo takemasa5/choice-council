@@ -179,7 +179,7 @@ function App() {
   }, [response, responseHistory, currentPhase]);
   const canGenerateFinalMarkdown =
     Boolean(memo) &&
-    currentPhase === "direction" &&
+    (currentPhase === "direction" || currentPhase === "final_memo") &&
     !getPendingRequiredQuestionMessage() &&
     !isLoading &&
     !isUpdatingMemo &&
