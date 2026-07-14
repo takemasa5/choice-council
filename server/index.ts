@@ -1,6 +1,7 @@
-import express from "express";
+import express, { type Response } from "express";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
+import { ZodError } from "zod";
 import {
   ConsultationRequestSchema,
   ExpertCommentRequestSchema,
@@ -11,9 +12,25 @@ import {
   SessionMemoRequestSchema,
   SessionMemoSchema
 } from "../src/shared/schemas/session";
+import type {
+  ExpertComment,
+  FacilitatorResponse,
+  FinalMarkdown,
+  Phase,
+  SessionMemo
+} from "../src/shared/schemas/session";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
+const invalidModelResponseMessage = "この発言の生成に失敗しました。再生成できます。";
+const phaseOrder: Phase[] = [
+  "consultation_input",
+  "premise",
+  "expert_selection",
+  "deliberation",
+  "direction",
+  "final_memo"
+];
 
 app.use(express.json({ limit: "1mb" }));
 
@@ -44,40 +61,39 @@ app.post("/api/facilitator/start", async (request, response) => {
 
   try {
     const client = new OpenAI({ apiKey });
-    const result = await client.responses.parse({
-      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
-      input: [
-        {
-          role: "developer",
-          content: [
-            {
-              type: "input_text",
-              text: facilitatorDeveloperPrompt
-            }
-          ]
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: JSON.stringify(parsedRequest.data, null, 2)
-            }
-          ]
+    const output = await parseStructuredOutputOnceWithRetry<FacilitatorResponse>(
+      () =>
+        client.responses.parse({
+        model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+        input: [
+          {
+            role: "developer",
+            content: [
+              {
+                type: "input_text",
+                text: facilitatorDeveloperPrompt
+              }
+            ]
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: JSON.stringify(parsedRequest.data, null, 2)
+              }
+            ]
+          }
+        ],
+        text: {
+          format: zodTextFormat(FacilitatorResponseSchema, "facilitator_response")
         }
-      ],
-      text: {
-        format: zodTextFormat(FacilitatorResponseSchema, "facilitator_response")
-      }
-    });
-
-    const output = result.output_parsed;
+        }),
+      (response) => isAcceptedFacilitatorResponse(parsedRequest.data.currentPhase, response)
+    );
 
     if (!output) {
-      response.status(502).json({
-        error: "invalid_model_response",
-        message: "ファシリテーター応答の生成に失敗しました。"
-      });
+      sendInvalidModelResponse(response);
       return;
     }
 
@@ -113,40 +129,37 @@ app.post("/api/expert/comment", async (request, response) => {
 
   try {
     const client = new OpenAI({ apiKey });
-    const result = await client.responses.parse({
-      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
-      input: [
-        {
-          role: "developer",
-          content: [
-            {
-              type: "input_text",
-              text: expertDeveloperPrompt
-            }
-          ]
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: JSON.stringify(parsedRequest.data, null, 2)
-            }
-          ]
+    const output = await parseStructuredOutputOnceWithRetry<ExpertComment>(() =>
+      client.responses.parse({
+        model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+        input: [
+          {
+            role: "developer",
+            content: [
+              {
+                type: "input_text",
+                text: expertDeveloperPrompt
+              }
+            ]
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: JSON.stringify(parsedRequest.data, null, 2)
+              }
+            ]
+          }
+        ],
+        text: {
+          format: zodTextFormat(ExpertCommentSchema, "expert_comment")
         }
-      ],
-      text: {
-        format: zodTextFormat(ExpertCommentSchema, "expert_comment")
-      }
-    });
-
-    const output = result.output_parsed;
+      })
+    );
 
     if (!output) {
-      response.status(502).json({
-        error: "invalid_model_response",
-        message: "専門家コメントの生成に失敗しました。"
-      });
+      sendInvalidModelResponse(response);
       return;
     }
 
@@ -186,40 +199,37 @@ app.post("/api/session-memo/update", async (request, response) => {
 
   try {
     const client = new OpenAI({ apiKey });
-    const result = await client.responses.parse({
-      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
-      input: [
-        {
-          role: "developer",
-          content: [
-            {
-              type: "input_text",
-              text: sessionMemoDeveloperPrompt
-            }
-          ]
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: JSON.stringify(parsedRequest.data, null, 2)
-            }
-          ]
+    const output = await parseStructuredOutputOnceWithRetry<SessionMemo>(() =>
+      client.responses.parse({
+        model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+        input: [
+          {
+            role: "developer",
+            content: [
+              {
+                type: "input_text",
+                text: sessionMemoDeveloperPrompt
+              }
+            ]
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: JSON.stringify(parsedRequest.data, null, 2)
+              }
+            ]
+          }
+        ],
+        text: {
+          format: zodTextFormat(SessionMemoSchema, "session_memo")
         }
-      ],
-      text: {
-        format: zodTextFormat(SessionMemoSchema, "session_memo")
-      }
-    });
-
-    const output = result.output_parsed;
+      })
+    );
 
     if (!output) {
-      response.status(502).json({
-        error: "invalid_model_response",
-        message: "セッションメモの更新に失敗しました。"
-      });
+      sendInvalidModelResponse(response);
       return;
     }
 
@@ -255,51 +265,40 @@ app.post("/api/final-markdown/generate", async (request, response) => {
 
   try {
     const client = new OpenAI({ apiKey });
-    const result = await client.responses.parse({
-      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
-      input: [
-        {
-          role: "developer",
-          content: [
+    const expectedStatusLabel = finalMemoStatusLabels[parsedRequest.data.memo.status];
+    const output = await parseStructuredOutputOnceWithRetry<FinalMarkdown>(
+      () =>
+        client.responses.parse({
+          model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+          input: [
             {
-              type: "input_text",
-              text: finalMarkdownDeveloperPrompt
-            }
-          ]
-        },
-        {
-          role: "user",
-          content: [
+              role: "developer",
+              content: [
+                {
+                  type: "input_text",
+                  text: finalMarkdownDeveloperPrompt
+                }
+              ]
+            },
             {
-              type: "input_text",
-              text: JSON.stringify(parsedRequest.data, null, 2)
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: JSON.stringify(parsedRequest.data, null, 2)
+                }
+              ]
             }
-          ]
-        }
-      ],
-      text: {
-        format: zodTextFormat(FinalMarkdownSchema, "final_markdown")
-      }
-    });
-
-    const output = result.output_parsed;
+          ],
+          text: {
+            format: zodTextFormat(FinalMarkdownSchema, "final_markdown")
+          }
+        }),
+      (output) => getMarkdownSection(output.markdown, "## 現時点の状態").includes(expectedStatusLabel)
+    );
 
     if (!output) {
-      response.status(502).json({
-        error: "invalid_model_response",
-        message: "終了メモの生成に失敗しました。"
-      });
-      return;
-    }
-
-    const expectedStatusLabel = finalMemoStatusLabels[parsedRequest.data.memo.status];
-    const currentStatusSection = getMarkdownSection(output.markdown, "## 現時点の状態");
-
-    if (!currentStatusSection.includes(expectedStatusLabel)) {
-      response.status(502).json({
-        error: "invalid_model_response",
-        message: "終了メモの現時点の状態がセッションメモと一致しません。"
-      });
+      sendInvalidModelResponse(response);
       return;
     }
 
@@ -315,6 +314,61 @@ app.post("/api/final-markdown/generate", async (request, response) => {
 app.listen(port, "127.0.0.1", () => {
   console.log(`Choice Council API listening on http://127.0.0.1:${port}`);
 });
+
+async function parseStructuredOutputOnceWithRetry<T>(
+  request: () => Promise<{ output_parsed: T | null }>,
+  isValid: (output: T) => boolean = () => true
+) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await request().catch((error: unknown) => {
+      if (isStructuredOutputParseError(error)) {
+        return null;
+      }
+
+      throw error;
+    });
+
+    if (!result) {
+      continue;
+    }
+
+    const output = result.output_parsed;
+
+    if (output && isValid(output)) {
+      return output;
+    }
+  }
+
+  return null;
+}
+
+function sendInvalidModelResponse(response: Response) {
+  response.status(502).json({
+    error: "invalid_model_response",
+    message: invalidModelResponseMessage
+  });
+}
+
+function isStructuredOutputParseError(error: unknown) {
+  return error instanceof SyntaxError || error instanceof ZodError;
+}
+
+function isAcceptedFacilitatorResponse(
+  currentPhase: Phase | undefined,
+  response: FacilitatorResponse
+) {
+  const activePhase = currentPhase ?? "consultation_input";
+  const currentIndex = phaseOrder.indexOf(activePhase);
+  const modelIndex = phaseOrder.indexOf(response.current_phase);
+
+  if (modelIndex === currentIndex) return true;
+  if (modelIndex !== currentIndex + 1) return false;
+
+  if (activePhase === "consultation_input") return true;
+  if (response.user_question?.required) return false;
+
+  return response.next_action === "move_phase" || response.next_action === "finish";
+}
 
 const facilitatorDeveloperPrompt = `
 あなたは Choice Council のファシリテーターです。
