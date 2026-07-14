@@ -3,17 +3,24 @@ import test from "node:test";
 import { createTestApp, requestJson } from "../../../test-support/server";
 
 test("POST /api/expert/comment preserves the requested expert identity", async () => {
+  let prompt = "";
   const response = await requestJson(
-    createTestApp({
-      role_name: "モデル側のロール",
-      viewpoint: "モデル側の観点",
-      summary: "専門家コメントです。",
-      key_point: "要点です。",
-      concern: "懸念です。",
-      question_to_user: "なし",
-      confidence: "medium",
-      needs_research: false,
-    }),
+    createTestApp(
+      {
+        role_name: "モデル側のロール",
+        viewpoint: "モデル側の観点",
+        summary: "専門家コメントです。",
+        key_point: "要点です。",
+        concern: "懸念です。",
+        question_to_user: "なし",
+        confidence: "medium",
+        needs_research: false,
+      },
+      "test-api-key",
+      (request) => {
+        prompt = JSON.stringify(request);
+      },
+    ),
     "/api/expert/comment",
     {
       consultation: "相談内容",
@@ -29,6 +36,7 @@ test("POST /api/expert/comment preserves the requested expert identity", async (
   assert.equal(response.status, 200);
   assert.equal((response.body as { role_name: string }).role_name, "家計担当");
   assert.equal((response.body as { viewpoint: string }).viewpoint, "費用");
+  assert.match(prompt, /ない場合も「現時点では特になし」と明示する/);
 });
 
 test("POST /api/expert/comment rejects invalid input", async () => {

@@ -27,13 +27,20 @@ export const memo = {
  *
  * 日本語名: テスト用APIアプリ生成関数。
  */
-export function createTestApp(output: unknown, apiKey = "test-api-key") {
+export function createTestApp(
+  output: unknown,
+  apiKey = "test-api-key",
+  onParse?: (request: unknown) => void,
+) {
   return createApp({
     getApiKey: () => apiKey,
     createOpenAIClient: () =>
       ({
         responses: {
-          parse: async () => ({ output_parsed: output }),
+          parse: async (request: unknown) => {
+            onParse?.(request);
+            return { output_parsed: output };
+          },
         },
       }) as never,
   });

@@ -3,19 +3,30 @@ import test from "node:test";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
 
 test("POST /api/facilitator/start validates input and returns a facilitator response", async () => {
+  let prompt = "";
   const response = await requestJson(
-    createTestApp({
-      current_phase: "premise",
-      current_phase_label: "前提整理",
-      phase_goal: "前提を整理する",
-      facilitator_message: "相談内容を整理します。",
-      expert_requests: [
-        { role_name: "専門家", viewpoint: "観点", request: "確認してください" },
-      ],
-      user_question: null,
-      memo_updates: memo,
-      next_action: "request_experts",
-    }),
+    createTestApp(
+      {
+        current_phase: "premise",
+        current_phase_label: "前提整理",
+        phase_goal: "前提を整理する",
+        facilitator_message: "相談内容を整理します。",
+        expert_requests: [
+          {
+            role_name: "専門家",
+            viewpoint: "観点",
+            request: "確認してください",
+          },
+        ],
+        user_question: null,
+        memo_updates: memo,
+        next_action: "request_experts",
+      },
+      "test-api-key",
+      (request) => {
+        prompt = JSON.stringify(request);
+      },
+    ),
     "/api/facilitator/start",
     { consultation: "相談内容" },
   );
@@ -25,4 +36,5 @@ test("POST /api/facilitator/start validates input and returns a facilitator resp
     (response.body as { current_phase: string }).current_phase,
     "premise",
   );
+  assert.match(prompt, /初回の前提整理からやり直さない/);
 });

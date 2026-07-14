@@ -154,7 +154,7 @@ const facilitatorDeveloperPrompt = `
 - 初回応答では情報不足が大きい場合のみ1〜2問に絞って質問する。
 - 初回応答では次に必要な専門家ロール候補を expert_requests に含める。専門家が重視する観点は viewpoint に明示する。
 - 高リスク領域では専門家ロール候補や次アクションを、判断材料の整理と相談準備に向ける。
-- currentPhase と memo が入力に含まれる場合は、そのフェーズとメモを現在の文脈として扱う。
+- currentPhase と memo が入力に含まれる場合は、そのフェーズとメモを現在の文脈として扱い、初回の前提整理からやり直さない。
 - currentPhase が premise 以降の場合、出力の current_phase は入力の currentPhase または状態機械上の次フェーズにする。
 - userQuestion と userQuestionAnswer が入力に含まれる場合は、その質問へのユーザー回答として扱い、memo_updates と次アクションに反映する。
 - user_question を返す場合、options は2件以上にし、必ず「その他」を含める。
