@@ -16,6 +16,7 @@ import type {
 import "./styles.css";
 
 const storageKey = "choice-council-session";
+const invalidGenerationMessage = "この発言の生成に失敗しました。再生成できます。";
 const phaseOrder: Phase[] = [
   "consultation_input",
   "premise",
@@ -223,7 +224,7 @@ function App() {
       const body = await apiResponse.json();
 
       if (!apiResponse.ok) {
-        setErrorMessage(body.message ?? "ファシリテーター応答の生成に失敗しました。");
+        setErrorMessage(body.message ?? invalidGenerationMessage);
         return;
       }
 
@@ -540,7 +541,7 @@ function App() {
           const body = await apiResponse.json();
 
           if (!apiResponse.ok) {
-            throw new Error(body.message ?? "専門家コメントの生成に失敗しました。");
+            throw new Error(body.message ?? invalidGenerationMessage);
           }
 
           return body as ExpertComment;
@@ -595,7 +596,7 @@ function App() {
       const body = await apiResponse.json();
 
       if (!apiResponse.ok) {
-        setFinalMarkdownErrorMessage(body.message ?? "終了メモの生成に失敗しました。");
+        setFinalMarkdownErrorMessage(body.message ?? invalidGenerationMessage);
         return;
       }
 
@@ -696,7 +697,7 @@ function App() {
       const body = await apiResponse.json();
 
       if (!apiResponse.ok) {
-        setMemoErrorMessage(body.message ?? "セッションメモの更新に失敗しました。");
+        setMemoErrorMessage(body.message ?? invalidGenerationMessage);
         return facilitatorResponse;
       }
 
