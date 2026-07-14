@@ -14,7 +14,7 @@ const finalMarkdownRequiredHeadings = [
   "## 意見が割れた点",
   "## 未確認事項",
   "## 次アクション",
-  "## セッションログ要約"
+  "## セッションログ要約",
 ] as const;
 
 const finalMemoStatusLabels = [
@@ -22,7 +22,7 @@ const finalMemoStatusLabels = [
   "判断保留",
   "追加調査待ち",
   "家族・関係者相談待ち",
-  "実行計画"
+  "実行計画",
 ] as const;
 
 export const PhaseSchema = z.enum([
@@ -31,24 +31,26 @@ export const PhaseSchema = z.enum([
   "expert_selection",
   "deliberation",
   "direction",
-  "final_memo"
+  "final_memo",
 ]);
 
 export type Phase = z.infer<typeof PhaseSchema>;
 
-export const UserQuestionSchema = z.strictObject({
-  question: nonEmptyString,
-  options: nonEmptyStringArray.min(2),
-  required: z.boolean()
-}).superRefine((question, context) => {
-  if (!question.options.includes("その他")) {
-    context.addIssue({
-      code: "custom",
-      message: "user_question.options must include その他",
-      path: ["options"]
-    });
-  }
-});
+export const UserQuestionSchema = z
+  .strictObject({
+    question: nonEmptyString,
+    options: nonEmptyStringArray.min(2),
+    required: z.boolean(),
+  })
+  .superRefine((question, context) => {
+    if (!question.options.includes("その他")) {
+      context.addIssue({
+        code: "custom",
+        message: "user_question.options must include その他",
+        path: ["options"],
+      });
+    }
+  });
 
 export const SessionMemoStatusSchema = z.enum([
   "in_progress",
@@ -56,7 +58,7 @@ export const SessionMemoStatusSchema = z.enum([
   "pending_decision",
   "pending_research",
   "pending_family_discussion",
-  "action_plan"
+  "action_plan",
 ]);
 
 export type SessionMemoStatus = z.infer<typeof SessionMemoStatusSchema>;
@@ -66,7 +68,7 @@ export const FinalMemoStatusSchema = z.enum([
   "pending_decision",
   "pending_research",
   "pending_family_discussion",
-  "action_plan"
+  "action_plan",
 ]);
 
 export type FinalMemoStatus = z.infer<typeof FinalMemoStatusSchema>;
@@ -82,13 +84,13 @@ export const SessionMemoSchema = z.strictObject({
   expert_summaries: nonEmptyStringArray,
   conflicts: nonEmptyStringArray,
   open_questions: nonEmptyStringArray,
-  next_actions: nonEmptyStringArray
+  next_actions: nonEmptyStringArray,
 });
 
 export type SessionMemo = z.infer<typeof SessionMemoSchema>;
 
 export const FinalSessionMemoSchema = SessionMemoSchema.extend({
-  status: FinalMemoStatusSchema
+  status: FinalMemoStatusSchema,
 });
 
 export type FinalSessionMemo = z.infer<typeof FinalSessionMemoSchema>;
@@ -102,7 +104,7 @@ export const ConsultationRequestSchema = z.strictObject({
   userQuestion: UserQuestionSchema.optional(),
   userQuestionAnswer: nonEmptyString.optional(),
   currentPhase: PhaseSchema.optional(),
-  memo: SessionMemoSchema.optional()
+  memo: SessionMemoSchema.optional(),
 });
 
 export type ConsultationRequest = z.infer<typeof ConsultationRequestSchema>;
@@ -110,7 +112,7 @@ export type ConsultationRequest = z.infer<typeof ConsultationRequestSchema>;
 export const ExpertRequestSchema = z.strictObject({
   role_name: nonEmptyString,
   viewpoint: nonEmptyString,
-  request: nonEmptyString
+  request: nonEmptyString,
 });
 
 export type ExpertRequest = z.infer<typeof ExpertRequestSchema>;
@@ -119,7 +121,7 @@ export const ExpertCommentRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   currentPhase: PhaseSchema,
   memo: SessionMemoSchema.optional(),
-  expert: ExpertRequestSchema
+  expert: ExpertRequestSchema,
 });
 
 export type ExpertCommentRequest = z.infer<typeof ExpertCommentRequestSchema>;
@@ -132,7 +134,7 @@ export const ExpertCommentSchema = z.strictObject({
   concern: nonEmptyString,
   question_to_user: nonEmptyString,
   confidence: z.enum(["high", "medium", "low"]),
-  needs_research: z.boolean()
+  needs_research: z.boolean(),
 });
 
 export type ExpertComment = z.infer<typeof ExpertCommentSchema>;
@@ -143,66 +145,76 @@ export const SessionMemoRequestSchema = z.strictObject({
   previousMemo: SessionMemoSchema.optional(),
   facilitatorResponse: z.lazy(() => FacilitatorResponseSchema).optional(),
   expertComments: z.array(ExpertCommentSchema).optional(),
-  userAction: nonEmptyString.optional()
+  userAction: nonEmptyString.optional(),
 });
 
 export type SessionMemoRequest = z.infer<typeof SessionMemoRequestSchema>;
 
-export const FacilitatorResponseSchema = z.strictObject({
-  current_phase: PhaseSchema,
-  current_phase_label: nonEmptyString,
-  phase_goal: nonEmptyString,
-  facilitator_message: nonEmptyString,
-  expert_requests: z.array(ExpertRequestSchema),
-  user_question: UserQuestionSchema.nullable(),
-  memo_updates: SessionMemoSchema,
-  next_action: z.enum([
-    "wait_user",
-    "request_experts",
-    "update_memo",
-    "move_phase",
-    "finish"
-  ])
-}).superRefine((response, context) => {
-  if (response.next_action === "request_experts" && response.expert_requests.length === 0) {
-    context.addIssue({
-      code: "custom",
-      message: "expert_requests must not be empty when next_action is request_experts",
-      path: ["expert_requests"]
-    });
-  }
-});
+export const FacilitatorResponseSchema = z
+  .strictObject({
+    current_phase: PhaseSchema,
+    current_phase_label: nonEmptyString,
+    phase_goal: nonEmptyString,
+    facilitator_message: nonEmptyString,
+    expert_requests: z.array(ExpertRequestSchema),
+    user_question: UserQuestionSchema.nullable(),
+    memo_updates: SessionMemoSchema,
+    next_action: z.enum([
+      "wait_user",
+      "request_experts",
+      "update_memo",
+      "move_phase",
+      "finish",
+    ]),
+  })
+  .superRefine((response, context) => {
+    if (
+      response.next_action === "request_experts" &&
+      response.expert_requests.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "expert_requests must not be empty when next_action is request_experts",
+        path: ["expert_requests"],
+      });
+    }
+  });
 
 export type FacilitatorResponse = z.infer<typeof FacilitatorResponseSchema>;
 
-export const FinalMarkdownSchema = z.strictObject({
-  markdown: nonEmptyString
-}).superRefine((output, context) => {
-  for (const heading of finalMarkdownRequiredHeadings) {
-    if (!output.markdown.includes(heading)) {
+export const FinalMarkdownSchema = z
+  .strictObject({
+    markdown: nonEmptyString,
+  })
+  .superRefine((output, context) => {
+    for (const heading of finalMarkdownRequiredHeadings) {
+      if (!output.markdown.includes(heading)) {
+        context.addIssue({
+          code: "custom",
+          message: `markdown must include ${heading}`,
+          path: ["markdown"],
+        });
+      }
+    }
+
+    if (
+      !finalMemoStatusLabels.some((label) => output.markdown.includes(label))
+    ) {
       context.addIssue({
         code: "custom",
-        message: `markdown must include ${heading}`,
-        path: ["markdown"]
+        message: "markdown must include a final memo status label",
+        path: ["markdown"],
       });
     }
-  }
-
-  if (!finalMemoStatusLabels.some((label) => output.markdown.includes(label))) {
-    context.addIssue({
-      code: "custom",
-      message: "markdown must include a final memo status label",
-      path: ["markdown"]
-    });
-  }
-});
+  });
 
 export type FinalMarkdown = z.infer<typeof FinalMarkdownSchema>;
 
 export const FinalMarkdownRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   memo: FinalSessionMemoSchema,
-  expertComments: z.array(ExpertCommentSchema).optional()
+  expertComments: z.array(ExpertCommentSchema).optional(),
 });
 
 export type FinalMarkdownRequest = z.infer<typeof FinalMarkdownRequestSchema>;

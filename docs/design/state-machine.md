@@ -4,14 +4,14 @@ MVPでは、アプリ側がフェーズ遷移を管理する。LLM は次の候�
 
 ## フェーズ
 
-| ID | 表示名 | 目的 |
-|---|---|---|
-| consultation_input | 相談入力 | ユーザーが相談内容を入力する |
-| premise | 前提整理 | 事実、希望、不安、不明点を整理する |
-| expert_selection | 専門家選定 | 必要な専門家ロールを提案し、ユーザーが編集する |
-| deliberation | 検討 | 専門家コメント、論点整理、調査候補の提示を行う |
-| direction | 方向性整理 | 判断軸、選択肢、対立点、未確認事項を整理する |
-| final_memo | 終了メモ | 暫定結論、保留理由、次アクションを Markdown で出力する |
+| ID                 | 表示名     | 目的                                                   |
+| ------------------ | ---------- | ------------------------------------------------------ |
+| consultation_input | 相談入力   | ユーザーが相談内容を入力する                           |
+| premise            | 前提整理   | 事実、希望、不安、不明点を整理する                     |
+| expert_selection   | 専門家選定 | 必要な専門家ロールを提案し、ユーザーが編集する         |
+| deliberation       | 検討       | 専門家コメント、論点整理、調査候補の提示を行う         |
+| direction          | 方向性整理 | 判断軸、選択肢、対立点、未確認事項を整理する           |
+| final_memo         | 終了メモ   | 暫定結論、保留理由、次アクションを Markdown で出力する |
 
 ## 初期遷移
 
@@ -32,14 +32,14 @@ stateDiagram-v2
 
 MVP の基本フローは前進方向のフェーズ遷移とする。ただし、ユーザーは通常操作として前フェーズへ戻れる。
 
-| 現在フェーズ | 前進先 | 戻れるフェーズ |
-|---|---|---|
-| consultation_input | premise | なし |
-| premise | expert_selection | consultation_input |
-| expert_selection | deliberation | consultation_input, premise |
-| deliberation | direction | consultation_input, premise, expert_selection |
-| direction | final_memo | consultation_input, premise, expert_selection, deliberation |
-| final_memo | 終了 | consultation_input, premise, expert_selection, deliberation, direction |
+| 現在フェーズ       | 前進先           | 戻れるフェーズ                                                         |
+| ------------------ | ---------------- | ---------------------------------------------------------------------- |
+| consultation_input | premise          | なし                                                                   |
+| premise            | expert_selection | consultation_input                                                     |
+| expert_selection   | deliberation     | consultation_input, premise                                            |
+| deliberation       | direction        | consultation_input, premise, expert_selection                          |
+| direction          | final_memo       | consultation_input, premise, expert_selection, deliberation            |
+| final_memo         | 終了             | consultation_input, premise, expert_selection, deliberation, direction |
 
 アプリ側は、現在フェーズより後のフェーズへユーザー操作だけで直接移動させない。後続フェーズへ進む場合は、現在フェーズの完了条件を満たし、必要な LLM 呼び出しまたはユーザー確認が完了している必要がある。
 
@@ -49,14 +49,14 @@ LLM は `next_action` で候補行動を返せるが、実際のフェーズ遷�
 
 状態: `決定`
 
-| フェーズ | 完了条件 |
-|---|---|
-| consultation_input | 必須項目の相談内容が入力されている |
-| premise | 相談テーマ、事実、希望、不安、不明点が初期整理されている |
-| expert_selection | 専門家ロール案をユーザーが承認、追加、削除、入れ替え、またはおまかせで確定している |
-| deliberation | 必要な専門家コメントとファシリテーター整理が生成されている |
-| direction | 判断軸、選択肢、対立点、未確認事項、次アクション候補が整理されている |
-| final_memo | Markdown 終了メモが生成され、ユーザーが保存または終了できる状態になっている |
+| フェーズ           | 完了条件                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| consultation_input | 必須項目の相談内容が入力されている                                                 |
+| premise            | 相談テーマ、事実、希望、不安、不明点が初期整理されている                           |
+| expert_selection   | 専門家ロール案をユーザーが承認、追加、削除、入れ替え、またはおまかせで確定している |
+| deliberation       | 必要な専門家コメントとファシリテーター整理が生成されている                         |
+| direction          | 判断軸、選択肢、対立点、未確認事項、次アクション候補が整理されている               |
+| final_memo         | Markdown 終了メモが生成され、ユーザーが保存または終了できる状態になっている        |
 
 ## 前フェーズへ戻る操作
 
@@ -93,12 +93,12 @@ LLM は `next_action` で候補行動を返せるが、実際のフェーズ遷�
 
 `next_action` は LLM からアプリへの候補行動であり、フェーズ遷移そのものではない。
 
-| 値 | 意味 |
-|---|---|
-| wait_user | ユーザー回答または操作を待つ |
+| 値              | 意味                         |
+| --------------- | ---------------------------- |
+| wait_user       | ユーザー回答または操作を待つ |
 | request_experts | 専門家コメント生成へ進む候補 |
-| update_memo | セッションメモ更新へ進む候補 |
-| move_phase | 次フェーズへ進む候補 |
-| finish | セッション終了へ進む候補 |
+| update_memo     | セッションメモ更新へ進む候補 |
+| move_phase      | 次フェーズへ進む候補         |
+| finish          | セッション終了へ進む候補     |
 
 アプリ側は `next_action`、現在フェーズ、完了条件、ユーザー操作を照合して次の処理を決定する。
