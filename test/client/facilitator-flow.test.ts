@@ -190,6 +190,17 @@ test("一部だけ入力された専門家候補は確定できない", () => {
   );
 });
 
+test("保存済み候補が上限を超える場合は確定できない", () => {
+  const drafts = Array.from({ length: maximumExpertRequestCount + 1 }, () => ({
+    ...expert,
+  }));
+
+  assert.deepEqual(confirmExpertDrafts(drafts), {
+    experts: [],
+    errorMessage: `確定する専門家ロールは${maximumExpertRequestCount}件以下にしてください。`,
+  });
+});
+
 test("旧形式の専門家選定セッションでは応答候補を初期候補として復元する", () => {
   const response = { expert_requests: [expert] } as FacilitatorResponse;
 
