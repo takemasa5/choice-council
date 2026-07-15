@@ -4,6 +4,7 @@ import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
   createFailedFacilitatorRequest,
+  getSessionConsultation,
 } from "../../src/client/facilitator-flow";
 import type {
   FacilitatorResponseRequest,
@@ -94,4 +95,14 @@ test("失敗リクエストは同一内容でリトライできる形で保持�
     endpoint: "respond",
     request,
   });
+});
+
+test("開始済みセッションでは未送信の編集より確定済み相談内容を使う", () => {
+  assert.equal(
+    getSessionConsultation(
+      "中学受験について相談したい",
+      "まだ送信していない別の相談内容",
+    ),
+    "中学受験について相談したい",
+  );
 });

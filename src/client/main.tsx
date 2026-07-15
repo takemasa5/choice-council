@@ -19,22 +19,23 @@ import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
   createFailedFacilitatorRequest,
+  getSessionConsultation,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
+import {
+  clearResponseHistory,
+  createResponseForPhase,
+  getExpertCommentsForReturn,
+  getReturnablePhases,
+  keepResponsesThroughPhase,
+  phaseOrder,
+  type ResponseHistory,
+} from "./phase-history";
 import "./styles.css";
 
 const storageKey = "choice-council-session";
 const invalidGenerationMessage =
   "この発言の生成に失敗しました。再生成できます。";
-const phaseOrder: Phase[] = [
-  "consultation_input",
-  "premise",
-  "expert_selection",
-  "deliberation",
-  "direction",
-  "final_memo",
-];
-
 const phaseLabels: Record<Phase, string> = {
   consultation_input: "相談入力",
   premise: "前提整理",
@@ -85,9 +86,7 @@ function App() {
   const [expectedOutcome, setExpectedOutcome] = useState("");
   const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [response, setResponse] = useState<FacilitatorResponse | null>(null);
-  const [responseHistory, setResponseHistory] = useState<
-    Partial<Record<Phase, FacilitatorResponse>>
-  >({});
+  const [responseHistory, setResponseHistory] = useState<ResponseHistory>({});
   const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
   const [hasRestoredSession, setHasRestoredSession] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -107,6 +106,7 @@ function App() {
   const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
   const [expertDrafts, setExpertDrafts] = useState<ExpertRequest[]>([]);
   const [confirmedExperts, setConfirmedExperts] = useState<ExpertRequest[]>([]);
+  const confirmedExpertRequestKeyRef = useRef("");
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
@@ -200,9 +200,13 @@ function App() {
 
   useEffect(() => {
     setExpertDrafts(response?.expert_requests ?? []);
-    setConfirmedExperts([]);
+    if (confirmedExpertRequestKeyRef.current === expertRequestKey) {
+      confirmedExpertRequestKeyRef.current = "";
+    } else {
+      setConfirmedExperts([]);
+    }
     setExpertErrorMessage("");
-  }, [expertRequestKey]);
+  }, [expertRequestKey, currentPhase]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return (
@@ -218,9 +222,13 @@ function App() {
     !isUpdatingMemo &&
     !isGeneratingExperts &&
     !isGeneratingFinalMarkdown;
+  const sessionConsultation = getSessionConsultation(
+    startedConsultation,
+    consultation,
+  );
   const availableReturnPhases = useMemo(() => {
-    return getReturnablePhases(currentPhase);
-  }, [currentPhase]);
+    return getReturnablePhases(currentPhase, responseHistory);
+  }, [currentPhase, responseHistory]);
 
   async function startSession() {
     setErrorMessage("");
@@ -331,8 +339,6 @@ function App() {
     const question = response?.user_question;
     const answer = getResponseQuestionAnswer();
     const currentMemo = response?.memo_updates;
-    const responseConsultation = startedConsultation || consultation;
-
     if (!question || !currentMemo || currentPhase !== "premise") return;
 
     if (!answer) {
@@ -342,7 +348,7 @@ function App() {
     }
 
     const request = buildFacilitatorResponseRequest({
-      consultation: responseConsultation,
+      consultation: sessionConsultation,
       currentPhase,
       userQuestion: question,
       userQuestionAnswer: answer,
@@ -593,10 +599,10 @@ function App() {
 
     if (!confirmed) return;
 
-    const nextResponseHistory = keepResponsesBeforePhase(
-      responseHistory,
-      targetPhase,
-    );
+    const nextResponseHistory =
+      targetPhase === "consultation_input"
+        ? clearResponseHistory()
+        : keepResponsesThroughPhase(responseHistory, targetPhase);
 
     setCurrentPhase(targetPhase);
     setResponse(nextResponseHistory[targetPhase] ?? null);
@@ -614,7 +620,7 @@ function App() {
     setOtherQuestionAnswer("");
     setExpertDrafts([]);
     setConfirmedExperts([]);
-    setExpertComments([]);
+    setExpertComments(getExpertCommentsForReturn(targetPhase, expertComments));
     setExpertErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -727,10 +733,7 @@ function App() {
     setConfirmedExperts(completedExperts);
     setExpertComments([]);
     setExpertErrorMessage("");
-
-    if (currentPhase === "premise") {
-      moveResponseToPhase("expert_selection");
-    }
+    saveConfirmedExpertDrafts(completedExperts);
   }
 
   async function generateExpertComments() {
@@ -763,7 +766,7 @@ function App() {
       const comments = await Promise.all(
         confirmedExperts.map(async (expert) => {
           const request: ExpertCommentRequest = {
-            consultation,
+            consultation: sessionConsultation,
             currentPhase: expertCommentPhase,
             memo: memo ?? undefined,
             expert,
@@ -786,7 +789,7 @@ function App() {
       );
 
       setExpertComments(comments);
-      await carryResearchNeedsToMemo(comments, expertCommentPhase);
+      await carryResearchNeedsToMemo(comments, "direction");
       showInterruptionOptionsIfPaused();
     } catch (error) {
       setExpertErrorMessage(
@@ -821,7 +824,7 @@ function App() {
     }
 
     const request: FinalMarkdownRequest = {
-      consultation,
+      consultation: sessionConsultation,
       memo,
       expertComments: expertComments.length > 0 ? expertComments : undefined,
     };
@@ -934,7 +937,7 @@ function App() {
     setMemoErrorMessage("");
 
     const request: SessionMemoRequest = {
-      consultation,
+      consultation: sessionConsultation,
       currentPhase: targetPhase,
       previousMemo: memo ?? undefined,
       facilitatorResponse,
@@ -1089,10 +1092,31 @@ function App() {
     setResponse((currentResponse) => {
       if (!currentResponse) return currentResponse;
 
-      const nextResponse = {
-        ...currentResponse,
-        current_phase: nextPhase,
-      };
+      const nextResponse = createResponseForPhase(currentResponse, nextPhase);
+
+      setResponseHistory((current) => ({
+        ...keepResponsesThroughPhase(current, currentPhase),
+        [nextPhase]: nextResponse,
+      }));
+
+      return nextResponse;
+    });
+  }
+
+  function saveConfirmedExpertDrafts(experts: ExpertRequest[]) {
+    const nextPhase =
+      currentPhase === "premise" ? "expert_selection" : currentPhase;
+
+    confirmedExpertRequestKeyRef.current = JSON.stringify(experts);
+    setCurrentPhase(nextPhase);
+    setResponse((currentResponse) => {
+      if (!currentResponse) return currentResponse;
+
+      const nextResponse = createResponseForPhase(
+        currentResponse,
+        nextPhase,
+        experts,
+      );
 
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
@@ -1586,13 +1610,6 @@ function App() {
   );
 }
 
-function getReturnablePhases(currentPhase: Phase) {
-  const currentIndex = phaseOrder.indexOf(currentPhase);
-  if (currentIndex <= 0) return [];
-
-  return phaseOrder.slice(0, currentIndex);
-}
-
 /**
  * M2 のファシリテーター応答制約をクライアント側でも検証する。
  *
@@ -1611,32 +1628,6 @@ function isAcceptedM2Response(response: FacilitatorResponse) {
     response.next_action === "request_experts" &&
     response.expert_requests.length > 0
   );
-}
-
-function keepResponsesThroughPhase(
-  responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
-  targetPhase: Phase,
-) {
-  const targetIndex = phaseOrder.indexOf(targetPhase);
-
-  return Object.fromEntries(
-    Object.entries(responseHistory).filter(([phase]) => {
-      return phaseOrder.indexOf(phase as Phase) <= targetIndex;
-    }),
-  ) as Partial<Record<Phase, FacilitatorResponse>>;
-}
-
-function keepResponsesBeforePhase(
-  responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
-  targetPhase: Phase,
-) {
-  const targetIndex = phaseOrder.indexOf(targetPhase);
-
-  return Object.fromEntries(
-    Object.entries(responseHistory).filter(([phase]) => {
-      return phaseOrder.indexOf(phase as Phase) < targetIndex;
-    }),
-  ) as Partial<Record<Phase, FacilitatorResponse>>;
 }
 
 function responseToHistory(response: FacilitatorResponse | null) {

@@ -32,14 +32,14 @@ stateDiagram-v2
 
 MVP の基本フローは前進方向のフェーズ遷移とする。ただし、ユーザーは通常操作として前フェーズへ戻れる。
 
-| 現在フェーズ       | 前進先           | 戻れるフェーズ                                                         |
-| ------------------ | ---------------- | ---------------------------------------------------------------------- |
-| consultation_input | premise          | なし                                                                   |
-| premise            | expert_selection | consultation_input                                                     |
-| expert_selection   | deliberation     | consultation_input, premise                                            |
-| deliberation       | direction        | consultation_input, premise, expert_selection                          |
-| direction          | final_memo       | consultation_input, premise, expert_selection, deliberation            |
-| final_memo         | 終了             | consultation_input, premise, expert_selection, deliberation, direction |
+| 現在フェーズ       | 前進先           | 戻れるフェーズ                                           |
+| ------------------ | ---------------- | -------------------------------------------------------- |
+| consultation_input | premise          | なし                                                     |
+| premise            | expert_selection | consultation_input                                       |
+| expert_selection   | deliberation     | consultation_input, premise                              |
+| deliberation       | direction        | consultation_input, premise, expert_selection            |
+| direction          | final_memo       | consultation_input, premise, expert_selection            |
+| final_memo         | 終了             | consultation_input, premise, expert_selection, direction |
 
 アプリ側は、現在フェーズより後のフェーズへユーザー操作だけで直接移動させない。後続フェーズへ進む場合は、現在フェーズの完了条件を満たし、必要な LLM 呼び出しまたはユーザー確認が完了している必要がある。
 
@@ -62,7 +62,7 @@ LLM は `next_action` で候補行動を返せるが、実際のフェーズ遷�
 
 状態: `決定`
 
-ユーザーが前フェーズへ戻る場合、アプリは戻り先以降の生成結果を破棄する確認を表示する。
+ユーザーが前フェーズへ戻る場合、アプリは戻り先より後の生成結果を破棄する確認を表示する。戻り先フェーズの入力状態は残し、ユーザーはそのフェーズから操作をやり直せる。
 
 確認文言:
 
@@ -70,7 +70,11 @@ LLM は `next_action` で候補行動を返せるが、実際のフェーズ遷�
 このフェーズに戻ると、以降の整理内容と生成結果は破棄されます。戻りますか？
 ```
 
-ユーザーが同意した場合のみ、戻り先以降のファシリテーター応答、専門家コメント、セッションメモ更新、終了メモを現在セッションから完全に取り除く。MVP では破棄済み履歴を保持しない。
+ユーザーが同意した場合のみ、戻り先より後のファシリテーター応答、専門家コメント、セッションメモ更新、終了メモを現在セッションから完全に取り除く。MVP では破棄済み履歴を保持しない。
+
+専門家コメントは `deliberation` の独立履歴として保存しない。`direction` から検討をやり直す場合、ユーザーは `expert_selection` に戻り、保存済みの専門家ロールを編集または再確定してコメント生成を実行する。
+
+`final_memo` から `direction` に戻る場合は、専門家コメントを保持し、終了メモだけを破棄する。
 
 ユーザーが同意しない場合、現在フェーズに留まる。
 
