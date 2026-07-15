@@ -1,12 +1,26 @@
 import type {
   ConsultationStartRequest,
   ExpertRequest,
+  ExpertComment,
   FacilitatorResponse,
   FacilitatorResponseRequest,
   Phase,
   SessionMemo,
 } from "../shared/schemas/session";
 import { maximumExpertRequestCount } from "../shared/schemas/session";
+
+/**
+ * 専門家コメント生成が一部でも失敗した場合に表示する共通メッセージ。
+ *
+ * 仕様対応: `docs/api/schemas.md#M3 の専門家コメント生成`。
+ */
+export const expertCommentGenerationErrorMessage =
+  "専門家コメントの生成に失敗しました。もう一度お試しください。";
+
+/** 日本語名: 全専門家コメント生成の確定結果。 */
+export type ExpertCommentGenerationResult =
+  | { comments: ExpertComment[]; errorMessage: "" }
+  | { comments: []; errorMessage: string };
 
 /** 日本語名: 専門家候補の確定結果。 */
 export type ExpertDraftConfirmation =
@@ -99,6 +113,32 @@ export function createFailedFacilitatorRequest(
   failedRequest: FailedFacilitatorRequest,
 ): FailedFacilitatorRequest {
   return failedRequest;
+}
+
+/**
+ * 並列開始済みの専門家コメント生成をすべて待ち、全件成功時だけ入力順の結果を返す。
+ *
+ * 仕様対応: `docs/tasks/milestone-3.md#専門家コメントの並列生成`。
+ */
+export async function collectExpertCommentGenerationResults(
+  generateComments: Array<() => Promise<ExpertComment>>,
+): Promise<ExpertCommentGenerationResult> {
+  const results = await Promise.allSettled(
+    generateComments.map((generateComment) => generateComment()),
+  );
+
+  if (results.some((result) => result.status === "rejected")) {
+    return { comments: [], errorMessage: expertCommentGenerationErrorMessage };
+  }
+
+  return {
+    comments: results.map((result) => {
+      if (result.status === "fulfilled") return result.value;
+
+      throw new Error("専門家コメント生成の結果を取得できませんでした。");
+    }),
+    errorMessage: "",
+  };
 }
 
 /** 日本語名: 開始済みセッションで使う確定相談内容を選ぶ関数。 */
