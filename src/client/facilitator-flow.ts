@@ -1,0 +1,100 @@
+import type {
+  ConsultationStartRequest,
+  FacilitatorResponse,
+  FacilitatorResponseRequest,
+  Phase,
+  SessionMemo,
+} from "../shared/schemas/session";
+
+/** 日本語名: 相談開始画面の入力値。 */
+export type ConsultationStartInput = {
+  consultation: string;
+  facts: string;
+  values: string;
+  concerns: string;
+  expectedOutcome: string;
+};
+
+/** 日本語名: 明示的リトライ用に保持する失敗リクエスト。 */
+export type FailedFacilitatorRequest =
+  | {
+      endpoint: "start";
+      request: ConsultationStartRequest;
+    }
+  | {
+      endpoint: "respond";
+      request: FacilitatorResponseRequest;
+    };
+
+/** 日本語名: 前提整理の確認回答入力値。 */
+export type FacilitatorResponseInput = {
+  consultation: string;
+  currentPhase: Phase;
+  userQuestion: FacilitatorResponse["user_question"] | undefined;
+  userQuestionAnswer: string | undefined;
+  memo: SessionMemo | null | undefined;
+};
+
+/**
+ * 相談開始 API に送る初回入力を作成する。
+ *
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/start`。
+ */
+export function buildConsultationStartRequest(
+  input: ConsultationStartInput,
+): ConsultationStartRequest {
+  const facts = emptyToUndefined(input.facts);
+  const values = emptyToUndefined(input.values);
+  const concerns = emptyToUndefined(input.concerns);
+  const expectedOutcome = emptyToUndefined(input.expectedOutcome);
+
+  return {
+    consultation: input.consultation,
+    ...(facts ? { facts } : {}),
+    ...(values ? { values } : {}),
+    ...(concerns ? { concerns } : {}),
+    ...(expectedOutcome ? { expectedOutcome } : {}),
+  };
+}
+
+/**
+ * 前提整理の必須質問回答 API に送る入力を作成する。
+ *
+ * 仕様対応: `docs/tasks/milestone-2.md#前提整理での確認回答`。
+ */
+export function buildFacilitatorResponseRequest(
+  input: FacilitatorResponseInput,
+): FacilitatorResponseRequest | null {
+  if (
+    input.currentPhase !== "premise" ||
+    !input.userQuestion ||
+    !input.memo ||
+    !input.userQuestionAnswer
+  ) {
+    return null;
+  }
+
+  return {
+    consultation: input.consultation,
+    currentPhase: "premise",
+    userQuestion: input.userQuestion,
+    userQuestionAnswer: input.userQuestionAnswer,
+    memo: input.memo,
+  };
+}
+
+/**
+ * 明示的リトライで同一内容を再送するため、失敗した API 入力を保持する。
+ *
+ * 仕様対応: `docs/tasks/milestone-2.md#API エラー表示`。
+ */
+export function createFailedFacilitatorRequest(
+  failedRequest: FailedFacilitatorRequest,
+): FailedFacilitatorRequest {
+  return failedRequest;
+}
+
+function emptyToUndefined(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
