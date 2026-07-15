@@ -2,6 +2,12 @@ import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);
 const nonEmptyStringArray = z.array(nonEmptyString);
+/**
+ * M3 で選択・確定できる専門家ロール数の上限。
+ *
+ * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ */
+export const maximumExpertRequestCount = 5;
 const finalMarkdownRequiredHeadings = [
   "# 意思決定メモ",
   "## 相談テーマ",
@@ -205,7 +211,9 @@ export const FacilitatorResponseSchema = z
     current_phase_label: nonEmptyString,
     phase_goal: nonEmptyString,
     facilitator_message: nonEmptyString,
-    expert_requests: z.array(ExpertRequestSchema),
+    expert_requests: z
+      .array(ExpertRequestSchema)
+      .max(maximumExpertRequestCount),
     user_question: UserQuestionSchema.nullable(),
     memo_updates: SessionMemoSchema,
     next_action: z.enum([

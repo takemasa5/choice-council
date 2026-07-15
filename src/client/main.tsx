@@ -15,13 +15,18 @@ import type {
   SessionMemo,
   SessionMemoRequest,
 } from "../shared/schemas/session";
+import { maximumExpertRequestCount } from "../shared/schemas/session";
 import {
+  addExpertDraft as appendExpertDraft,
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
   canProceedToExpertSelection,
+  confirmExpertDrafts as getExpertDraftConfirmation,
   createFailedFacilitatorRequest,
   getFacilitatorResponsePhase,
+  getInitialExpertRequests,
   getSessionConsultation,
+  replaceExpertDraft as replaceExpertDraftValues,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
 import {
@@ -71,6 +76,7 @@ type StoredSession = {
   responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
   currentPhase: Phase;
   expertComments?: ExpertComment[];
+  initialExpertRequests?: ExpertRequest[];
   finalMarkdown?: string;
   interruption?: {
     isReady: boolean;
@@ -107,6 +113,9 @@ function App() {
   const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
   const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
   const [expertDrafts, setExpertDrafts] = useState<ExpertRequest[]>([]);
+  const [initialExpertRequests, setInitialExpertRequests] = useState<
+    ExpertRequest[]
+  >([]);
   const [confirmedExperts, setConfirmedExperts] = useState<ExpertRequest[]>([]);
   const confirmedExpertRequestKeyRef = useRef("");
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
@@ -150,6 +159,17 @@ function App() {
           "consultation_input",
       );
       setExpertComments(parsed.expertComments ?? []);
+      const restoredPhase =
+        parsed.currentPhase ??
+        parsed.response?.current_phase ??
+        "consultation_input";
+      setInitialExpertRequests(
+        getInitialExpertRequests(
+          parsed.initialExpertRequests,
+          restoredPhase,
+          parsed.response,
+        ),
+      );
       setFinalMarkdown(parsed.finalMarkdown ?? "");
       restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
       restoreInterruption(parsed.interruption);
@@ -192,6 +212,7 @@ function App() {
     responseHistory,
     currentPhase,
     expertComments,
+    initialExpertRequests,
     finalMarkdown,
     selectedQuestionOption,
     otherQuestionAnswer,
@@ -315,6 +336,11 @@ function App() {
       setSelectedInterruptionOption("");
       setInterruptionOtherAnswer("");
       setExpertComments([]);
+      setInitialExpertRequests(
+        nextPhase === "expert_selection"
+          ? facilitatorResponse.expert_requests
+          : [],
+      );
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
         premise: facilitatorResponse,
@@ -432,6 +458,11 @@ function App() {
       }));
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
+      setInitialExpertRequests(
+        nextPhase === "expert_selection"
+          ? facilitatorResponse.expert_requests
+          : [],
+      );
       showInterruptionOptionsIfPaused();
     } catch (error) {
       setErrorMessage(
@@ -597,6 +628,7 @@ function App() {
     setSelectedQuestionOption("");
     setOtherQuestionAnswer("");
     setExpertDrafts([]);
+    setInitialExpertRequests([]);
     setConfirmedExperts([]);
     setExpertComments([]);
     setExpertErrorMessage("");
@@ -639,6 +671,9 @@ function App() {
     setSelectedQuestionOption("");
     setOtherQuestionAnswer("");
     setExpertDrafts([]);
+    if (targetPhase !== "expert_selection") {
+      setInitialExpertRequests([]);
+    }
     setConfirmedExperts([]);
     setExpertComments(getExpertCommentsForReturn(targetPhase, expertComments));
     setExpertErrorMessage("");
@@ -660,6 +695,7 @@ function App() {
 
     const nextResponse = createResponseForPhase(response, "expert_selection");
 
+    setInitialExpertRequests(response.expert_requests);
     setCurrentPhase("expert_selection");
     setResponse(nextResponse);
     setResponseHistory((current) => ({
@@ -688,14 +724,7 @@ function App() {
     if (isGeneratingExperts) return;
 
     resetConfirmedExperts();
-    setExpertDrafts((current) => [
-      ...current,
-      {
-        role_name: "",
-        viewpoint: "",
-        request: "",
-      },
-    ]);
+    setExpertDrafts(appendExpertDraft);
   }
 
   function removeExpertDraft(index: number) {
@@ -711,17 +740,7 @@ function App() {
     if (isGeneratingExperts) return;
 
     resetConfirmedExperts();
-    setExpertDrafts((current) => {
-      return current.map((expert, currentIndex) => {
-        return currentIndex === index
-          ? {
-              role_name: "",
-              viewpoint: "",
-              request: expert.request,
-            }
-          : expert;
-      });
-    });
+    setExpertDrafts((current) => replaceExpertDraftValues(current, index));
   }
 
   function resetConfirmedExperts() {
@@ -742,41 +761,37 @@ function App() {
       return;
     }
 
-    const validExperts = expertDrafts.map((expert) => ({
-      role_name: expert.role_name.trim(),
-      viewpoint: expert.viewpoint.trim(),
-      request: expert.request.trim(),
-    }));
-
-    const hasIncompleteExpert = validExperts.some((expert) => {
-      const enteredFields = [
-        expert.role_name,
-        expert.viewpoint,
-        expert.request,
-      ].filter(Boolean).length;
-      return enteredFields > 0 && enteredFields < 3;
-    });
-
-    if (hasIncompleteExpert) {
-      setExpertErrorMessage(
-        "追加した専門家ロールの役割名、観点、依頼をすべて入力してください。",
-      );
+    const confirmation = getExpertDraftConfirmation(expertDrafts);
+    if (confirmation.errorMessage) {
+      setExpertErrorMessage(confirmation.errorMessage);
       return;
     }
 
-    const completedExperts = validExperts.filter(
-      (expert) => expert.role_name && expert.viewpoint && expert.request,
-    );
-
-    if (completedExperts.length === 0) {
-      setExpertErrorMessage("確定する専門家ロールを1件以上入力してください。");
-      return;
-    }
-
-    setConfirmedExperts(completedExperts);
+    setConfirmedExperts(confirmation.experts);
     setExpertComments([]);
     setExpertErrorMessage("");
-    saveConfirmedExpertDrafts(completedExperts);
+    saveConfirmedExpertDrafts(confirmation.experts);
+  }
+
+  /**
+   * ファシリテーターが最初に提示した候補だけを、編集内容なしで確定する。
+   *
+   * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+   */
+  function confirmInitialExpertDrafts() {
+    if (isGeneratingExperts) return;
+
+    const confirmation = getExpertDraftConfirmation(initialExpertRequests);
+    if (confirmation.errorMessage) {
+      setExpertErrorMessage(confirmation.errorMessage);
+      return;
+    }
+
+    setExpertDrafts(initialExpertRequests);
+    setConfirmedExperts(confirmation.experts);
+    setExpertComments([]);
+    setExpertErrorMessage("");
+    saveConfirmedExpertDrafts(confirmation.experts);
   }
 
   async function generateExpertComments() {
@@ -1080,6 +1095,7 @@ function App() {
       responseHistory,
       currentPhase,
       expertComments,
+      initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
       interruption: hasInterruptionState
         ? {
@@ -1390,14 +1406,17 @@ function App() {
                         className="secondary-button"
                         type="button"
                         onClick={addExpertDraft}
-                        disabled={isGeneratingExperts}
+                        disabled={
+                          isGeneratingExperts ||
+                          expertDrafts.length >= maximumExpertRequestCount
+                        }
                       >
                         専門家を追加する
                       </button>
                       <button
                         className="secondary-button"
                         type="button"
-                        onClick={confirmExpertDrafts}
+                        onClick={confirmInitialExpertDrafts}
                         disabled={isGeneratingExperts}
                       >
                         おまかせで進める
