@@ -207,6 +207,22 @@ export function confirmExpertDrafts(
   return { experts, errorMessage: "" };
 }
 
+/**
+ * 保存形式に初期候補がない旧セッションでは、専門家選定中の応答候補を初期候補として復元する。
+ *
+ * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ */
+export function getInitialExpertRequests(
+  storedInitialExpertRequests: ExpertRequest[] | undefined,
+  currentPhase: Phase,
+  response: FacilitatorResponse | null,
+): ExpertRequest[] {
+  if (storedInitialExpertRequests) return storedInitialExpertRequests;
+  if (currentPhase !== "expert_selection") return [];
+
+  return response?.expert_requests ?? [];
+}
+
 function emptyToUndefined(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;

@@ -8,12 +8,14 @@ import {
   confirmExpertDrafts,
   createFailedFacilitatorRequest,
   getFacilitatorResponsePhase,
+  getInitialExpertRequests,
   getSessionConsultation,
   replaceExpertDraft,
 } from "../../src/client/facilitator-flow";
 import { maximumExpertRequestCount } from "../../src/shared/schemas/session";
 import type {
   ExpertRequest,
+  FacilitatorResponse,
   FacilitatorResponseRequest,
   SessionMemo,
 } from "../../src/shared/schemas/session";
@@ -185,5 +187,14 @@ test("一部だけ入力された専門家候補は確定できない", () => {
       errorMessage:
         "追加した専門家ロールの役割名、観点、依頼をすべて入力してください。",
     },
+  );
+});
+
+test("旧形式の専門家選定セッションでは応答候補を初期候補として復元する", () => {
+  const response = { expert_requests: [expert] } as FacilitatorResponse;
+
+  assert.deepEqual(
+    getInitialExpertRequests(undefined, "expert_selection", response),
+    [expert],
   );
 });

@@ -24,6 +24,7 @@ import {
   confirmExpertDrafts as getExpertDraftConfirmation,
   createFailedFacilitatorRequest,
   getFacilitatorResponsePhase,
+  getInitialExpertRequests,
   getSessionConsultation,
   replaceExpertDraft as replaceExpertDraftValues,
   type FailedFacilitatorRequest,
@@ -158,7 +159,17 @@ function App() {
           "consultation_input",
       );
       setExpertComments(parsed.expertComments ?? []);
-      setInitialExpertRequests(parsed.initialExpertRequests ?? []);
+      const restoredPhase =
+        parsed.currentPhase ??
+        parsed.response?.current_phase ??
+        "consultation_input";
+      setInitialExpertRequests(
+        getInitialExpertRequests(
+          parsed.initialExpertRequests,
+          restoredPhase,
+          parsed.response,
+        ),
+      );
       setFinalMarkdown(parsed.finalMarkdown ?? "");
       restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
       restoreInterruption(parsed.interruption);
