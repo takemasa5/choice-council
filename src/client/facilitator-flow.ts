@@ -102,6 +102,15 @@ export function getSessionConsultation(
   return startedConsultation || consultation;
 }
 
+/** ファシリテーター応答の候補行動に対応するアプリ側フェーズを決める。 */
+export function getFacilitatorResponsePhase(
+  response: Pick<FacilitatorResponse, "next_action">,
+) {
+  return response.next_action === "request_experts"
+    ? "expert_selection"
+    : "premise";
+}
+
 function emptyToUndefined(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
