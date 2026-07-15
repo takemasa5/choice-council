@@ -25,6 +25,7 @@ import {
   collectExpertCommentGenerationResults,
   confirmExpertDrafts as getExpertDraftConfirmation,
   createFailedFacilitatorRequest,
+  discardFailedDeliberationRequest,
   getFacilitatorResponsePhase,
   getInitialExpertRequests,
   getSessionConsultation,
@@ -755,6 +756,7 @@ function App() {
   function resetConfirmedExperts() {
     if (isGeneratingExperts) return;
 
+    setFailedFacilitatorRequest(discardFailedDeliberationRequest);
     setConfirmedExperts([]);
     setExpertComments([]);
     setExpertErrorMessage("");
@@ -1110,6 +1112,7 @@ function App() {
       currentPhase === "premise" ? "expert_selection" : currentPhase;
 
     confirmedExpertRequestKeyRef.current = JSON.stringify(experts);
+    setFailedFacilitatorRequest(discardFailedDeliberationRequest);
     setCurrentPhase(nextPhase);
     setResponse((currentResponse) => {
       if (!currentResponse) return currentResponse;

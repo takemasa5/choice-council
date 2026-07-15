@@ -9,6 +9,7 @@ import {
   collectExpertCommentGenerationResults,
   confirmExpertDrafts,
   createFailedFacilitatorRequest,
+  discardFailedDeliberationRequest,
   getFacilitatorResponsePhase,
   getInitialExpertRequests,
   getSessionConsultation,
@@ -179,6 +180,43 @@ test("ファシリテーター整理の失敗リクエストは同一内容で�
   assert.deepEqual(
     createFailedFacilitatorRequest({ endpoint: "deliberation", request }),
     { endpoint: "deliberation", request },
+  );
+});
+
+test("専門家候補を変更した場合は古い整理リクエストを破棄する", () => {
+  const failedRequest = createFailedFacilitatorRequest({
+    endpoint: "deliberation",
+    request: {
+      consultation: "中学受験について相談したい",
+      currentPhase: "deliberation",
+      memo,
+      confirmedExperts: [expert],
+      expertComments: [expertComment],
+    },
+  });
+
+  assert.equal(discardFailedDeliberationRequest(failedRequest), null);
+  assert.deepEqual(
+    discardFailedDeliberationRequest({
+      endpoint: "respond",
+      request: {
+        consultation: "中学受験について相談したい",
+        currentPhase: "premise",
+        userQuestion,
+        userQuestionAnswer: "まだ迷っている",
+        memo,
+      },
+    }),
+    {
+      endpoint: "respond",
+      request: {
+        consultation: "中学受験について相談したい",
+        currentPhase: "premise",
+        userQuestion,
+        userQuestionAnswer: "まだ迷っている",
+        memo,
+      },
+    },
   );
 });
 

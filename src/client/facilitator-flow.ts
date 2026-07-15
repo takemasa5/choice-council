@@ -155,6 +155,17 @@ export function createFailedFacilitatorRequest(
 }
 
 /**
+ * 専門家候補の変更後に古い整理リクエストを再送しないよう破棄する。
+ *
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/deliberation`。
+ */
+export function discardFailedDeliberationRequest(
+  failedRequest: FailedFacilitatorRequest | null,
+): FailedFacilitatorRequest | null {
+  return failedRequest?.endpoint === "deliberation" ? null : failedRequest;
+}
+
+/**
  * 並列開始済みの専門家コメント生成をすべて待ち、全件成功時だけ入力順の結果を返す。
  *
  * 仕様対応: `docs/tasks/milestone-3.md#専門家コメントの並列生成`。
