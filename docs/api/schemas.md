@@ -80,25 +80,25 @@ M2 では初回開始と前提整理での回答を別 endpoint として扱う�
 
 `ConsultationStartRequest` は初回開始専用の strict schema とする。
 
-| フィールド | 必須 | 内容 |
-| --- | ---: | --- |
-| consultation | 必須 | ユーザーの相談内容 |
-| facts | 任意 | ユーザーが入力した事実・背景 |
-| values | 任意 | ユーザーが重視したいこと |
-| concerns | 任意 | ユーザーの不安なこと |
-| expectedOutcome | 任意 | 期待する結果 |
+| フィールド      | 必須 | 内容                         |
+| --------------- | ---: | ---------------------------- |
+| consultation    | 必須 | ユーザーの相談内容           |
+| facts           | 任意 | ユーザーが入力した事実・背景 |
+| values          | 任意 | ユーザーが重視したいこと     |
+| concerns        | 任意 | ユーザーの不安なこと         |
+| expectedOutcome | 任意 | 期待する結果                 |
 
 ### `POST /api/facilitator/respond`
 
 `FacilitatorResponseRequest` は、M2 の前提整理で必須質問に回答するための strict schema とする。
 
-| フィールド | 必須 | 内容 |
-| --- | ---: | --- |
-| consultation | 必須 | 初回に入力した相談内容 |
-| currentPhase | 必須 | 固定値 `premise` |
-| userQuestion | 必須 | 直前の `user_question`。`required` は `true` |
+| フィールド         | 必須 | 内容                                                               |
+| ------------------ | ---: | ------------------------------------------------------------------ |
+| consultation       | 必須 | 初回に入力した相談内容                                             |
+| currentPhase       | 必須 | 固定値 `premise`                                                   |
+| userQuestion       | 必須 | 直前の `user_question`。`required` は `true`                       |
 | userQuestionAnswer | 必須 | 非空文字列。通常の選択肢は選択肢文言、「その他」は自由入力文を送る |
-| memo | 必須 | 直前の `FacilitatorResponse.memo_updates` |
+| memo               | 必須 | 直前の `FacilitatorResponse.memo_updates`                          |
 
 `/respond` のファシリテーターは、質問と回答を前提整理へ反映し、初回の前提整理からやり直さない。
 
