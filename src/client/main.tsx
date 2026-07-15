@@ -105,6 +105,7 @@ function App() {
   const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
   const [expertDrafts, setExpertDrafts] = useState<ExpertRequest[]>([]);
   const [confirmedExperts, setConfirmedExperts] = useState<ExpertRequest[]>([]);
+  const confirmedExpertRequestKeyRef = useRef("");
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
@@ -198,7 +199,11 @@ function App() {
 
   useEffect(() => {
     setExpertDrafts(response?.expert_requests ?? []);
-    setConfirmedExperts([]);
+    if (confirmedExpertRequestKeyRef.current === expertRequestKey) {
+      confirmedExpertRequestKeyRef.current = "";
+    } else {
+      setConfirmedExperts([]);
+    }
     setExpertErrorMessage("");
   }, [expertRequestKey]);
 
@@ -1101,12 +1106,12 @@ function App() {
     const nextPhase =
       currentPhase === "premise" ? "expert_selection" : currentPhase;
 
+    confirmedExpertRequestKeyRef.current = JSON.stringify(experts);
     setCurrentPhase(nextPhase);
     setResponse((currentResponse) => {
       if (!currentResponse) return currentResponse;
 
-      const nextResponse = createResponseForPhase(currentResponse, nextPhase);
-      const storedResponse = createResponseForPhase(
+      const nextResponse = createResponseForPhase(
         currentResponse,
         nextPhase,
         experts,
@@ -1114,7 +1119,7 @@ function App() {
 
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
-        [nextPhase]: storedResponse,
+        [nextPhase]: nextResponse,
       }));
 
       return nextResponse;

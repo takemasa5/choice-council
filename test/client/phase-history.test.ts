@@ -18,6 +18,7 @@ test("方向性整理からは専門家選定へ戻り、検討を直接の戻�
   const history: ResponseHistory = {
     premise: response("premise"),
     expert_selection: response("expert_selection"),
+    deliberation: response("deliberation"),
     direction: response("direction"),
   };
 

@@ -17,7 +17,10 @@ export function getReturnablePhases(
   if (currentIndex <= 0) return [];
 
   return phaseOrder.slice(0, currentIndex).filter((phase) => {
-    return phase === "consultation_input" || Boolean(responseHistory[phase]);
+    return (
+      phase !== "deliberation" &&
+      (phase === "consultation_input" || Boolean(responseHistory[phase]))
+    );
   });
 }
 
