@@ -23,16 +23,16 @@ backend 実装は `server/` に置き、`src/server/` へは移動しない。
 
 ## 配置ルール
 
-| パス | 用途 |
-|---|---|
-| `docs/product/` | ユーザー体験、スコープ、用語、プロダクト仕様 |
-| `docs/design/` | 状態遷移、画面構成、開発方針 |
-| `docs/api/` | API 契約、JSON schema 方針 |
-| `docs/prompts/` | LLM 呼び出し単位のプロンプト |
-| `docs/tasks/` | 未確定事項、実装候補、マイルストーン |
-| `server/` | Express backend、OpenAI API 呼び出し、backend services |
-| `src/client/` | React frontend |
-| `src/shared/` | frontend/backend 共有の型、schema、状態機械 |
+| パス            | 用途                                                   |
+| --------------- | ------------------------------------------------------ |
+| `docs/product/` | ユーザー体験、スコープ、用語、プロダクト仕様           |
+| `docs/design/`  | 状態遷移、画面構成、開発方針                           |
+| `docs/api/`     | API 契約、JSON schema 方針                             |
+| `docs/prompts/` | LLM 呼び出し単位のプロンプト                           |
+| `docs/tasks/`   | 未確定事項、実装候補、マイルストーン                   |
+| `server/`       | Express backend、OpenAI API 呼び出し、backend services |
+| `src/client/`   | React frontend                                         |
+| `src/shared/`   | frontend/backend 共有の型、schema、状態機械            |
 
 ## 将来見直す条件
 

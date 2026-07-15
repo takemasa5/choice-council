@@ -50,7 +50,6 @@ backend は `src/server/` へ移動しない。理由は、frontend と backend 
 - frontend/backend 間の契約は `src/shared/schemas/` を優先する。
 - LLM 出力は構造化し、backend 側で検証してから返す。
 - エラーを握りつぶさず、ユーザーに説明可能なエラーメッセージへ変換する。
-- コメントは「なぜ」を説明する場合にだけ追加する。
 
 ## OpenAI API 方針
 
