@@ -163,6 +163,46 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
 
 `current_phase` と `next_action` はアプリ側が検証する。状態機械で許可されない遷移を示す出力は失敗として扱う。
 
+### M3 の専門家コメント生成
+
+状態: `決定`
+
+M3 で受け入れるファシリテーターの `expert_requests` は、システム設定の上限以内（初期値5件）とする。上限を超える候補を含む応答は不正として扱い、共通のバリデーション規則に従って再生成する。
+
+M3 では、ユーザーが確定した専門家ロールごとに `POST /api/expert/comment` を1回呼び出す。各リクエストは `ExpertCommentRequest` に従い、`currentPhase` は `deliberation` とする。確定済み専門家ロールは1〜5件とし、同じ `role_name` と `viewpoint` の組み合わせを複数含めることを許容する。
+
+フロントエンドは全リクエストを並列で開始し、すべてが成功した場合のみ専門家コメント一覧を表示して、ファシリテーター整理へ進める。1件でも失敗した場合は、すべてのリクエストが完了してから成功分を破棄し、専門家コメントを表示・保存しない。画面には `専門家コメントの生成に失敗しました。もう一度お試しください。` を表示する。ユーザーが再試行した場合は、確定済みの全専門家ロールに対して同じリクエストを再送する。
+
+バックエンドは各コメント生成で共通のバリデーション規則に従い、構造化出力の検証失敗時に1回だけ再生成する。クライアントは専門家コメント単位の自動再試行を行わない。
+
+### `POST /api/facilitator/deliberation`
+
+状態: `決定`
+
+M3 のファシリテーター整理は、全専門家コメントの生成成功後に呼び出す。`FacilitatorDeliberationRequest` は strict schema とする。
+
+| フィールド | 必須 | 内容 |
+| --- | ---: | --- |
+| consultation | 必須 | 初回に入力した相談内容 |
+| currentPhase | 必須 | 固定値 `deliberation` |
+| memo | 必須 | 前提整理時点の最新 `SessionMemo` |
+| confirmedExperts | 必須 | ユーザーが確定した `ExpertRequest` の配列。1〜5件 |
+| expertComments | 必須 | 全件生成に成功した `ExpertComment` の配列。`confirmedExperts` と同数で同じ順序 |
+
+`confirmedExperts` と `expertComments` は配列の位置で対応付ける。同じロール名・観点の重複を許可するため、ロール名・観点だけで対応付けてはならない。
+
+MVP では、全専門家コメントをこのリクエストに含める。ファシリテーターは応答を `FacilitatorResponse` として返し、M3 では次の追加制約を満たす応答だけを受け入れる。
+
+- `current_phase` は `direction` である。
+- `user_question` は `null` である。
+- `expert_requests` は空配列である。
+- `next_action` は `move_phase` である。
+- `memo_updates` には、専門家コメントの要点、対立点、未確認事項および次アクション候補を反映する。
+
+応答が有効な場合、アプリはファシリテーター整理と `memo_updates` を表示・保持し、`deliberation` から `direction` へ遷移する。M3 では `POST /api/session-memo/update` を呼び出さない。
+
+このAPIの呼び出しまたは応答検証に失敗した場合、生成済みの専門家コメントは保持して表示する。画面にはエラーと再試行操作を表示し、ユーザーが再試行した場合は同一の `FacilitatorDeliberationRequest` だけを再送する。専門家コメントを自動再生成してはならない。
+
 ### M2 route の追加検証
 
 `/api/facilitator/start` と `/api/facilitator/respond` は、共通の `FacilitatorResponse` schema に加えて、次を検証する。

@@ -34,6 +34,16 @@
 
 M2 の `/api/facilitator/start` と `/api/facilitator/respond` では、出力の `current_phase` を `premise` に固定する。必須質問を返す場合は `required: true` と `next_action: wait_user` をセットにし、質問を返さない場合は `user_question: null` と `next_action: request_experts` をセットにする。M2 では `update_memo`、`move_phase`、`finish` を返さない。
 
+## M3 の専門家コメント整理
+
+状態: `決定`
+
+`POST /api/facilitator/deliberation` では、相談内容、現在メモ、確定済み専門家ロール、全専門家コメントを入力として受け取る。ファシリテーターは、コメントの単純な列挙ではなく、判断軸、意見が一致した点・割れた点、未確認事項、次アクション候補を整理する。
+
+出力は `docs/api/schemas.md#ファシリテーター出力` に従う。M3 では `current_phase: direction`、`next_action: move_phase`、`user_question: null`、空の `expert_requests` を返す。専門家コメントに含まれる未確認事項や外部調査の必要性は断定せず、`memo_updates.open_questions` に反映する。外部調査は実行しない。
+
+確定済み専門家ロールとコメントの対応は入力配列の順序で判断する。ロール名や観点が重複していても、複数のコメントを1件に統合または除外してはならない。
+
 ## 初回応答で行うこと
 
 1. 相談内容を要約する。
