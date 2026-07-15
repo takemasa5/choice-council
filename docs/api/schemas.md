@@ -74,21 +74,35 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 
 状態: `決定`
 
-ファシリテーター呼び出しの入力は、相談内容に加えて再開文脈を任意で含められる。
+M2 では初回開始と前提整理での回答を別 endpoint として扱う。後続マイルストーンで他フェーズの継続入力を追加する場合は、M2 の request schema を拡張せず、対象フェーズに対応する schema を追加する。
 
-| フィールド         | 必須 | 内容                                                                          |
-| ------------------ | ---: | ----------------------------------------------------------------------------- |
-| consultation       | 必須 | ユーザーの相談内容                                                            |
-| facts              | 任意 | ユーザーが入力した事実・背景                                                  |
-| values             | 任意 | ユーザーが重視したいこと                                                      |
-| concerns           | 任意 | ユーザーの不安なこと                                                          |
-| expectedOutcome    | 任意 | 期待する結果                                                                  |
-| userQuestion       | 任意 | 直前に提示した `user_question` の質問文、選択肢、必須フラグ                   |
-| userQuestionAnswer | 任意 | 直前の `user_question` に対するユーザー回答。選択肢または「その他」の自由入力 |
-| currentPhase       | 任意 | 再開時のアプリ側現在フェーズ                                                  |
-| memo               | 任意 | 再開時点までに保持しているセッションメモ                                      |
+### `POST /api/facilitator/start`
 
-`currentPhase` と `memo` が入力に含まれる場合、ファシリテーターはそのフェーズとメモを現在の文脈として扱い、初回の前提整理からやり直さない。`userQuestion` と `userQuestionAnswer` が入力に含まれる場合は、その質問への回答として扱い、メモ更新と次アクションに反映する。
+`ConsultationStartRequest` は初回開始専用の strict schema とする。
+
+| フィールド      | 必須 | 内容                         |
+| --------------- | ---: | ---------------------------- |
+| consultation    | 必須 | ユーザーの相談内容           |
+| facts           | 任意 | ユーザーが入力した事実・背景 |
+| values          | 任意 | ユーザーが重視したいこと     |
+| concerns        | 任意 | ユーザーの不安なこと         |
+| expectedOutcome | 任意 | 期待する結果                 |
+
+### `POST /api/facilitator/respond`
+
+`FacilitatorResponseRequest` は、M2 の前提整理で必須質問に回答するための strict schema とする。
+
+| フィールド         | 必須 | 内容                                                               |
+| ------------------ | ---: | ------------------------------------------------------------------ |
+| consultation       | 必須 | 初回に入力した相談内容                                             |
+| currentPhase       | 必須 | 固定値 `premise`                                                   |
+| userQuestion       | 必須 | 直前の `user_question`。`required` は `true`                       |
+| userQuestionAnswer | 必須 | 非空文字列。通常の選択肢は選択肢文言、「その他」は自由入力文を送る |
+| memo               | 必須 | 直前の `FacilitatorResponse.memo_updates`                          |
+
+`/respond` のファシリテーターは、質問と回答を前提整理へ反映し、初回の前提整理からやり直さない。
+
+M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/respond` の応答で必須質問が再び返る場合、最新の質問、回答、`memo_updates` を用いて `/respond` を繰り返せる。各リクエストはユーザー操作によってのみ送信する。
 
 ```json
 {
@@ -148,6 +162,15 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 `expert_requests` は、`next_action` が `request_experts` の場合に1件以上必要とする。
 
 `current_phase` と `next_action` はアプリ側が検証する。状態機械で許可されない遷移を示す出力は失敗として扱う。
+
+### M2 route の追加検証
+
+`/api/facilitator/start` と `/api/facilitator/respond` は、共通の `FacilitatorResponse` schema に加えて、次を検証する。
+
+- `current_phase` は `premise` である。
+- `user_question` が存在する場合、`required` は `true` かつ `next_action` は `wait_user` である。
+- `user_question` が `null` の場合、`next_action` は `request_experts` であり、`expert_requests` は 1 件以上である。
+- `update_memo`、`move_phase`、`finish`、`required: false` の質問は M2 の route では受け入れない。
 
 ## セッションメモ
 

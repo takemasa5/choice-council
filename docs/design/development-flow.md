@@ -70,3 +70,11 @@ M1 では実装を行わず、次の仕様を実装タスクへ落とせる粒�
 プロンプト契約では、呼び出し単位、入力文脈、従う schema、禁止事項を定義する。実際のプロンプト文言の品質検証、few-shot 追加、モデルパラメータ調整は、M2 以降で実 API 呼び出しを試せる状態になってから扱う。
 
 M1 では `src/shared/` の Zod schema 実装は変更しない。`docs/` で確定した JSON schema を共有 schema へ同期する作業は、M1 完了後の実装タスクとして Issue 化する。
+
+## M2 の完了条件
+
+状態: `決定`
+
+M2 の詳細仕様と完了条件は `docs/tasks/milestone-2.md` に従う。
+
+M2 では、相談開始画面から `POST /api/facilitator/start` を呼び出し、ファシリテーター初回応答を `premise` フェーズとして表示する。必須の確認質問が返った場合は、`POST /api/facilitator/respond` で回答し、`premise` 内で前提整理を継続できる状態を完了条件とする。
