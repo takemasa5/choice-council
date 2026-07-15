@@ -19,6 +19,7 @@ import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
   createFailedFacilitatorRequest,
+  getSessionConsultation,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
 import "./styles.css";
@@ -218,6 +219,10 @@ function App() {
     !isUpdatingMemo &&
     !isGeneratingExperts &&
     !isGeneratingFinalMarkdown;
+  const sessionConsultation = getSessionConsultation(
+    startedConsultation,
+    consultation,
+  );
   const availableReturnPhases = useMemo(() => {
     return getReturnablePhases(currentPhase);
   }, [currentPhase]);
@@ -331,8 +336,6 @@ function App() {
     const question = response?.user_question;
     const answer = getResponseQuestionAnswer();
     const currentMemo = response?.memo_updates;
-    const responseConsultation = startedConsultation || consultation;
-
     if (!question || !currentMemo || currentPhase !== "premise") return;
 
     if (!answer) {
@@ -342,7 +345,7 @@ function App() {
     }
 
     const request = buildFacilitatorResponseRequest({
-      consultation: responseConsultation,
+      consultation: sessionConsultation,
       currentPhase,
       userQuestion: question,
       userQuestionAnswer: answer,
@@ -763,7 +766,7 @@ function App() {
       const comments = await Promise.all(
         confirmedExperts.map(async (expert) => {
           const request: ExpertCommentRequest = {
-            consultation,
+            consultation: sessionConsultation,
             currentPhase: expertCommentPhase,
             memo: memo ?? undefined,
             expert,
@@ -786,7 +789,7 @@ function App() {
       );
 
       setExpertComments(comments);
-      await carryResearchNeedsToMemo(comments, expertCommentPhase);
+      await carryResearchNeedsToMemo(comments, "direction");
       showInterruptionOptionsIfPaused();
     } catch (error) {
       setExpertErrorMessage(
@@ -821,7 +824,7 @@ function App() {
     }
 
     const request: FinalMarkdownRequest = {
-      consultation,
+      consultation: sessionConsultation,
       memo,
       expertComments: expertComments.length > 0 ? expertComments : undefined,
     };
@@ -934,7 +937,7 @@ function App() {
     setMemoErrorMessage("");
 
     const request: SessionMemoRequest = {
-      consultation,
+      consultation: sessionConsultation,
       currentPhase: targetPhase,
       previousMemo: memo ?? undefined,
       facilitatorResponse,

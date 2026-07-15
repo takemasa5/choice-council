@@ -94,6 +94,14 @@ export function createFailedFacilitatorRequest(
   return failedRequest;
 }
 
+/** 日本語名: 開始済みセッションで使う確定相談内容を選ぶ関数。 */
+export function getSessionConsultation(
+  startedConsultation: string,
+  consultation: string,
+) {
+  return startedConsultation || consultation;
+}
+
 function emptyToUndefined(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
