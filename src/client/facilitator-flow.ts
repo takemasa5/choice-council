@@ -102,6 +102,22 @@ export function getSessionConsultation(
   return startedConsultation || consultation;
 }
 
+/** ファシリテーター応答の候補行動に対応するアプリ側フェーズを決める。 */
+export function getFacilitatorResponsePhase(
+  response: Pick<FacilitatorResponse, "next_action">,
+) {
+  return response.next_action === "request_experts"
+    ? "expert_selection"
+    : "premise";
+}
+
+/** 前提整理の完了後に、専門家選定へ進める応答かを判定する。 */
+export function canProceedToExpertSelection(
+  response: Pick<FacilitatorResponse, "next_action" | "user_question"> | null,
+) {
+  return response?.next_action === "request_experts" && !response.user_question;
+}
+
 function emptyToUndefined(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;

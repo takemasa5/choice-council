@@ -18,7 +18,9 @@ import type {
 import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
+  canProceedToExpertSelection,
   createFailedFacilitatorRequest,
+  getFacilitatorResponsePhase,
   getSessionConsultation,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
@@ -294,8 +296,13 @@ function App() {
       }
 
       setFailedFacilitatorRequest(null);
-      setCurrentPhase("premise");
-      setResponse(facilitatorResponse);
+      const nextPhase = getFacilitatorResponsePhase(facilitatorResponse);
+      const nextResponse = createResponseForPhase(
+        facilitatorResponse,
+        nextPhase,
+      );
+      setCurrentPhase(nextPhase);
+      setResponse(nextResponse);
       setStartedConsultation(request.consultation);
       setConsultation(request.consultation);
       setFacts(request.facts ?? "");
@@ -311,6 +318,9 @@ function App() {
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
         premise: facilitatorResponse,
+        ...(nextPhase === "expert_selection"
+          ? { expert_selection: nextResponse }
+          : {}),
       }));
       showInterruptionOptionsIfPaused();
     } catch (error) {
@@ -406,13 +416,23 @@ function App() {
       }
 
       setFailedFacilitatorRequest(null);
-      setResponse(facilitatorResponse);
+      const nextPhase = getFacilitatorResponsePhase(facilitatorResponse);
+      const nextResponse = createResponseForPhase(
+        facilitatorResponse,
+        nextPhase,
+      );
+      setCurrentPhase(nextPhase);
+      setResponse(nextResponse);
       setResponseHistory((current) => ({
         ...current,
         premise: facilitatorResponse,
+        ...(nextPhase === "expert_selection"
+          ? { expert_selection: nextResponse }
+          : {}),
       }));
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
+      showInterruptionOptionsIfPaused();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
@@ -624,6 +644,29 @@ function App() {
     setExpertErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
+  }
+
+  function proceedToExpertSelection() {
+    if (
+      isLoading ||
+      isUpdatingMemo ||
+      isGeneratingExperts ||
+      isGeneratingFinalMarkdown ||
+      !response ||
+      !canProceedToExpertSelection(response)
+    ) {
+      return;
+    }
+
+    const nextResponse = createResponseForPhase(response, "expert_selection");
+
+    setCurrentPhase("expert_selection");
+    setResponse(nextResponse);
+    setResponseHistory((current) => ({
+      ...keepResponsesThroughPhase(current, "premise"),
+      premise: current.premise ?? response,
+      expert_selection: nextResponse,
+    }));
   }
 
   function updateExpertDraft(
@@ -1247,136 +1290,154 @@ function App() {
                 候補行動: {nextActionLabels[response.next_action]}
               </p>
 
-              {response.expert_requests.length > 0 && (
-                <section
-                  className="expert-request-box"
-                  aria-label="専門家ロール候補"
-                >
-                  <h3>専門家ロール候補</h3>
-                  <div className="expert-request-list">
-                    {expertDrafts.map((expertRequest, index) => (
-                      <article
-                        className="expert-request-item"
-                        key={`${expertRequest.role_name}-${expertRequest.viewpoint}-${index}`}
+              {currentPhase === "premise" &&
+                canProceedToExpertSelection(response) && (
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={proceedToExpertSelection}
+                    disabled={
+                      isLoading ||
+                      isUpdatingMemo ||
+                      isGeneratingExperts ||
+                      isGeneratingFinalMarkdown
+                    }
+                  >
+                    専門家選定へ進む
+                  </button>
+                )}
+
+              {currentPhase === "expert_selection" &&
+                response.expert_requests.length > 0 && (
+                  <section
+                    className="expert-request-box"
+                    aria-label="専門家ロール候補"
+                  >
+                    <h3>専門家ロール候補</h3>
+                    <div className="expert-request-list">
+                      {expertDrafts.map((expertRequest, index) => (
+                        <article
+                          className="expert-request-item"
+                          key={`${expertRequest.role_name}-${expertRequest.viewpoint}-${index}`}
+                        >
+                          <label className="field compact-field">
+                            <span>専門家</span>
+                            <input
+                              value={expertRequest.role_name}
+                              onChange={(event) =>
+                                updateExpertDraft(
+                                  index,
+                                  "role_name",
+                                  event.target.value,
+                                )
+                              }
+                              disabled={isGeneratingExperts}
+                            />
+                          </label>
+                          <label className="field compact-field">
+                            <span>観点</span>
+                            <textarea
+                              value={expertRequest.viewpoint}
+                              onChange={(event) =>
+                                updateExpertDraft(
+                                  index,
+                                  "viewpoint",
+                                  event.target.value,
+                                )
+                              }
+                              rows={2}
+                              disabled={isGeneratingExperts}
+                            />
+                          </label>
+                          <label className="field compact-field">
+                            <span>依頼</span>
+                            <textarea
+                              value={expertRequest.request}
+                              onChange={(event) =>
+                                updateExpertDraft(
+                                  index,
+                                  "request",
+                                  event.target.value,
+                                )
+                              }
+                              rows={2}
+                              disabled={isGeneratingExperts}
+                            />
+                          </label>
+                          <div className="expert-row-actions">
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => replaceExpertDraft(index)}
+                              disabled={isGeneratingExperts}
+                            >
+                              入れ替え
+                            </button>
+                            <button
+                              className="text-button danger"
+                              type="button"
+                              onClick={() => removeExpertDraft(index)}
+                              disabled={isGeneratingExperts}
+                            >
+                              外す
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                    <div className="expert-actions">
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={addExpertDraft}
+                        disabled={isGeneratingExperts}
                       >
-                        <label className="field compact-field">
-                          <span>専門家</span>
-                          <input
-                            value={expertRequest.role_name}
-                            onChange={(event) =>
-                              updateExpertDraft(
-                                index,
-                                "role_name",
-                                event.target.value,
-                              )
-                            }
-                            disabled={isGeneratingExperts}
-                          />
-                        </label>
-                        <label className="field compact-field">
-                          <span>観点</span>
-                          <textarea
-                            value={expertRequest.viewpoint}
-                            onChange={(event) =>
-                              updateExpertDraft(
-                                index,
-                                "viewpoint",
-                                event.target.value,
-                              )
-                            }
-                            rows={2}
-                            disabled={isGeneratingExperts}
-                          />
-                        </label>
-                        <label className="field compact-field">
-                          <span>依頼</span>
-                          <textarea
-                            value={expertRequest.request}
-                            onChange={(event) =>
-                              updateExpertDraft(
-                                index,
-                                "request",
-                                event.target.value,
-                              )
-                            }
-                            rows={2}
-                            disabled={isGeneratingExperts}
-                          />
-                        </label>
-                        <div className="expert-row-actions">
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => replaceExpertDraft(index)}
-                            disabled={isGeneratingExperts}
-                          >
-                            入れ替え
-                          </button>
-                          <button
-                            className="text-button danger"
-                            type="button"
-                            onClick={() => removeExpertDraft(index)}
-                            disabled={isGeneratingExperts}
-                          >
-                            外す
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                  <div className="expert-actions">
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={addExpertDraft}
-                      disabled={isGeneratingExperts}
-                    >
-                      専門家を追加する
-                    </button>
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={confirmExpertDrafts}
-                      disabled={isGeneratingExperts}
-                    >
-                      おまかせで進める
-                    </button>
-                    <button
-                      className="primary-button"
-                      type="button"
-                      onClick={confirmExpertDrafts}
-                      disabled={isGeneratingExperts}
-                    >
-                      このまま進める
-                    </button>
-                  </div>
-                  {confirmedExperts.length > 0 && (
-                    <div className="confirmed-experts">
-                      <strong>確定済み</strong>
-                      <ul>
-                        {confirmedExperts.map((expert) => (
-                          <li key={`${expert.role_name}-${expert.viewpoint}`}>
-                            {expert.role_name} / {expert.viewpoint}
-                          </li>
-                        ))}
-                      </ul>
+                        専門家を追加する
+                      </button>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={confirmExpertDrafts}
+                        disabled={isGeneratingExperts}
+                      >
+                        おまかせで進める
+                      </button>
                       <button
                         className="primary-button"
                         type="button"
-                        onClick={generateExpertComments}
+                        onClick={confirmExpertDrafts}
                         disabled={isGeneratingExperts}
                       >
-                        {isGeneratingExperts
-                          ? "生成中..."
-                          : "専門家コメントを生成する"}
+                        このまま進める
                       </button>
                     </div>
-                  )}
-                  {expertErrorMessage && (
-                    <p className="error">{expertErrorMessage}</p>
-                  )}
-                </section>
-              )}
+                    {confirmedExperts.length > 0 && (
+                      <div className="confirmed-experts">
+                        <strong>確定済み</strong>
+                        <ul>
+                          {confirmedExperts.map((expert) => (
+                            <li key={`${expert.role_name}-${expert.viewpoint}`}>
+                              {expert.role_name} / {expert.viewpoint}
+                            </li>
+                          ))}
+                        </ul>
+                        <button
+                          className="primary-button"
+                          type="button"
+                          onClick={generateExpertComments}
+                          disabled={isGeneratingExperts}
+                        >
+                          {isGeneratingExperts
+                            ? "生成中..."
+                            : "専門家コメントを生成する"}
+                        </button>
+                      </div>
+                    )}
+                    {expertErrorMessage && (
+                      <p className="error">{expertErrorMessage}</p>
+                    )}
+                  </section>
+                )}
 
               {expertComments.length > 0 && (
                 <section

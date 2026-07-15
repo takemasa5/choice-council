@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
+  canProceedToExpertSelection,
   createFailedFacilitatorRequest,
+  getFacilitatorResponsePhase,
   getSessionConsultation,
 } from "../../src/client/facilitator-flow";
 import type {
@@ -104,5 +106,33 @@ test("開始済みセッションでは未送信の編集より確定済み相�
       "まだ送信していない別の相談内容",
     ),
     "中学受験について相談したい",
+  );
+});
+
+test("専門家候補を要求する応答では専門家選定フェーズへ進む", () => {
+  assert.equal(
+    getFacilitatorResponsePhase({ next_action: "request_experts" }),
+    "expert_selection",
+  );
+  assert.equal(
+    getFacilitatorResponsePhase({ next_action: "wait_user" }),
+    "premise",
+  );
+});
+
+test("専門家候補を要求する前提整理応答は専門家選定へ進める", () => {
+  assert.equal(
+    canProceedToExpertSelection({
+      next_action: "request_experts",
+      user_question: null,
+    }),
+    true,
+  );
+  assert.equal(
+    canProceedToExpertSelection({
+      next_action: "wait_user",
+      user_question: null,
+    }),
+    false,
   );
 });
