@@ -204,6 +204,13 @@ export function confirmExpertDrafts(
     };
   }
 
+  if (experts.length > maximumExpertRequestCount) {
+    return {
+      experts: [],
+      errorMessage: `確定する専門家ロールは${maximumExpertRequestCount}件以下にしてください。`,
+    };
+  }
+
   return { experts, errorMessage: "" };
 }
 
