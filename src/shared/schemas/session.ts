@@ -194,6 +194,37 @@ export const ExpertCommentSchema = z.strictObject({
 
 export type ExpertComment = z.infer<typeof ExpertCommentSchema>;
 
+/**
+ * M3 のファシリテーター整理 API の入力契約。
+ *
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/deliberation`。
+ */
+export const FacilitatorDeliberationRequestSchema = z
+  .strictObject({
+    consultation: nonEmptyString,
+    currentPhase: z.literal("deliberation"),
+    memo: SessionMemoSchema,
+    confirmedExperts: z
+      .array(ExpertRequestSchema)
+      .min(1)
+      .max(maximumExpertRequestCount),
+    expertComments: z.array(ExpertCommentSchema),
+  })
+  .superRefine((request, context) => {
+    if (request.expertComments.length !== request.confirmedExperts.length) {
+      context.addIssue({
+        code: "custom",
+        message: "expertComments must have the same length as confirmedExperts",
+        path: ["expertComments"],
+      });
+    }
+  });
+
+/** 日本語名: ファシリテーター整理リクエスト。 */
+export type FacilitatorDeliberationRequest = z.infer<
+  typeof FacilitatorDeliberationRequestSchema
+>;
+
 export const SessionMemoRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   currentPhase: PhaseSchema,

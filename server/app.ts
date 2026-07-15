@@ -2,6 +2,7 @@ import express from "express";
 import OpenAI from "openai";
 import { createExpertCommentHandler } from "./routes/expert-comment";
 import {
+  createFacilitatorDeliberationHandler,
   createFacilitatorRespondHandler,
   createFacilitatorStartHandler,
 } from "./routes/facilitator";
@@ -37,6 +38,10 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   app.post(
     "/api/facilitator/respond",
     createFacilitatorRespondHandler(dependencies),
+  );
+  app.post(
+    "/api/facilitator/deliberation",
+    createFacilitatorDeliberationHandler(dependencies),
   );
   app.post("/api/expert/comment", createExpertCommentHandler(dependencies));
   app.post("/api/session-memo/update", createSessionMemoHandler(dependencies));
