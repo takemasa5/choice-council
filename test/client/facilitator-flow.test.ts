@@ -14,6 +14,7 @@ import {
   getInitialExpertRequests,
   getSessionConsultation,
   isAcceptedM3FacilitatorResponse,
+  isExpertDraftEditingDisabled,
   replaceExpertDraft,
 } from "../../src/client/facilitator-flow";
 import { maximumExpertRequestCount } from "../../src/shared/schemas/session";
@@ -218,6 +219,12 @@ test("専門家候補を変更した場合は古い整理リクエストを破�
       },
     },
   );
+});
+
+test("整理リクエストの再試行中は専門家候補を編集できない", () => {
+  assert.equal(isExpertDraftEditingDisabled(false, true), true);
+  assert.equal(isExpertDraftEditingDisabled(true, false), true);
+  assert.equal(isExpertDraftEditingDisabled(false, false), false);
 });
 
 test("専門家コメントの全件成功時は並列に開始し開始順で結果を返す", async () => {

@@ -30,6 +30,7 @@ import {
   getInitialExpertRequests,
   getSessionConsultation,
   isAcceptedM3FacilitatorResponse,
+  isExpertDraftEditingDisabled,
   replaceExpertDraft as replaceExpertDraftValues,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
@@ -132,6 +133,10 @@ function App() {
     useState("");
   const canRequestPause =
     isLoading || isGeneratingExperts || isGeneratingDeliberation;
+  const isExpertInteractionDisabled = isExpertDraftEditingDisabled(
+    isGeneratingExperts,
+    isGeneratingDeliberation,
+  );
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
@@ -720,7 +725,7 @@ function App() {
     field: keyof ExpertRequest,
     value: string,
   ) {
-    if (isGeneratingExperts) return;
+    if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
     setExpertDrafts((current) => {
@@ -731,14 +736,14 @@ function App() {
   }
 
   function addExpertDraft() {
-    if (isGeneratingExperts) return;
+    if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
     setExpertDrafts(appendExpertDraft);
   }
 
   function removeExpertDraft(index: number) {
-    if (isGeneratingExperts) return;
+    if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
     setExpertDrafts((current) =>
@@ -747,14 +752,14 @@ function App() {
   }
 
   function replaceExpertDraft(index: number) {
-    if (isGeneratingExperts) return;
+    if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
     setExpertDrafts((current) => replaceExpertDraftValues(current, index));
   }
 
   function resetConfirmedExperts() {
-    if (isGeneratingExperts) return;
+    if (isExpertInteractionDisabled) return;
 
     setFailedFacilitatorRequest(discardFailedDeliberationRequest);
     setConfirmedExperts([]);
@@ -763,7 +768,7 @@ function App() {
   }
 
   function confirmExpertDrafts() {
-    if (isGeneratingExperts) return;
+    if (isExpertInteractionDisabled) return;
 
     const requiredQuestionMessage = getPendingRequiredQuestionMessage();
     if (requiredQuestionMessage) {
@@ -789,7 +794,7 @@ function App() {
    * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
    */
   function confirmInitialExpertDrafts() {
-    if (isGeneratingExperts) return;
+    if (isExpertInteractionDisabled) return;
 
     const confirmation = getExpertDraftConfirmation(initialExpertRequests);
     if (confirmation.errorMessage) {
@@ -805,6 +810,8 @@ function App() {
   }
 
   async function generateExpertComments() {
+    if (isExpertInteractionDisabled) return;
+
     setExpertErrorMessage("");
 
     const requiredQuestionMessage = getPendingRequiredQuestionMessage();
@@ -1296,7 +1303,7 @@ function App() {
                                   event.target.value,
                                 )
                               }
-                              disabled={isGeneratingExperts}
+                              disabled={isExpertInteractionDisabled}
                             />
                           </label>
                           <label className="field compact-field">
@@ -1311,7 +1318,7 @@ function App() {
                                 )
                               }
                               rows={2}
-                              disabled={isGeneratingExperts}
+                              disabled={isExpertInteractionDisabled}
                             />
                           </label>
                           <label className="field compact-field">
@@ -1326,7 +1333,7 @@ function App() {
                                 )
                               }
                               rows={2}
-                              disabled={isGeneratingExperts}
+                              disabled={isExpertInteractionDisabled}
                             />
                           </label>
                           <div className="expert-row-actions">
@@ -1334,7 +1341,7 @@ function App() {
                               className="text-button"
                               type="button"
                               onClick={() => replaceExpertDraft(index)}
-                              disabled={isGeneratingExperts}
+                              disabled={isExpertInteractionDisabled}
                             >
                               入れ替え
                             </button>
@@ -1342,7 +1349,7 @@ function App() {
                               className="text-button danger"
                               type="button"
                               onClick={() => removeExpertDraft(index)}
-                              disabled={isGeneratingExperts}
+                              disabled={isExpertInteractionDisabled}
                             >
                               外す
                             </button>
@@ -1356,7 +1363,7 @@ function App() {
                         type="button"
                         onClick={addExpertDraft}
                         disabled={
-                          isGeneratingExperts ||
+                          isExpertInteractionDisabled ||
                           expertDrafts.length >= maximumExpertRequestCount
                         }
                       >
@@ -1366,7 +1373,7 @@ function App() {
                         className="secondary-button"
                         type="button"
                         onClick={confirmInitialExpertDrafts}
-                        disabled={isGeneratingExperts}
+                        disabled={isExpertInteractionDisabled}
                       >
                         おまかせで進める
                       </button>
@@ -1374,7 +1381,7 @@ function App() {
                         className="primary-button"
                         type="button"
                         onClick={confirmExpertDrafts}
-                        disabled={isGeneratingExperts}
+                        disabled={isExpertInteractionDisabled}
                       >
                         このまま進める
                       </button>
@@ -1393,7 +1400,7 @@ function App() {
                           className="primary-button"
                           type="button"
                           onClick={generateExpertComments}
-                          disabled={isGeneratingExperts}
+                          disabled={isExpertInteractionDisabled}
                         >
                           {isGeneratingExperts
                             ? "生成中..."

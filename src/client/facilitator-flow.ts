@@ -166,6 +166,18 @@ export function discardFailedDeliberationRequest(
 }
 
 /**
+ * 専門家コメント生成または整理API送信中に候補編集を無効化する。
+ *
+ * 仕様対応: `docs/tasks/milestone-3.md#ファシリテーター整理と方向性整理への遷移`。
+ */
+export function isExpertDraftEditingDisabled(
+  isGeneratingExperts: boolean,
+  isGeneratingDeliberation: boolean,
+) {
+  return isGeneratingExperts || isGeneratingDeliberation;
+}
+
+/**
  * 並列開始済みの専門家コメント生成をすべて待ち、全件成功時だけ入力順の結果を返す。
  *
  * 仕様対応: `docs/tasks/milestone-3.md#専門家コメントの並列生成`。
