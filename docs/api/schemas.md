@@ -181,13 +181,13 @@ M3 では、ユーザーが確定した専門家ロールごとに `POST /api/ex
 
 M3 のファシリテーター整理は、全専門家コメントの生成成功後に呼び出す。`FacilitatorDeliberationRequest` は strict schema とする。
 
-| フィールド | 必須 | 内容 |
-| --- | ---: | --- |
-| consultation | 必須 | 初回に入力した相談内容 |
-| currentPhase | 必須 | 固定値 `deliberation` |
-| memo | 必須 | 前提整理時点の最新 `SessionMemo` |
-| confirmedExperts | 必須 | ユーザーが確定した `ExpertRequest` の配列。1〜5件 |
-| expertComments | 必須 | 全件生成に成功した `ExpertComment` の配列。`confirmedExperts` と同数で同じ順序 |
+| フィールド       | 必須 | 内容                                                                           |
+| ---------------- | ---: | ------------------------------------------------------------------------------ |
+| consultation     | 必須 | 初回に入力した相談内容                                                         |
+| currentPhase     | 必須 | 固定値 `deliberation`                                                          |
+| memo             | 必須 | 前提整理時点の最新 `SessionMemo`                                               |
+| confirmedExperts | 必須 | ユーザーが確定した `ExpertRequest` の配列。1〜5件                              |
+| expertComments   | 必須 | 全件生成に成功した `ExpertComment` の配列。`confirmedExperts` と同数で同じ順序 |
 
 `confirmedExperts` と `expertComments` は配列の位置で対応付ける。同じロール名・観点の重複を許可するため、ロール名・観点だけで対応付けてはならない。
 
