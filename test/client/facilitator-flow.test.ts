@@ -5,6 +5,7 @@ import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
   canProceedToExpertSelection,
+  collectExpertCommentGenerationResults,
   confirmExpertDrafts,
   createFailedFacilitatorRequest,
   getFacilitatorResponsePhase,
@@ -14,6 +15,7 @@ import {
 } from "../../src/client/facilitator-flow";
 import { maximumExpertRequestCount } from "../../src/shared/schemas/session";
 import type {
+  ExpertComment,
   ExpertRequest,
   FacilitatorResponse,
   FacilitatorResponseRequest,
@@ -109,6 +111,63 @@ test("失敗リクエストは同一内容でリトライできる形で保持�
   assert.deepEqual(failedRequest, {
     endpoint: "respond",
     request,
+  });
+});
+
+test("専門家コメントの全件成功時は並列に開始し開始順で結果を返す", async () => {
+  const startedRoles: string[] = [];
+  let completeFirstRequest: (() => void) | undefined;
+  const firstRequest = () => {
+    startedRoles.push("教育相談員");
+    return new Promise<ExpertComment>((resolve) => {
+      completeFirstRequest = () =>
+        resolve({ role_name: "教育相談員" } as ExpertComment);
+    });
+  };
+  const secondRequest = async () => {
+    startedRoles.push("家計相談員");
+    return { role_name: "家計相談員" } as ExpertComment;
+  };
+  const resultPromise = collectExpertCommentGenerationResults([
+    firstRequest,
+    secondRequest,
+  ]);
+
+  assert.deepEqual(startedRoles, ["教育相談員", "家計相談員"]);
+  completeFirstRequest?.();
+
+  assert.deepEqual(await resultPromise, {
+    comments: [{ role_name: "教育相談員" }, { role_name: "家計相談員" }],
+    errorMessage: "",
+  });
+});
+
+test("専門家コメントの一部失敗時は全件完了まで結果を返さず成功分を破棄する", async () => {
+  let completePendingRequest: (() => void) | undefined;
+  const pendingRequest = () =>
+    new Promise<ExpertComment>((resolve) => {
+      completePendingRequest = () =>
+        resolve({ role_name: "家計相談員" } as ExpertComment);
+    });
+  const failedRequest = () => Promise.reject(new Error("生成失敗"));
+  const resultPromise = collectExpertCommentGenerationResults([
+    failedRequest,
+    pendingRequest,
+  ]);
+  let isSettled = false;
+  void resultPromise.then(() => {
+    isSettled = true;
+  });
+
+  await Promise.resolve();
+  assert.equal(isSettled, false);
+
+  completePendingRequest?.();
+
+  assert.deepEqual(await resultPromise, {
+    comments: [],
+    errorMessage:
+      "専門家コメントの生成に失敗しました。もう一度お試しください。",
   });
 });
 

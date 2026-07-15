@@ -21,6 +21,7 @@ import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
   canProceedToExpertSelection,
+  collectExpertCommentGenerationResults,
   confirmExpertDrafts as getExpertDraftConfirmation,
   createFailedFacilitatorRequest,
   getFacilitatorResponsePhase,
@@ -821,8 +822,8 @@ function App() {
     setFinalMarkdownErrorMessage("");
 
     try {
-      const comments = await Promise.all(
-        confirmedExperts.map(async (expert) => {
+      const result = await collectExpertCommentGenerationResults(
+        confirmedExperts.map((expert) => async () => {
           const request: ExpertCommentRequest = {
             consultation: sessionConsultation,
             currentPhase: expertCommentPhase,
@@ -846,8 +847,14 @@ function App() {
         }),
       );
 
-      setExpertComments(comments);
-      await carryResearchNeedsToMemo(comments, "direction");
+      if (result.errorMessage) {
+        setExpertComments([]);
+        setExpertErrorMessage(result.errorMessage);
+        return;
+      }
+
+      setExpertComments(result.comments);
+      await carryResearchNeedsToMemo(result.comments, "direction");
       showInterruptionOptionsIfPaused();
     } catch (error) {
       setExpertErrorMessage(
