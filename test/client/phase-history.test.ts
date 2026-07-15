@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createResponseForPhase,
   getReturnablePhases,
   keepResponsesThroughPhase,
   type ResponseHistory,
 } from "../../src/client/phase-history";
-import type { FacilitatorResponse } from "../../src/shared/schemas/session";
+import type {
+  ExpertRequest,
+  FacilitatorResponse,
+} from "../../src/shared/schemas/session";
 
 const response = (phase: FacilitatorResponse["current_phase"]) =>
   ({ current_phase: phase }) as FacilitatorResponse;
@@ -36,4 +40,23 @@ test("専門家選定へ戻るとその入力状態を残して後続履歴を�
     premise: history.premise,
     expert_selection: expertSelection,
   });
+});
+
+test("確定済みの専門家ロールを専門家選定の履歴へ保存する", () => {
+  const confirmedExperts: ExpertRequest[] = [
+    {
+      role_name: "教育コンサルタント",
+      viewpoint: "学習負荷",
+      request: "家庭への負担を確認する",
+    },
+  ];
+
+  assert.deepEqual(
+    createResponseForPhase(
+      response("premise"),
+      "expert_selection",
+      confirmedExperts,
+    ).expert_requests,
+    confirmedExperts,
+  );
 });

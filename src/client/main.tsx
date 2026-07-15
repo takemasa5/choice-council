@@ -24,6 +24,7 @@ import {
 } from "./facilitator-flow";
 import {
   clearResponseHistory,
+  createResponseForPhase,
   getReturnablePhases,
   keepResponsesThroughPhase,
   phaseOrder,
@@ -726,10 +727,7 @@ function App() {
     setConfirmedExperts(completedExperts);
     setExpertComments([]);
     setExpertErrorMessage("");
-
-    if (currentPhase === "premise") {
-      moveResponseToPhase("expert_selection");
-    }
+    saveConfirmedExpertDrafts(completedExperts);
   }
 
   async function generateExpertComments() {
@@ -1088,14 +1086,35 @@ function App() {
     setResponse((currentResponse) => {
       if (!currentResponse) return currentResponse;
 
-      const nextResponse = {
-        ...currentResponse,
-        current_phase: nextPhase,
-      };
+      const nextResponse = createResponseForPhase(currentResponse, nextPhase);
 
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
         [nextPhase]: nextResponse,
+      }));
+
+      return nextResponse;
+    });
+  }
+
+  function saveConfirmedExpertDrafts(experts: ExpertRequest[]) {
+    const nextPhase =
+      currentPhase === "premise" ? "expert_selection" : currentPhase;
+
+    setCurrentPhase(nextPhase);
+    setResponse((currentResponse) => {
+      if (!currentResponse) return currentResponse;
+
+      const nextResponse = createResponseForPhase(currentResponse, nextPhase);
+      const storedResponse = createResponseForPhase(
+        currentResponse,
+        nextPhase,
+        experts,
+      );
+
+      setResponseHistory((current) => ({
+        ...keepResponsesThroughPhase(current, currentPhase),
+        [nextPhase]: storedResponse,
       }));
 
       return nextResponse;

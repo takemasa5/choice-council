@@ -40,6 +40,19 @@ export function clearResponseHistory(): ResponseHistory {
   return {};
 }
 
+/** 指定フェーズ用の応答を作り、専門家ロールの編集内容も保持する。 */
+export function createResponseForPhase(
+  response: FacilitatorResponse,
+  phase: Phase,
+  expertRequests = response.expert_requests,
+): FacilitatorResponse {
+  return {
+    ...response,
+    current_phase: phase,
+    expert_requests: expertRequests,
+  };
+}
+
 export const phaseOrder: Phase[] = [
   "consultation_input",
   "premise",
