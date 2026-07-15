@@ -15,6 +15,12 @@ import type {
   SessionMemo,
   SessionMemoRequest,
 } from "../shared/schemas/session";
+import {
+  buildConsultationStartRequest,
+  buildFacilitatorResponseRequest,
+  createFailedFacilitatorRequest,
+  type FailedFacilitatorRequest,
+} from "./facilitator-flow";
 import "./styles.css";
 
 const storageKey = "choice-council-session";
@@ -86,6 +92,8 @@ function App() {
   const [hasRestoredSession, setHasRestoredSession] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [failedFacilitatorRequest, setFailedFacilitatorRequest] =
+    useState<FailedFacilitatorRequest | null>(null);
   const [pauseRequested, setPauseRequested] = useState(false);
   const pauseRequestedRef = useRef(false);
   const [isInterruptionReady, setIsInterruptionReady] = useState(false);
@@ -223,6 +231,17 @@ function App() {
       return;
     }
 
+    setFailedFacilitatorRequest(null);
+    await sendStartRequest(request);
+  }
+
+  /**
+   * 相談開始 API の送信と失敗リクエスト保持を行う。
+   *
+   * 仕様対応: `docs/tasks/milestone-2.md#初期遷移` と
+   * `docs/tasks/milestone-2.md#API エラー表示`。
+   */
+  async function sendStartRequest(request: ConsultationStartRequest) {
     setIsLoading(true);
     setPauseRequested(false);
     pauseRequestedRef.current = false;
@@ -244,18 +263,36 @@ function App() {
 
       if (!apiResponse.ok) {
         setErrorMessage(body.message ?? invalidGenerationMessage);
+        setFailedFacilitatorRequest(
+          createFailedFacilitatorRequest({
+            endpoint: "start",
+            request,
+          }),
+        );
         return;
       }
 
       const facilitatorResponse = body as FacilitatorResponse;
       if (!isAcceptedM2Response(facilitatorResponse)) {
         setErrorMessage("前提整理として受け入れられない応答が返されました。");
+        setFailedFacilitatorRequest(
+          createFailedFacilitatorRequest({
+            endpoint: "start",
+            request,
+          }),
+        );
         return;
       }
 
+      setFailedFacilitatorRequest(null);
       setCurrentPhase("premise");
       setResponse(facilitatorResponse);
       setStartedConsultation(request.consultation);
+      setConsultation(request.consultation);
+      setFacts(request.facts ?? "");
+      setValues(request.values ?? "");
+      setConcerns(request.concerns ?? "");
+      setExpectedOutcome(request.expectedOutcome ?? "");
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
       setIsInterruptionReady(false);
@@ -270,6 +307,12 @@ function App() {
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
+      );
+      setFailedFacilitatorRequest(
+        createFailedFacilitatorRequest({
+          endpoint: "start",
+          request,
+        }),
       );
     } finally {
       setIsLoading(false);
@@ -296,14 +339,29 @@ function App() {
       return;
     }
 
-    const request: FacilitatorResponseRequest = {
+    const request = buildFacilitatorResponseRequest({
       consultation: responseConsultation,
-      currentPhase: "premise",
+      currentPhase,
       userQuestion: question,
       userQuestionAnswer: answer,
       memo: currentMemo,
-    };
+    });
 
+    if (!request) return;
+
+    setFailedFacilitatorRequest(null);
+    await sendQuestionResponseRequest(request);
+  }
+
+  /**
+   * 前提整理の確認回答 API 送信と失敗リクエスト保持を行う。
+   *
+   * 仕様対応: `docs/tasks/milestone-2.md#前提整理での確認回答` と
+   * `docs/tasks/milestone-2.md#API エラー表示`。
+   */
+  async function sendQuestionResponseRequest(
+    request: FacilitatorResponseRequest,
+  ) {
     setIsLoading(true);
 
     try {
@@ -318,15 +376,28 @@ function App() {
 
       if (!apiResponse.ok) {
         setErrorMessage(body.message ?? invalidGenerationMessage);
+        setFailedFacilitatorRequest(
+          createFailedFacilitatorRequest({
+            endpoint: "respond",
+            request,
+          }),
+        );
         return;
       }
 
       const facilitatorResponse = body as FacilitatorResponse;
       if (!isAcceptedM2Response(facilitatorResponse)) {
         setErrorMessage("前提整理として受け入れられない応答が返されました。");
+        setFailedFacilitatorRequest(
+          createFailedFacilitatorRequest({
+            endpoint: "respond",
+            request,
+          }),
+        );
         return;
       }
 
+      setFailedFacilitatorRequest(null);
       setResponse(facilitatorResponse);
       setResponseHistory((current) => ({
         ...current,
@@ -338,9 +409,32 @@ function App() {
       setErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
       );
+      setFailedFacilitatorRequest(
+        createFailedFacilitatorRequest({
+          endpoint: "respond",
+          request,
+        }),
+      );
     } finally {
       setIsLoading(false);
     }
+  }
+
+  /**
+   * ユーザーの明示操作で、失敗した API リクエストと同一内容を再送する。
+   *
+   * 仕様対応: `docs/tasks/milestone-2.md#API エラー表示`。
+   */
+  async function retryFailedFacilitatorRequest() {
+    if (!failedFacilitatorRequest || isLoading) return;
+
+    setErrorMessage("");
+    if (failedFacilitatorRequest.endpoint === "start") {
+      await sendStartRequest(failedFacilitatorRequest.request);
+      return;
+    }
+
+    await sendQuestionResponseRequest(failedFacilitatorRequest.request);
   }
 
   /**
@@ -349,13 +443,13 @@ function App() {
    * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/start`。
    */
   function buildStartRequest(): ConsultationStartRequest {
-    return {
+    return buildConsultationStartRequest({
       consultation,
-      facts: emptyToUndefined(facts),
-      values: emptyToUndefined(values),
-      concerns: emptyToUndefined(concerns),
-      expectedOutcome: emptyToUndefined(expectedOutcome),
-    };
+      facts,
+      values,
+      concerns,
+      expectedOutcome,
+    });
   }
 
   /** 日本語名: クライアント内で保持する相談文脈を作成する関数。 */
@@ -464,6 +558,7 @@ function App() {
     setResponseHistory({});
     setCurrentPhase("consultation_input");
     setErrorMessage("");
+    setFailedFacilitatorRequest(null);
     setPauseRequested(false);
     pauseRequestedRef.current = false;
     setIsInterruptionReady(false);
@@ -505,6 +600,7 @@ function App() {
     setResponse(nextResponseHistory[targetPhase] ?? null);
     setResponseHistory(nextResponseHistory);
     setErrorMessage("");
+    setFailedFacilitatorRequest(null);
     setPauseRequested(false);
     pauseRequestedRef.current = false;
     setIsInterruptionReady(false);
@@ -1100,7 +1196,21 @@ function App() {
             </div>
 
             {pauseRequested && <p className="notice">次の区切りで止めます。</p>}
-            {errorMessage && <p className="error">{errorMessage}</p>}
+            {errorMessage && (
+              <div className="error-block">
+                <p className="error">{errorMessage}</p>
+                {failedFacilitatorRequest && (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={retryFailedFacilitatorRequest}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "リトライ中..." : "同じ内容でリトライ"}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {response && (
