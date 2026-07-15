@@ -885,7 +885,6 @@ function App() {
 
       moveResponseToPhase("deliberation");
       await sendFacilitatorDeliberationRequest(request);
-      showInterruptionOptionsIfPaused();
     } catch (error) {
       setExpertErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
@@ -950,6 +949,7 @@ function App() {
       );
     } finally {
       setIsGeneratingDeliberation(false);
+      showInterruptionOptionsIfPaused();
     }
   }
 
