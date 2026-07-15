@@ -22,20 +22,18 @@ import {
   getSessionConsultation,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
+import {
+  clearResponseHistory,
+  getReturnablePhases,
+  keepResponsesThroughPhase,
+  phaseOrder,
+  type ResponseHistory,
+} from "./phase-history";
 import "./styles.css";
 
 const storageKey = "choice-council-session";
 const invalidGenerationMessage =
   "この発言の生成に失敗しました。再生成できます。";
-const phaseOrder: Phase[] = [
-  "consultation_input",
-  "premise",
-  "expert_selection",
-  "deliberation",
-  "direction",
-  "final_memo",
-];
-
 const phaseLabels: Record<Phase, string> = {
   consultation_input: "相談入力",
   premise: "前提整理",
@@ -86,9 +84,7 @@ function App() {
   const [expectedOutcome, setExpectedOutcome] = useState("");
   const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [response, setResponse] = useState<FacilitatorResponse | null>(null);
-  const [responseHistory, setResponseHistory] = useState<
-    Partial<Record<Phase, FacilitatorResponse>>
-  >({});
+  const [responseHistory, setResponseHistory] = useState<ResponseHistory>({});
   const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
   const [hasRestoredSession, setHasRestoredSession] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -224,8 +220,8 @@ function App() {
     consultation,
   );
   const availableReturnPhases = useMemo(() => {
-    return getReturnablePhases(currentPhase);
-  }, [currentPhase]);
+    return getReturnablePhases(currentPhase, responseHistory);
+  }, [currentPhase, responseHistory]);
 
   async function startSession() {
     setErrorMessage("");
@@ -596,10 +592,10 @@ function App() {
 
     if (!confirmed) return;
 
-    const nextResponseHistory = keepResponsesBeforePhase(
-      responseHistory,
-      targetPhase,
-    );
+    const nextResponseHistory =
+      targetPhase === "consultation_input"
+        ? clearResponseHistory()
+        : keepResponsesThroughPhase(responseHistory, targetPhase);
 
     setCurrentPhase(targetPhase);
     setResponse(nextResponseHistory[targetPhase] ?? null);
@@ -1589,13 +1585,6 @@ function App() {
   );
 }
 
-function getReturnablePhases(currentPhase: Phase) {
-  const currentIndex = phaseOrder.indexOf(currentPhase);
-  if (currentIndex <= 0) return [];
-
-  return phaseOrder.slice(0, currentIndex);
-}
-
 /**
  * M2 のファシリテーター応答制約をクライアント側でも検証する。
  *
@@ -1614,32 +1603,6 @@ function isAcceptedM2Response(response: FacilitatorResponse) {
     response.next_action === "request_experts" &&
     response.expert_requests.length > 0
   );
-}
-
-function keepResponsesThroughPhase(
-  responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
-  targetPhase: Phase,
-) {
-  const targetIndex = phaseOrder.indexOf(targetPhase);
-
-  return Object.fromEntries(
-    Object.entries(responseHistory).filter(([phase]) => {
-      return phaseOrder.indexOf(phase as Phase) <= targetIndex;
-    }),
-  ) as Partial<Record<Phase, FacilitatorResponse>>;
-}
-
-function keepResponsesBeforePhase(
-  responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
-  targetPhase: Phase,
-) {
-  const targetIndex = phaseOrder.indexOf(targetPhase);
-
-  return Object.fromEntries(
-    Object.entries(responseHistory).filter(([phase]) => {
-      return phaseOrder.indexOf(phase as Phase) < targetIndex;
-    }),
-  ) as Partial<Record<Phase, FacilitatorResponse>>;
 }
 
 function responseToHistory(response: FacilitatorResponse | null) {

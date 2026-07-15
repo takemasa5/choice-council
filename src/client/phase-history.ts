@@ -1,0 +1,50 @@
+import type { FacilitatorResponse, Phase } from "../shared/schemas/session";
+
+/** 日本語名: フェーズごとのファシリテーター応答履歴。 */
+export type ResponseHistory = Partial<Record<Phase, FacilitatorResponse>>;
+
+/**
+ * 現在地点より前で、復元可能なフェーズだけを戻り先として返す。
+ *
+ * 専門家コメントは独立した履歴を持たないため、検討をやり直す場合は
+ * 専門家選定へ戻って再生成する。
+ */
+export function getReturnablePhases(
+  currentPhase: Phase,
+  responseHistory: ResponseHistory,
+) {
+  const currentIndex = phaseOrder.indexOf(currentPhase);
+  if (currentIndex <= 0) return [];
+
+  return phaseOrder.slice(0, currentIndex).filter((phase) => {
+    return phase === "consultation_input" || Boolean(responseHistory[phase]);
+  });
+}
+
+/** 戻り先の状態を残し、それより後の履歴を破棄する。 */
+export function keepResponsesThroughPhase(
+  responseHistory: ResponseHistory,
+  targetPhase: Phase,
+) {
+  const targetIndex = phaseOrder.indexOf(targetPhase);
+
+  return Object.fromEntries(
+    Object.entries(responseHistory).filter(([phase]) => {
+      return phaseOrder.indexOf(phase as Phase) <= targetIndex;
+    }),
+  ) as ResponseHistory;
+}
+
+/** 相談入力へ戻るときは、すべてのファシリテーター応答を破棄する。 */
+export function clearResponseHistory(): ResponseHistory {
+  return {};
+}
+
+export const phaseOrder: Phase[] = [
+  "consultation_input",
+  "premise",
+  "expert_selection",
+  "deliberation",
+  "direction",
+  "final_memo",
+];
