@@ -57,6 +57,7 @@ const interruptionOptions = [
 
 type StoredSession = {
   request: ConsultationRequest;
+  startedConsultation?: string;
   response: FacilitatorResponse | null;
   responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
   currentPhase: Phase;
@@ -71,6 +72,7 @@ type StoredSession = {
 
 function App() {
   const [consultation, setConsultation] = useState("");
+  const [startedConsultation, setStartedConsultation] = useState("");
   const [facts, setFacts] = useState("");
   const [values, setValues] = useState("");
   const [concerns, setConcerns] = useState("");
@@ -120,6 +122,10 @@ function App() {
     try {
       const parsed = JSON.parse(stored) as StoredSession;
       setConsultation(parsed.request.consultation);
+      setStartedConsultation(
+        parsed.startedConsultation ??
+          (parsed.response ? parsed.request.consultation : ""),
+      );
       setFacts(parsed.request.facts ?? "");
       setValues(parsed.request.values ?? "");
       setConcerns(parsed.request.concerns ?? "");
@@ -167,6 +173,7 @@ function App() {
     window.localStorage.setItem(storageKey, JSON.stringify(session));
   }, [
     consultation,
+    startedConsultation,
     facts,
     values,
     concerns,
@@ -248,6 +255,7 @@ function App() {
 
       setCurrentPhase("premise");
       setResponse(facilitatorResponse);
+      setStartedConsultation(request.consultation);
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
       setIsInterruptionReady(false);
@@ -279,6 +287,7 @@ function App() {
     const question = response?.user_question;
     const answer = getResponseQuestionAnswer();
     const currentMemo = response?.memo_updates;
+    const responseConsultation = startedConsultation || consultation;
 
     if (!question || !currentMemo || currentPhase !== "premise") return;
 
@@ -288,7 +297,7 @@ function App() {
     }
 
     const request: FacilitatorResponseRequest = {
-      consultation,
+      consultation: responseConsultation,
       currentPhase: "premise",
       userQuestion: question,
       userQuestionAnswer: answer,
@@ -446,6 +455,7 @@ function App() {
 
     window.localStorage.removeItem(storageKey);
     setConsultation("");
+    setStartedConsultation("");
     setFacts("");
     setValues("");
     setConcerns("");
@@ -921,6 +931,7 @@ function App() {
 
     return {
       request,
+      startedConsultation: startedConsultation || undefined,
       response,
       responseHistory,
       currentPhase,
