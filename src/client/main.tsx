@@ -227,6 +227,7 @@ function App() {
 
     const request = buildStartRequest();
     if (!request.consultation.trim()) {
+      setFailedFacilitatorRequest(null);
       setErrorMessage("相談内容を入力してください。");
       return;
     }
@@ -335,6 +336,7 @@ function App() {
     if (!question || !currentMemo || currentPhase !== "premise") return;
 
     if (!answer) {
+      setFailedFacilitatorRequest(null);
       setErrorMessage("質問に回答してください。");
       return;
     }
