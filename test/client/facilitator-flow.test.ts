@@ -1,17 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  addExpertDraft,
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
   canProceedToExpertSelection,
+  confirmExpertDrafts,
   createFailedFacilitatorRequest,
   getFacilitatorResponsePhase,
   getSessionConsultation,
+  replaceExpertDraft,
 } from "../../src/client/facilitator-flow";
+import { maximumExpertRequestCount } from "../../src/shared/schemas/session";
 import type {
+  ExpertRequest,
   FacilitatorResponseRequest,
   SessionMemo,
 } from "../../src/shared/schemas/session";
+
+const expert: ExpertRequest = {
+  role_name: "教育相談員",
+  viewpoint: "本人の負担",
+  request: "選択肢を整理する",
+};
 
 const memo: SessionMemo = {
   theme: "中学受験の判断",
@@ -134,5 +145,45 @@ test("専門家候補を要求する前提整理応答は専門家選定へ進�
       user_question: null,
     }),
     false,
+  );
+});
+
+test("専門家候補は上限まで追加でき、上限では追加操作が状態を変えない", () => {
+  const drafts = Array.from({ length: maximumExpertRequestCount - 1 }, () => ({
+    ...expert,
+  }));
+
+  const atLimit = addExpertDraft(drafts);
+
+  assert.equal(atLimit.length, maximumExpertRequestCount);
+  assert.strictEqual(addExpertDraft(atLimit), atLimit);
+});
+
+test("専門家候補の入れ替えは3項目をすべて空にする", () => {
+  assert.deepEqual(replaceExpertDraft([expert], 0), [
+    { role_name: "", viewpoint: "", request: "" },
+  ]);
+});
+
+test("空行を除外して編集済みの専門家候補を確定する", () => {
+  assert.deepEqual(
+    confirmExpertDrafts([
+      { ...expert, role_name: "  教育相談員  " },
+      { role_name: "", viewpoint: "", request: "" },
+    ]),
+    { experts: [expert], errorMessage: "" },
+  );
+});
+
+test("一部だけ入力された専門家候補は確定できない", () => {
+  assert.deepEqual(
+    confirmExpertDrafts([
+      { role_name: "教育相談員", viewpoint: "", request: "" },
+    ]),
+    {
+      experts: [],
+      errorMessage:
+        "追加した専門家ロールの役割名、観点、依頼をすべて入力してください。",
+    },
   );
 });

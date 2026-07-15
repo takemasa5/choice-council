@@ -1,10 +1,17 @@
 import type {
   ConsultationStartRequest,
+  ExpertRequest,
   FacilitatorResponse,
   FacilitatorResponseRequest,
   Phase,
   SessionMemo,
 } from "../shared/schemas/session";
+import { maximumExpertRequestCount } from "../shared/schemas/session";
+
+/** 日本語名: 専門家候補の確定結果。 */
+export type ExpertDraftConfirmation =
+  | { experts: ExpertRequest[]; errorMessage: "" }
+  | { experts: []; errorMessage: string };
 
 /** 日本語名: 相談開始画面の入力値。 */
 export type ConsultationStartInput = {
@@ -116,6 +123,88 @@ export function canProceedToExpertSelection(
   response: Pick<FacilitatorResponse, "next_action" | "user_question"> | null,
 ) {
   return response?.next_action === "request_experts" && !response.user_question;
+}
+
+/**
+ * 上限未満のときだけ、末尾に編集中の空の専門家候補行を追加する。
+ *
+ * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ */
+export function addExpertDraft(drafts: ExpertRequest[]): ExpertRequest[] {
+  if (drafts.length >= maximumExpertRequestCount) return drafts;
+
+  return [
+    ...drafts,
+    {
+      role_name: "",
+      viewpoint: "",
+      request: "",
+    },
+  ];
+}
+
+/**
+ * 指定した候補を、3項目すべて未入力の編集可能な候補行に戻す。
+ *
+ * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ */
+export function replaceExpertDraft(
+  drafts: ExpertRequest[],
+  index: number,
+): ExpertRequest[] {
+  return drafts.map((draft, currentIndex) => {
+    if (currentIndex !== index) return draft;
+
+    return {
+      role_name: "",
+      viewpoint: "",
+      request: "",
+    };
+  });
+}
+
+/**
+ * 専門家候補をtrimして確定可否を判定し、空行を確定対象から除外する。
+ *
+ * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ */
+export function confirmExpertDrafts(
+  drafts: ExpertRequest[],
+): ExpertDraftConfirmation {
+  const trimmedDrafts = drafts.map((draft) => ({
+    role_name: draft.role_name.trim(),
+    viewpoint: draft.viewpoint.trim(),
+    request: draft.request.trim(),
+  }));
+  const hasIncompleteDraft = trimmedDrafts.some((draft) => {
+    const enteredFieldCount = [
+      draft.role_name,
+      draft.viewpoint,
+      draft.request,
+    ].filter(Boolean).length;
+    return enteredFieldCount > 0 && enteredFieldCount < 3;
+  });
+
+  if (hasIncompleteDraft) {
+    return {
+      experts: [],
+      errorMessage:
+        "追加した専門家ロールの役割名、観点、依頼をすべて入力してください。",
+    };
+  }
+
+  const experts = trimmedDrafts.filter(
+    (draft) => draft.role_name && draft.viewpoint && draft.request,
+  );
+
+  if (experts.length === 0) {
+    return {
+      experts: [],
+      errorMessage: "確定する専門家ロールを1件以上入力してください。",
+    };
+  }
+
+  return { experts, errorMessage: "" };
 }
 
 function emptyToUndefined(value: string) {
