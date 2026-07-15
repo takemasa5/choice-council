@@ -184,6 +184,23 @@ test("POST /api/facilitator/deliberation は対応しない専門家コメント
   assert.equal((response.body as { error: string }).error, "invalid_request");
 });
 
+test("POST /api/facilitator/deliberation は専門家と異なる位置のコメントを拒否する", async () => {
+  const response = await requestJson(
+    createTestApp(deliberationResponse),
+    "/api/facilitator/deliberation",
+    {
+      consultation: "相談内容",
+      currentPhase: "deliberation",
+      memo,
+      confirmedExperts: expertResponse.expert_requests,
+      expertComments: [{ ...expertComments[0], role_name: "別の専門家" }],
+    },
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal((response.body as { error: string }).error, "invalid_request");
+});
+
 test("POST /api/facilitator/deliberation は未知の入力フィールドを拒否する", async () => {
   const response = await requestJson(
     createTestApp(deliberationResponse),

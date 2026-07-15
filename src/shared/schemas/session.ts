@@ -217,6 +217,22 @@ export const FacilitatorDeliberationRequestSchema = z
         message: "expertComments must have the same length as confirmedExperts",
         path: ["expertComments"],
       });
+      return;
+    }
+
+    for (const [index, expert] of request.confirmedExperts.entries()) {
+      const comment = request.expertComments[index];
+      if (
+        comment.role_name !== expert.role_name ||
+        comment.viewpoint !== expert.viewpoint
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "expertComments must match confirmedExperts by role_name and viewpoint at each index",
+          path: ["expertComments", index],
+        });
+      }
     }
   });
 
