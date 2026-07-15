@@ -18,6 +18,7 @@ import type {
 import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
+  canProceedToExpertSelection,
   createFailedFacilitatorRequest,
   getFacilitatorResponsePhase,
   getSessionConsultation,
@@ -645,6 +646,29 @@ function App() {
     setFinalMarkdownErrorMessage("");
   }
 
+  function proceedToExpertSelection() {
+    if (
+      isLoading ||
+      isUpdatingMemo ||
+      isGeneratingExperts ||
+      isGeneratingFinalMarkdown ||
+      !response ||
+      !canProceedToExpertSelection(response)
+    ) {
+      return;
+    }
+
+    const nextResponse = createResponseForPhase(response, "expert_selection");
+
+    setCurrentPhase("expert_selection");
+    setResponse(nextResponse);
+    setResponseHistory((current) => ({
+      ...keepResponsesThroughPhase(current, "premise"),
+      premise: current.premise ?? response,
+      expert_selection: nextResponse,
+    }));
+  }
+
   function updateExpertDraft(
     index: number,
     field: keyof ExpertRequest,
@@ -1265,6 +1289,23 @@ function App() {
               <p className="next-action">
                 候補行動: {nextActionLabels[response.next_action]}
               </p>
+
+              {currentPhase === "premise" &&
+                canProceedToExpertSelection(response) && (
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={proceedToExpertSelection}
+                    disabled={
+                      isLoading ||
+                      isUpdatingMemo ||
+                      isGeneratingExperts ||
+                      isGeneratingFinalMarkdown
+                    }
+                  >
+                    専門家選定へ進む
+                  </button>
+                )}
 
               {currentPhase === "expert_selection" &&
                 response.expert_requests.length > 0 && (

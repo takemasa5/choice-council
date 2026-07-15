@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
+  canProceedToExpertSelection,
   createFailedFacilitatorRequest,
   getFacilitatorResponsePhase,
   getSessionConsultation,
@@ -116,5 +117,22 @@ test("専門家候補を要求する応答では専門家選定フェーズへ�
   assert.equal(
     getFacilitatorResponsePhase({ next_action: "wait_user" }),
     "premise",
+  );
+});
+
+test("専門家候補を要求する前提整理応答は専門家選定へ進める", () => {
+  assert.equal(
+    canProceedToExpertSelection({
+      next_action: "request_experts",
+      user_question: null,
+    }),
+    true,
+  );
+  assert.equal(
+    canProceedToExpertSelection({
+      next_action: "wait_user",
+      user_question: null,
+    }),
+    false,
   );
 });
