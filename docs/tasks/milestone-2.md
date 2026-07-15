@@ -66,7 +66,7 @@ M2 で受け入れる `FacilitatorResponse.current_phase` は常に `premise` �
 3. バックエンドは、回答、直前の質問、`premise` のメモ文脈を用いて `FacilitatorResponse` を生成・検証する。
 4. 応答が有効な場合、アプリは `premise` に留まり、最新のファシリテーター応答と `memo_updates` を表示する。
 
-`/respond` は、`currentPhase: "premise"`、直前の `user_question`、`user_question_answer`、最新の `memo` を必須とする。回答が未入力の場合、フロントエンドは API を呼ばず `質問に回答してください。` と表示する。
+`/respond` は、`currentPhase: "premise"`、直前の `user_question`、`userQuestionAnswer`、最新の `memo` を必須とする。回答が未入力の場合、フロントエンドは API を呼ばず `質問に回答してください。` と表示する。
 
 `/respond` の応答で再び必須質問が返った場合も、ユーザー操作ごとに同じフローを繰り返せる。フロントエンドは直前の質問、回答、最新の `memo_updates` を用いて次の `FacilitatorResponseRequest` を作る。自動的に連続送信してはならない。
 
