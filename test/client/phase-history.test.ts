@@ -64,6 +64,25 @@ test("確定済みの専門家ロールを専門家選定の履歴へ保存す�
   );
 });
 
+test("専門家コメント生成後は確定済みロールを保持して検討フェーズへ進む", () => {
+  const confirmedExperts: ExpertRequest[] = [
+    {
+      role_name: "教育コンサルタント",
+      viewpoint: "学習負荷",
+      request: "家庭への負担を確認する",
+    },
+  ];
+
+  const deliberation = createResponseForPhase(
+    response("expert_selection"),
+    "deliberation",
+    confirmedExperts,
+  );
+
+  assert.equal(deliberation.current_phase, "deliberation");
+  assert.deepEqual(deliberation.expert_requests, confirmedExperts);
+});
+
 test("方向性整理へ戻る場合は専門家コメントを残す", () => {
   const expertComments = [
     { role_name: "教育コンサルタント" },

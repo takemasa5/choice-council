@@ -883,6 +883,7 @@ function App() {
         return;
       }
 
+      moveResponseToPhase("deliberation");
       await sendFacilitatorDeliberationRequest(request);
       showInterruptionOptionsIfPaused();
     } catch (error) {
