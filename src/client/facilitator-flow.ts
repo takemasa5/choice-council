@@ -2,6 +2,7 @@ import type {
   ConsultationStartRequest,
   ExpertRequest,
   ExpertComment,
+  FacilitatorDeliberationRequest,
   FacilitatorResponse,
   FacilitatorResponseRequest,
   Phase,
@@ -45,7 +46,19 @@ export type FailedFacilitatorRequest =
   | {
       endpoint: "respond";
       request: FacilitatorResponseRequest;
+    }
+  | {
+      endpoint: "deliberation";
+      request: FacilitatorDeliberationRequest;
     };
+
+/** 日本語名: ファシリテーター整理リクエスト作成用の入力値。 */
+export type FacilitatorDeliberationInput = {
+  consultation: string;
+  memo: SessionMemo | null;
+  confirmedExperts: ExpertRequest[];
+  expertComments: ExpertComment[];
+};
 
 /** 日本語名: 前提整理の確認回答入力値。 */
 export type FacilitatorResponseInput = {
@@ -101,6 +114,32 @@ export function buildFacilitatorResponseRequest(
     userQuestion: input.userQuestion,
     userQuestionAnswer: input.userQuestionAnswer,
     memo: input.memo,
+  };
+}
+
+/**
+ * 全専門家コメントをファシリテーター整理 API に送る入力を作成する。
+ *
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/deliberation`。
+ */
+export function buildFacilitatorDeliberationRequest(
+  input: FacilitatorDeliberationInput,
+): FacilitatorDeliberationRequest | null {
+  if (
+    !input.consultation.trim() ||
+    !input.memo ||
+    input.confirmedExperts.length === 0 ||
+    input.confirmedExperts.length !== input.expertComments.length
+  ) {
+    return null;
+  }
+
+  return {
+    consultation: input.consultation,
+    currentPhase: "deliberation",
+    memo: input.memo,
+    confirmedExperts: input.confirmedExperts,
+    expertComments: input.expertComments,
   };
 }
 
@@ -163,6 +202,20 @@ export function canProceedToExpertSelection(
   response: Pick<FacilitatorResponse, "next_action" | "user_question"> | null,
 ) {
   return response?.next_action === "request_experts" && !response.user_question;
+}
+
+/**
+ * M3 のファシリテーター整理応答を方向性整理へ進める前に検証する。
+ *
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/deliberation`。
+ */
+export function isAcceptedM3FacilitatorResponse(response: FacilitatorResponse) {
+  return (
+    response.current_phase === "direction" &&
+    response.next_action === "move_phase" &&
+    response.user_question === null &&
+    response.expert_requests.length === 0
+  );
 }
 
 /**

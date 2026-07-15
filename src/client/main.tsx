@@ -6,6 +6,7 @@ import type {
   ExpertComment,
   ExpertCommentRequest,
   ExpertRequest,
+  FacilitatorDeliberationRequest,
   FacilitatorResponse,
   FacilitatorResponseRequest,
   FinalMarkdown,
@@ -13,11 +14,11 @@ import type {
   FinalSessionMemo,
   Phase,
   SessionMemo,
-  SessionMemoRequest,
 } from "../shared/schemas/session";
 import { maximumExpertRequestCount } from "../shared/schemas/session";
 import {
   addExpertDraft as appendExpertDraft,
+  buildFacilitatorDeliberationRequest,
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
   canProceedToExpertSelection,
@@ -27,6 +28,7 @@ import {
   getFacilitatorResponsePhase,
   getInitialExpertRequests,
   getSessionConsultation,
+  isAcceptedM3FacilitatorResponse,
   replaceExpertDraft as replaceExpertDraftValues,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
@@ -108,9 +110,7 @@ function App() {
   const [selectedInterruptionOption, setSelectedInterruptionOption] =
     useState("");
   const [interruptionOtherAnswer, setInterruptionOtherAnswer] = useState("");
-  const [isUpdatingMemo, setIsUpdatingMemo] = useState(false);
   const [memoNotice, setMemoNotice] = useState("");
-  const [memoErrorMessage, setMemoErrorMessage] = useState("");
   const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
   const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
   const [expertDrafts, setExpertDrafts] = useState<ExpertRequest[]>([]);
@@ -121,13 +121,16 @@ function App() {
   const confirmedExpertRequestKeyRef = useRef("");
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
+  const [isGeneratingDeliberation, setIsGeneratingDeliberation] =
+    useState(false);
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
   const [finalMarkdown, setFinalMarkdown] = useState("");
   const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] =
     useState(false);
   const [finalMarkdownErrorMessage, setFinalMarkdownErrorMessage] =
     useState("");
-  const canRequestPause = isLoading || isGeneratingExperts;
+  const canRequestPause =
+    isLoading || isGeneratingExperts || isGeneratingDeliberation;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
@@ -243,8 +246,8 @@ function App() {
     (currentPhase === "direction" || currentPhase === "final_memo") &&
     !getPendingRequiredQuestionMessage() &&
     !isLoading &&
-    !isUpdatingMemo &&
     !isGeneratingExperts &&
+    !isGeneratingDeliberation &&
     !isGeneratingFinalMarkdown;
   const sessionConsultation = getSessionConsultation(
     startedConsultation,
@@ -279,7 +282,6 @@ function App() {
     setPauseRequested(false);
     pauseRequestedRef.current = false;
     setMemoNotice("");
-    setMemoErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
 
@@ -486,11 +488,19 @@ function App() {
    * 仕様対応: `docs/tasks/milestone-2.md#API エラー表示`。
    */
   async function retryFailedFacilitatorRequest() {
-    if (!failedFacilitatorRequest || isLoading) return;
+    if (!failedFacilitatorRequest || isLoading || isGeneratingDeliberation)
+      return;
 
     setErrorMessage("");
     if (failedFacilitatorRequest.endpoint === "start") {
       await sendStartRequest(failedFacilitatorRequest.request);
+      return;
+    }
+
+    if (failedFacilitatorRequest.endpoint === "deliberation") {
+      await sendFacilitatorDeliberationRequest(
+        failedFacilitatorRequest.request,
+      );
       return;
     }
 
@@ -601,8 +611,8 @@ function App() {
   function clearSession() {
     if (
       isLoading ||
-      isUpdatingMemo ||
       isGeneratingExperts ||
+      isGeneratingDeliberation ||
       isGeneratingFinalMarkdown
     )
       return;
@@ -625,7 +635,6 @@ function App() {
     setSelectedInterruptionOption("");
     setInterruptionOtherAnswer("");
     setMemoNotice("");
-    setMemoErrorMessage("");
     setSelectedQuestionOption("");
     setOtherQuestionAnswer("");
     setExpertDrafts([]);
@@ -640,8 +649,8 @@ function App() {
   function returnToPhase(targetPhase: Phase) {
     if (
       isLoading ||
-      isUpdatingMemo ||
       isGeneratingExperts ||
+      isGeneratingDeliberation ||
       isGeneratingFinalMarkdown
     )
       return;
@@ -668,7 +677,6 @@ function App() {
     setSelectedInterruptionOption("");
     setInterruptionOtherAnswer("");
     setMemoNotice("");
-    setMemoErrorMessage("");
     setSelectedQuestionOption("");
     setOtherQuestionAnswer("");
     setExpertDrafts([]);
@@ -685,8 +693,8 @@ function App() {
   function proceedToExpertSelection() {
     if (
       isLoading ||
-      isUpdatingMemo ||
       isGeneratingExperts ||
+      isGeneratingDeliberation ||
       isGeneratingFinalMarkdown ||
       !response ||
       !canProceedToExpertSelection(response)
@@ -747,7 +755,6 @@ function App() {
   function resetConfirmedExperts() {
     if (isGeneratingExperts) return;
 
-    clearExpertMemoItems(expertComments.map((comment) => comment.role_name));
     setConfirmedExperts([]);
     setExpertComments([]);
     setExpertErrorMessage("");
@@ -854,7 +861,20 @@ function App() {
       }
 
       setExpertComments(result.comments);
-      await carryResearchNeedsToMemo(result.comments, "direction");
+      const request = buildFacilitatorDeliberationRequest({
+        consultation: sessionConsultation,
+        memo,
+        confirmedExperts,
+        expertComments: result.comments,
+      });
+      if (!request) {
+        setExpertErrorMessage(
+          "専門家コメントの整理に必要なセッションメモがありません。",
+        );
+        return;
+      }
+
+      await sendFacilitatorDeliberationRequest(request);
       showInterruptionOptionsIfPaused();
     } catch (error) {
       setExpertErrorMessage(
@@ -862,6 +882,64 @@ function App() {
       );
     } finally {
       setIsGeneratingExperts(false);
+    }
+  }
+
+  /**
+   * 全専門家コメントを整理し、成功時だけ方向性整理へ遷移する。
+   *
+   * 仕様対応: `docs/tasks/milestone-3.md#ファシリテーター整理と方向性整理への遷移` と
+   * `docs/api/schemas.md#POST /api/facilitator/deliberation`。
+   */
+  async function sendFacilitatorDeliberationRequest(
+    request: FacilitatorDeliberationRequest,
+  ) {
+    setIsGeneratingDeliberation(true);
+    setErrorMessage("");
+
+    try {
+      const apiResponse = await fetch("/api/facilitator/deliberation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+      });
+      const body = await apiResponse.json();
+
+      if (!apiResponse.ok) {
+        setErrorMessage(body.message ?? invalidGenerationMessage);
+        setFailedFacilitatorRequest(
+          createFailedFacilitatorRequest({ endpoint: "deliberation", request }),
+        );
+        return;
+      }
+
+      const facilitatorResponse = body as FacilitatorResponse;
+      if (!isAcceptedM3FacilitatorResponse(facilitatorResponse)) {
+        setErrorMessage("方向性整理として受け入れられない応答が返されました。");
+        setFailedFacilitatorRequest(
+          createFailedFacilitatorRequest({ endpoint: "deliberation", request }),
+        );
+        return;
+      }
+
+      setFailedFacilitatorRequest(null);
+      setCurrentPhase("direction");
+      setResponse(facilitatorResponse);
+      setResponseHistory((current) => ({
+        ...keepResponsesThroughPhase(current, "expert_selection"),
+        direction: facilitatorResponse,
+      }));
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "通信に失敗しました。",
+      );
+      setFailedFacilitatorRequest(
+        createFailedFacilitatorRequest({ endpoint: "deliberation", request }),
+      );
+    } finally {
+      setIsGeneratingDeliberation(false);
     }
   }
 
@@ -939,109 +1017,6 @@ function App() {
     URL.revokeObjectURL(url);
   }
 
-  async function carryResearchNeedsToMemo(
-    comments: ExpertComment[],
-    targetPhase: Phase,
-  ) {
-    const openQuestionItems = comments.flatMap((comment) => {
-      const items: string[] = [];
-      const questionToUser = comment.question_to_user.trim();
-
-      if (comment.needs_research) {
-        items.push(`${comment.role_name}: ${comment.concern}`);
-      }
-
-      if (questionToUser !== "なし") {
-        items.push(`${comment.role_name}: ${questionToUser}`);
-      }
-
-      return items;
-    });
-
-    if (!response) return;
-
-    setCurrentPhase(targetPhase);
-    const nextResponse = {
-      ...response,
-      current_phase: targetPhase,
-      memo_updates: {
-        ...response.memo_updates,
-        expert_summaries: replaceExpertMemoItems(
-          response.memo_updates.expert_summaries,
-          comments.map((comment) => comment.role_name),
-          comments.map(formatExpertMemoSummary),
-        ),
-        open_questions: replaceExpertMemoItems(
-          response.memo_updates.open_questions,
-          comments.map((comment) => comment.role_name),
-          openQuestionItems,
-        ),
-      },
-    };
-
-    const responseWithMemo = await updateSessionMemoForResponse(
-      nextResponse,
-      targetPhase,
-      comments,
-    );
-
-    setResponse(responseWithMemo);
-    setResponseHistory((current) => ({
-      ...current,
-      [targetPhase]: responseWithMemo,
-    }));
-  }
-
-  async function updateSessionMemoForResponse(
-    facilitatorResponse: FacilitatorResponse,
-    targetPhase: Phase,
-    comments: ExpertComment[] = [],
-    userAction?: string,
-  ) {
-    setIsUpdatingMemo(true);
-    setMemoErrorMessage("");
-
-    const request: SessionMemoRequest = {
-      consultation: sessionConsultation,
-      currentPhase: targetPhase,
-      previousMemo: memo ?? undefined,
-      facilitatorResponse,
-      expertComments: comments.length > 0 ? comments : undefined,
-      userAction,
-    };
-
-    try {
-      const apiResponse = await fetch("/api/session-memo/update", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(request),
-      });
-      const body = await apiResponse.json();
-
-      if (!apiResponse.ok) {
-        setMemoErrorMessage(body.message ?? invalidGenerationMessage);
-        return facilitatorResponse;
-      }
-
-      setMemoNotice("メモを更新しました。");
-      return {
-        ...facilitatorResponse,
-        memo_updates: body as SessionMemo,
-      };
-    } catch (error) {
-      setMemoErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "セッションメモの更新に失敗しました。",
-      );
-      return facilitatorResponse;
-    } finally {
-      setIsUpdatingMemo(false);
-    }
-  }
-
   function requestPause() {
     if (!canRequestPause) return;
 
@@ -1112,45 +1087,6 @@ function App() {
           }
         : undefined,
     };
-  }
-
-  function clearExpertMemoItems(roleNames: string[]) {
-    if (roleNames.length === 0) return;
-
-    const clearFromResponse = (currentResponse: FacilitatorResponse) => ({
-      ...currentResponse,
-      memo_updates: {
-        ...currentResponse.memo_updates,
-        expert_summaries: replaceExpertMemoItems(
-          currentResponse.memo_updates.expert_summaries,
-          roleNames,
-          [],
-        ),
-        open_questions: replaceExpertMemoItems(
-          currentResponse.memo_updates.open_questions,
-          roleNames,
-          [],
-        ),
-      },
-    });
-
-    setResponse((currentResponse) => {
-      return currentResponse
-        ? clearFromResponse(currentResponse)
-        : currentResponse;
-    });
-    setResponseHistory((current) => {
-      return Object.fromEntries(
-        Object.entries(current).map(([phase, currentResponse]) => {
-          return [
-            phase,
-            currentResponse
-              ? clearFromResponse(currentResponse)
-              : currentResponse,
-          ];
-        }),
-      ) as Partial<Record<Phase, FacilitatorResponse>>;
-    });
   }
 
   function moveResponseToPhase(nextPhase: Phase) {
@@ -1268,7 +1204,10 @@ function App() {
                 type="button"
                 onClick={startSession}
                 disabled={
-                  isLoading || isGeneratingExperts || isGeneratingFinalMarkdown
+                  isLoading ||
+                  isGeneratingExperts ||
+                  isGeneratingDeliberation ||
+                  isGeneratingFinalMarkdown
                 }
               >
                 {isLoading
@@ -1296,7 +1235,7 @@ function App() {
                     className="secondary-button"
                     type="button"
                     onClick={retryFailedFacilitatorRequest}
-                    disabled={isLoading}
+                    disabled={isLoading || isGeneratingDeliberation}
                   >
                     {isLoading ? "リトライ中..." : "同じ内容でリトライ"}
                   </button>
@@ -1321,8 +1260,8 @@ function App() {
                     onClick={proceedToExpertSelection}
                     disabled={
                       isLoading ||
-                      isUpdatingMemo ||
                       isGeneratingExperts ||
+                      isGeneratingDeliberation ||
                       isGeneratingFinalMarkdown
                     }
                   >
@@ -1608,8 +1547,8 @@ function App() {
                     onClick={() => returnToPhase(phase)}
                     disabled={
                       isLoading ||
-                      isUpdatingMemo ||
                       isGeneratingExperts ||
+                      isGeneratingDeliberation ||
                       isGeneratingFinalMarkdown
                     }
                   >
@@ -1631,9 +1570,9 @@ function App() {
                 onClick={clearSession}
                 disabled={
                   isLoading ||
-                  isUpdatingMemo ||
                   isGeneratingExperts ||
-                  isGeneratingFinalMarkdown
+                  isGeneratingFinalMarkdown ||
+                  isGeneratingDeliberation
                 }
               >
                 削除
@@ -1667,10 +1606,8 @@ function App() {
                   Markdown保存
                 </button>
               )}
-              {isUpdatingMemo && <span>メモ更新中...</span>}
             </div>
             {memoNotice && <p className="notice">{memoNotice}</p>}
-            {memoErrorMessage && <p className="error">{memoErrorMessage}</p>}
             {finalMarkdownErrorMessage && (
               <p className="error">{finalMarkdownErrorMessage}</p>
             )}
@@ -1734,31 +1671,6 @@ function getLatestMemoBeforePhase(
   }
 
   return null;
-}
-
-function replaceExpertMemoItems(
-  items: string[],
-  roleNames: string[],
-  nextItems: string[],
-) {
-  const rolePrefixes = new Set(roleNames.map((roleName) => `${roleName}:`));
-
-  return [
-    ...items.filter((item) => {
-      return !Array.from(rolePrefixes).some((prefix) =>
-        item.startsWith(prefix),
-      );
-    }),
-    ...nextItems,
-  ];
-}
-
-function formatExpertMemoSummary(comment: ExpertComment) {
-  return [
-    `${comment.role_name}: ${comment.summary}`,
-    `最重要ポイント: ${comment.key_point}`,
-    `懸念・不明点: ${comment.concern}`,
-  ].join(" / ");
 }
 
 function isFinalSessionMemo(memo: SessionMemo): memo is FinalSessionMemo {

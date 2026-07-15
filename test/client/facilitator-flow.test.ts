@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   addExpertDraft,
   buildConsultationStartRequest,
+  buildFacilitatorDeliberationRequest,
   buildFacilitatorResponseRequest,
   canProceedToExpertSelection,
   collectExpertCommentGenerationResults,
@@ -11,6 +12,7 @@ import {
   getFacilitatorResponsePhase,
   getInitialExpertRequests,
   getSessionConsultation,
+  isAcceptedM3FacilitatorResponse,
   replaceExpertDraft,
 } from "../../src/client/facilitator-flow";
 import { maximumExpertRequestCount } from "../../src/shared/schemas/session";
@@ -18,6 +20,7 @@ import type {
   ExpertComment,
   ExpertRequest,
   FacilitatorResponse,
+  FacilitatorDeliberationRequest,
   FacilitatorResponseRequest,
   SessionMemo,
 } from "../../src/shared/schemas/session";
@@ -46,6 +49,17 @@ const userQuestion: FacilitatorResponseRequest["userQuestion"] = {
   question: "本人の希望はどれに近いですか？",
   options: ["受験したい", "まだ迷っている", "その他"],
   required: true,
+};
+
+const expertComment: ExpertComment = {
+  role_name: expert.role_name,
+  viewpoint: expert.viewpoint,
+  summary: "本人の負担を優先して判断するべきです。",
+  key_point: "本人の希望を確認することです。",
+  concern: "準備時間の確保が難しいです。",
+  question_to_user: "本人はどの程度希望していますか？",
+  confidence: "high",
+  needs_research: false,
 };
 
 test("相談開始リクエストは空の任意項目を送らない", () => {
@@ -94,6 +108,45 @@ test("必須質問への回答がない場合は回答リクエストを作ら�
   assert.equal(request, null);
 });
 
+test("全専門家コメントの成功後は整理 API 用の同一順序の入力を作成する", () => {
+  assert.deepEqual(
+    buildFacilitatorDeliberationRequest({
+      consultation: "中学受験について相談したい",
+      memo,
+      confirmedExperts: [expert],
+      expertComments: [expertComment],
+    }),
+    {
+      consultation: "中学受験について相談したい",
+      currentPhase: "deliberation",
+      memo,
+      confirmedExperts: [expert],
+      expertComments: [expertComment],
+    },
+  );
+});
+
+test("整理に必要なメモまたは全コメントがなければ整理リクエストを作成しない", () => {
+  assert.equal(
+    buildFacilitatorDeliberationRequest({
+      consultation: "中学受験について相談したい",
+      memo: null,
+      confirmedExperts: [expert],
+      expertComments: [expertComment],
+    }),
+    null,
+  );
+  assert.equal(
+    buildFacilitatorDeliberationRequest({
+      consultation: "中学受験について相談したい",
+      memo,
+      confirmedExperts: [expert],
+      expertComments: [],
+    }),
+    null,
+  );
+});
+
 test("失敗リクエストは同一内容でリトライできる形で保持する", () => {
   const request: FacilitatorResponseRequest = {
     consultation: "中学受験について相談したい",
@@ -112,6 +165,21 @@ test("失敗リクエストは同一内容でリトライできる形で保持�
     endpoint: "respond",
     request,
   });
+});
+
+test("ファシリテーター整理の失敗リクエストは同一内容で保持する", () => {
+  const request: FacilitatorDeliberationRequest = {
+    consultation: "中学受験について相談したい",
+    currentPhase: "deliberation",
+    memo,
+    confirmedExperts: [expert],
+    expertComments: [expertComment],
+  };
+
+  assert.deepEqual(
+    createFailedFacilitatorRequest({ endpoint: "deliberation", request }),
+    { endpoint: "deliberation", request },
+  );
 });
 
 test("専門家コメントの全件成功時は並列に開始し開始順で結果を返す", async () => {
@@ -204,6 +272,28 @@ test("専門家候補を要求する前提整理応答は専門家選定へ進�
     canProceedToExpertSelection({
       next_action: "wait_user",
       user_question: null,
+    }),
+    false,
+  );
+});
+
+test("有効な整理応答だけを方向性整理へ進める", () => {
+  const response = {
+    current_phase: "direction",
+    current_phase_label: "方向性整理",
+    phase_goal: "判断軸を整理する",
+    facilitator_message: "整理結果です。",
+    next_action: "move_phase",
+    user_question: null,
+    expert_requests: [],
+    memo_updates: memo,
+  } satisfies FacilitatorResponse;
+
+  assert.equal(isAcceptedM3FacilitatorResponse(response), true);
+  assert.equal(
+    isAcceptedM3FacilitatorResponse({
+      ...response,
+      next_action: "update_memo",
     }),
     false,
   );
