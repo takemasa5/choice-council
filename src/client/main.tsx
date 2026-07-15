@@ -25,6 +25,7 @@ import {
 import {
   clearResponseHistory,
   createResponseForPhase,
+  getExpertCommentsForReturn,
   getReturnablePhases,
   keepResponsesThroughPhase,
   phaseOrder,
@@ -619,7 +620,7 @@ function App() {
     setOtherQuestionAnswer("");
     setExpertDrafts([]);
     setConfirmedExperts([]);
-    setExpertComments([]);
+    setExpertComments(getExpertCommentsForReturn(targetPhase, expertComments));
     setExpertErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");

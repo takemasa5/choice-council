@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createResponseForPhase,
+  getExpertCommentsForReturn,
   getReturnablePhases,
   keepResponsesThroughPhase,
   type ResponseHistory,
 } from "../../src/client/phase-history";
 import type {
   ExpertRequest,
+  ExpertComment,
   FacilitatorResponse,
 } from "../../src/shared/schemas/session";
 
@@ -59,5 +61,20 @@ test("確定済みの専門家ロールを専門家選定の履歴へ保存す�
       confirmedExperts,
     ).expert_requests,
     confirmedExperts,
+  );
+});
+
+test("方向性整理へ戻る場合は専門家コメントを残す", () => {
+  const expertComments = [
+    { role_name: "教育コンサルタント" },
+  ] as ExpertComment[];
+
+  assert.equal(
+    getExpertCommentsForReturn("direction", expertComments),
+    expertComments,
+  );
+  assert.deepEqual(
+    getExpertCommentsForReturn("expert_selection", expertComments),
+    [],
   );
 });

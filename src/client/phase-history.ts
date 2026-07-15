@@ -1,4 +1,8 @@
-import type { FacilitatorResponse, Phase } from "../shared/schemas/session";
+import type {
+  ExpertComment,
+  FacilitatorResponse,
+  Phase,
+} from "../shared/schemas/session";
 
 /** 日本語名: フェーズごとのファシリテーター応答履歴。 */
 export type ResponseHistory = Partial<Record<Phase, FacilitatorResponse>>;
@@ -41,6 +45,14 @@ export function keepResponsesThroughPhase(
 /** 相談入力へ戻るときは、すべてのファシリテーター応答を破棄する。 */
 export function clearResponseHistory(): ResponseHistory {
   return {};
+}
+
+/** 方向性整理へ戻る場合だけ、根拠となる専門家コメントを残す。 */
+export function getExpertCommentsForReturn(
+  targetPhase: Phase,
+  expertComments: ExpertComment[],
+) {
+  return targetPhase === "direction" ? expertComments : [];
 }
 
 /** 指定フェーズ用の応答を作り、専門家ロールの編集内容も保持する。 */
