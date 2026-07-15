@@ -95,18 +95,67 @@ export const FinalSessionMemoSchema = SessionMemoSchema.extend({
 
 export type FinalSessionMemo = z.infer<typeof FinalSessionMemoSchema>;
 
-export const ConsultationRequestSchema = z.strictObject({
+/**
+ * 相談開始 API の入力契約。
+ *
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/start`。
+ */
+export const ConsultationStartRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   facts: nonEmptyString.optional(),
   values: nonEmptyString.optional(),
   concerns: nonEmptyString.optional(),
   expectedOutcome: nonEmptyString.optional(),
+});
+
+/** 日本語名: 相談開始リクエスト。 */
+export type ConsultationStartRequest = z.infer<
+  typeof ConsultationStartRequestSchema
+>;
+
+/**
+ * 前提整理の確認回答 API の入力契約。
+ *
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/respond`。
+ */
+export const FacilitatorResponseRequestSchema = z
+  .strictObject({
+    consultation: nonEmptyString,
+    currentPhase: z.literal("premise"),
+    userQuestion: UserQuestionSchema,
+    userQuestionAnswer: nonEmptyString,
+    memo: SessionMemoSchema,
+  })
+  .superRefine((request, context) => {
+    if (!request.userQuestion.required) {
+      context.addIssue({
+        code: "custom",
+        message: "userQuestion.required must be true",
+        path: ["userQuestion", "required"],
+      });
+    }
+  });
+
+/** 日本語名: ファシリテーター確認回答リクエスト。 */
+export type FacilitatorResponseRequest = z.infer<
+  typeof FacilitatorResponseRequestSchema
+>;
+
+/**
+ * クライアントが開始入力と確認回答を一時保持するための互換用契約。
+ *
+ * API の受け付けは `ConsultationStartRequestSchema` と
+ * `FacilitatorResponseRequestSchema` を使用する。
+ */
+export const ConsultationRequestSchema = z.strictObject({
+  ...ConsultationStartRequestSchema.shape,
   userQuestion: UserQuestionSchema.optional(),
   userQuestionAnswer: nonEmptyString.optional(),
   currentPhase: PhaseSchema.optional(),
   memo: SessionMemoSchema.optional(),
 });
 
+/** 日本語名: クライアント互換用の相談リクエスト。 */
 export type ConsultationRequest = z.infer<typeof ConsultationRequestSchema>;
 
 export const ExpertRequestSchema = z.strictObject({

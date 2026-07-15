@@ -1,10 +1,11 @@
 import type { RequestHandler } from "express";
 import { zodTextFormat } from "openai/helpers/zod";
+import type { z } from "zod";
 import {
-  ConsultationRequestSchema,
+  ConsultationStartRequestSchema,
+  FacilitatorResponseRequestSchema,
   FacilitatorResponseSchema,
   type FacilitatorResponse,
-  type Phase,
 } from "../../src/shared/schemas/session";
 import {
   parseStructuredOutputOnceWithRetry,
@@ -16,31 +17,46 @@ import {
 import type { AppDependencies } from "./types";
 
 /**
- * フェーズを前後関係で判定するための並び順。
+ * ファシリテーター初回応答を生成する API ハンドラを作成する。
  *
- * 日本語名: 意思決定フェーズ順。
- * 仕様対応: `docs/design/state-machine.md#フェーズ`。
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/start` と
+ * `docs/api/schemas.md#M2 route の追加検証`。
  */
-const phaseOrder: Phase[] = [
-  "consultation_input",
-  "premise",
-  "expert_selection",
-  "deliberation",
-  "direction",
-  "final_memo",
-];
-
-/**
- * ファシリテーター初回応答を生成するAPIハンドラを作成する。
- *
- * 仕様対応: `docs/api/schemas.md#ファシリテーター出力` と
- * `docs/prompts/facilitator.md`。
- */
-export function createFacilitatorHandler(
+export function createFacilitatorStartHandler(
   dependencies: AppDependencies,
 ): RequestHandler {
+  return createM2FacilitatorHandler(
+    dependencies,
+    ConsultationStartRequestSchema,
+  );
+}
+
+/**
+ * ファシリテーター確認回答を生成する API ハンドラを作成する。
+ *
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/respond` と
+ * `docs/api/schemas.md#M2 route の追加検証`。
+ */
+export function createFacilitatorRespondHandler(
+  dependencies: AppDependencies,
+): RequestHandler {
+  return createM2FacilitatorHandler(
+    dependencies,
+    FacilitatorResponseRequestSchema,
+  );
+}
+
+/**
+ * M2 のファシリテーター API で共通の入力検証と応答生成を行う。
+ *
+ * 仕様対応: `docs/api/schemas.md#M2 route の追加検証`。
+ */
+function createM2FacilitatorHandler(
+  dependencies: AppDependencies,
+  requestSchema: z.ZodType,
+): RequestHandler {
   return async (request, response) => {
-    const parsedRequest = ConsultationRequestSchema.safeParse(request.body);
+    const parsedRequest = requestSchema.safeParse(request.body);
 
     if (!parsedRequest.success) {
       sendInvalidRequest(response, parsedRequest.error.flatten());
@@ -73,11 +89,7 @@ export function createFacilitatorHandler(
             }) as unknown as Promise<{
               output_parsed: FacilitatorResponse | null;
             }>,
-          (modelResponse) =>
-            isAcceptedFacilitatorResponse(
-              parsedRequest.data.currentPhase,
-              modelResponse,
-            ),
+          (modelResponse) => isAcceptedM2FacilitatorResponse(modelResponse),
         );
 
       if (!output) {
@@ -111,26 +123,26 @@ function userMessage(value: unknown) {
 }
 
 /**
- * モデルが提案したフェーズ遷移をアプリ側の状態機械に照らして判定する。
+ * モデル応答が M2 の前提整理専用制約を満たすか判定する。
  *
- * 仕様対応: `docs/design/state-machine.md#フェーズ遷移ルール`。
+ * 仕様対応: `docs/api/schemas.md#M2 route の追加検証`。
  */
-function isAcceptedFacilitatorResponse(
-  currentPhase: Phase | undefined,
-  modelResponse: FacilitatorResponse,
-) {
-  const activePhase = currentPhase ?? "consultation_input";
-  const currentIndex = phaseOrder.indexOf(activePhase);
-  const modelIndex = phaseOrder.indexOf(modelResponse.current_phase);
+function isAcceptedM2FacilitatorResponse(modelResponse: FacilitatorResponse) {
+  const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);
+  if (!parsedResponse.success) return false;
 
-  if (modelIndex === currentIndex) return true;
-  if (modelIndex !== currentIndex + 1) return false;
-  if (activePhase === "consultation_input") return true;
-  if (modelResponse.user_question?.required) return false;
+  const response = parsedResponse.data;
+  if (response.current_phase !== "premise") return false;
+
+  if (response.user_question) {
+    return (
+      response.user_question.required && response.next_action === "wait_user"
+    );
+  }
 
   return (
-    modelResponse.next_action === "move_phase" ||
-    modelResponse.next_action === "finish"
+    response.next_action === "request_experts" &&
+    response.expert_requests.length > 0
   );
 }
 
@@ -151,11 +163,11 @@ const facilitatorDeveloperPrompt = `
 - 外部調査は実施できない。必要な場合は未確認事項として残す。
 - 初回応答では相談内容を要約し、事実、希望、不安、不明点を整理する。
 - 初回応答で外部調査が必要な内容は断定せず、memo_updates.open_questions に未確認事項として残す。
-- 初回応答では情報不足が大きい場合のみ1〜2問に絞って質問する。
+- 初回応答と確認回答では、情報不足が大きい場合のみ確認質問を1問返す。
 - 初回応答では次に必要な専門家ロール候補を expert_requests に含める。専門家が重視する観点は viewpoint に明示する。
 - 高リスク領域では専門家ロール候補や次アクションを、判断材料の整理と相談準備に向ける。
-- currentPhase と memo が入力に含まれる場合は、そのフェーズとメモを現在の文脈として扱い、初回の前提整理からやり直さない。
-- currentPhase が premise 以降の場合、出力の current_phase は入力の currentPhase または状態機械上の次フェーズにする。
+- currentPhase、userQuestion、userQuestionAnswer、memo が入力に含まれる場合は、その質問への回答とメモを前提整理へ反映し、初回の前提整理からやり直さない。
+- 出力の current_phase は必ず premise にする。
 - userQuestion と userQuestionAnswer が入力に含まれる場合は、その質問へのユーザー回答として扱い、memo_updates と次アクションに反映する。
 - user_question を返す場合、options は2件以上にし、必ず「その他」を含める。
 - 出力は指定 schema に厳密に従う。

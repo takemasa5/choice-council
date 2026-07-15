@@ -28,10 +28,11 @@ export const memo = {
  * 日本語名: テスト用APIアプリ生成関数。
  */
 export function createTestApp(
-  output: unknown,
+  output: unknown | unknown[],
   apiKey = "test-api-key",
   onParse?: (request: unknown) => void,
 ) {
+  let parseCount = 0;
   return createApp({
     getApiKey: () => apiKey,
     createOpenAIClient: () =>
@@ -39,7 +40,11 @@ export function createTestApp(
         responses: {
           parse: async (request: unknown) => {
             onParse?.(request);
-            return { output_parsed: output };
+            const outputs = Array.isArray(output) ? output : [output];
+            const currentOutput =
+              outputs[Math.min(parseCount, outputs.length - 1)];
+            parseCount += 1;
+            return { output_parsed: currentOutput };
           },
         },
       }) as never,
