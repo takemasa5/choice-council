@@ -205,7 +205,7 @@ function App() {
       setConfirmedExperts([]);
     }
     setExpertErrorMessage("");
-  }, [expertRequestKey]);
+  }, [expertRequestKey, currentPhase]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return (
