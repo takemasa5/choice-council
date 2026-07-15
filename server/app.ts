@@ -1,7 +1,10 @@
 import express from "express";
 import OpenAI from "openai";
 import { createExpertCommentHandler } from "./routes/expert-comment";
-import { createFacilitatorHandler } from "./routes/facilitator";
+import {
+  createFacilitatorRespondHandler,
+  createFacilitatorStartHandler,
+} from "./routes/facilitator";
 import { createFinalMarkdownHandler } from "./routes/final-markdown";
 import { healthHandler } from "./routes/health";
 import { createSessionMemoHandler } from "./routes/session-memo";
@@ -27,7 +30,14 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   app.use(express.json({ limit: "1mb" }));
   // 仕様対応: `docs/api/schemas.md#呼び出し単位` の公開エンドポイント。
   app.get("/api/health", healthHandler);
-  app.post("/api/facilitator/start", createFacilitatorHandler(dependencies));
+  app.post(
+    "/api/facilitator/start",
+    createFacilitatorStartHandler(dependencies),
+  );
+  app.post(
+    "/api/facilitator/respond",
+    createFacilitatorRespondHandler(dependencies),
+  );
   app.post("/api/expert/comment", createExpertCommentHandler(dependencies));
   app.post("/api/session-memo/update", createSessionMemoHandler(dependencies));
   app.post(

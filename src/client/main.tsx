@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
+  ConsultationStartRequest,
   ConsultationRequest,
   ExpertComment,
   ExpertCommentRequest,
   ExpertRequest,
   FacilitatorResponse,
+  FacilitatorResponseRequest,
   FinalMarkdown,
   FinalMarkdownRequest,
   FinalSessionMemo,
@@ -208,14 +210,9 @@ function App() {
   async function startSession() {
     setErrorMessage("");
 
-    const request = buildRequest();
+    const request = buildStartRequest();
     if (!request.consultation.trim()) {
       setErrorMessage("相談内容を入力してください。");
-      return;
-    }
-
-    if (getActiveUserQuestion()?.required && !request.userQuestionAnswer) {
-      setErrorMessage("質問に回答してください。");
       return;
     }
 
@@ -244,24 +241,13 @@ function App() {
       }
 
       const facilitatorResponse = body as FacilitatorResponse;
-      const acceptedPhase = getAcceptedModelPhase(
-        currentPhase,
-        facilitatorResponse,
-      );
-      if (!acceptedPhase) {
-        setErrorMessage(
-          "現在のフェーズから許可されていない応答が返されました。",
-        );
+      if (!isAcceptedM2Response(facilitatorResponse)) {
+        setErrorMessage("前提整理として受け入れられない応答が返されました。");
         return;
       }
 
-      const responseWithMemo = await updateSessionMemoForResponse(
-        facilitatorResponse,
-        acceptedPhase,
-      );
-
-      setCurrentPhase(acceptedPhase);
-      setResponse(responseWithMemo);
+      setCurrentPhase("premise");
+      setResponse(facilitatorResponse);
       setSelectedQuestionOption("");
       setOtherQuestionAnswer("");
       setIsInterruptionReady(false);
@@ -270,7 +256,7 @@ function App() {
       setExpertComments([]);
       setResponseHistory((current) => ({
         ...keepResponsesThroughPhase(current, currentPhase),
-        [acceptedPhase]: responseWithMemo,
+        premise: facilitatorResponse,
       }));
       showInterruptionOptionsIfPaused();
     } catch (error) {
@@ -282,6 +268,88 @@ function App() {
     }
   }
 
+  /**
+   * 前提整理の必須質問への回答を送信する。
+   *
+   * 仕様対応: `docs/tasks/milestone-2.md#前提整理での確認回答`。
+   */
+  async function respondToQuestion() {
+    setErrorMessage("");
+
+    const question = response?.user_question;
+    const answer = getResponseQuestionAnswer();
+    const currentMemo = response?.memo_updates;
+
+    if (!question || !currentMemo || currentPhase !== "premise") return;
+
+    if (!answer) {
+      setErrorMessage("質問に回答してください。");
+      return;
+    }
+
+    const request: FacilitatorResponseRequest = {
+      consultation,
+      currentPhase: "premise",
+      userQuestion: question,
+      userQuestionAnswer: answer,
+      memo: currentMemo,
+    };
+
+    setIsLoading(true);
+
+    try {
+      const apiResponse = await fetch("/api/facilitator/respond", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+      });
+      const body = await apiResponse.json();
+
+      if (!apiResponse.ok) {
+        setErrorMessage(body.message ?? invalidGenerationMessage);
+        return;
+      }
+
+      const facilitatorResponse = body as FacilitatorResponse;
+      if (!isAcceptedM2Response(facilitatorResponse)) {
+        setErrorMessage("前提整理として受け入れられない応答が返されました。");
+        return;
+      }
+
+      setResponse(facilitatorResponse);
+      setResponseHistory((current) => ({
+        ...current,
+        premise: facilitatorResponse,
+      }));
+      setSelectedQuestionOption("");
+      setOtherQuestionAnswer("");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "通信に失敗しました。",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  /**
+   * 相談開始 API に送る初回入力を作成する。
+   *
+   * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/start`。
+   */
+  function buildStartRequest(): ConsultationStartRequest {
+    return {
+      consultation,
+      facts: emptyToUndefined(facts),
+      values: emptyToUndefined(values),
+      concerns: emptyToUndefined(concerns),
+      expectedOutcome: emptyToUndefined(expectedOutcome),
+    };
+  }
+
+  /** 日本語名: クライアント内で保持する相談文脈を作成する関数。 */
   function buildRequest(): ConsultationRequest {
     return {
       consultation,
@@ -1219,6 +1287,7 @@ function App() {
                             : undefined
                         }
                         onClick={() => setSelectedQuestionOption(option)}
+                        disabled={isLoading}
                       >
                         {option}
                       </button>
@@ -1233,9 +1302,20 @@ function App() {
                           setOtherQuestionAnswer(event.target.value)
                         }
                         rows={3}
+                        disabled={isLoading}
                       />
                     </label>
                   )}
+                  <div className="action-row">
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={respondToQuestion}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? "回答を整理中..." : "回答を送る"}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1390,26 +1470,24 @@ function getReturnablePhases(currentPhase: Phase) {
   return phaseOrder.slice(0, currentIndex);
 }
 
-function getAcceptedModelPhase(
-  currentPhase: Phase,
-  response: FacilitatorResponse,
-) {
-  const modelPhase = response.current_phase;
-  const currentIndex = phaseOrder.indexOf(currentPhase);
-  const modelIndex = phaseOrder.indexOf(modelPhase);
+/**
+ * M2 のファシリテーター応答制約をクライアント側でも検証する。
+ *
+ * 仕様対応: `docs/api/schemas.md#M2 route の追加検証`。
+ */
+function isAcceptedM2Response(response: FacilitatorResponse) {
+  if (response.current_phase !== "premise") return false;
 
-  if (modelIndex === currentIndex) return modelPhase;
-  if (modelIndex !== currentIndex + 1) return null;
+  if (response.user_question) {
+    return (
+      response.user_question.required && response.next_action === "wait_user"
+    );
+  }
 
-  if (currentPhase === "consultation_input") return modelPhase;
-  if (response.user_question?.required) return null;
-  if (
-    response.next_action === "move_phase" ||
-    response.next_action === "finish"
-  )
-    return modelPhase;
-
-  return null;
+  return (
+    response.next_action === "request_experts" &&
+    response.expert_requests.length > 0
+  );
 }
 
 function keepResponsesThroughPhase(
