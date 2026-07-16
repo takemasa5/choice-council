@@ -4,7 +4,7 @@
 
 M2 では、ユーザーが相談内容を入力し、バックエンド経由で選択済みの LLM API を呼び出し、ファシリテーターの初回応答を画面で確認できるところまでを対象とする。
 
-M2 の目的は、以降の専門家選定や検討フェーズへ進む前に、相談開始から前提整理までの最小ループを実 API で検証できる状態にすることである。
+M2 の目的は、相談開始から前提整理を経て専門家選定へ引き渡すまでの最小ループを実 API で検証できる状態にすることである。
 
 ## 対象範囲
 
@@ -13,7 +13,7 @@ M2 の目的は、以降の専門家選定や検討フェーズへ進む前に�
 | 画面   | 相談開始画面、任意補助入力、フェーズ表示、初回ファシリテーター応答表示                                           |
 | API    | `POST /api/facilitator/start` による初回応答生成と、`POST /api/facilitator/respond` による前提整理の確認回答送信 |
 | schema | `ConsultationStartRequest`、`FacilitatorResponseRequest`、`FacilitatorResponse` の実装同期                       |
-| 状態   | `consultation_input` から `premise` への初期遷移                                                                 |
+| 状態   | `consultation_input` から `premise` への初期遷移と、必要時の `expert_selection` への遷移                         |
 | エラー | 入力不足、API key 未設定、LLM API 失敗、構造化出力不正の表示                                                     |
 | 検証   | typecheck、build、該当 API テスト、主要な画面操作の手動確認                                                      |
 
@@ -53,9 +53,9 @@ M2 の通常フローは次の通りとする。
 2. ユーザーが相談内容を入力して開始する。
 3. フロントエンドは `ConsultationStartRequest` を `POST /api/facilitator/start` へ送る。
 4. バックエンドは選択済みの LLM API を呼び出し、`FacilitatorResponse` として検証する。
-5. 応答が有効な場合、アプリは `premise` のファシリテーター応答として表示する。
+5. 応答が有効な場合、`next_action` が `wait_user` なら `premise` のファシリテーター応答として表示し、`request_experts` なら `expert_selection` へ遷移する。
 
-M2 で受け入れる `FacilitatorResponse.current_phase` は常に `premise` とする。専門家ロール候補を返しても、M2 では `expert_selection` 以降へ遷移しない。
+M2 で受け入れる `FacilitatorResponse.current_phase` は常に `premise` とする。`next_action: "request_experts"` と専門家ロール候補を返した場合、アプリは `expert_selection` へ遷移する。
 
 ## 前提整理での確認回答
 
@@ -82,7 +82,7 @@ M2 で受け入れる `FacilitatorResponse.current_phase` は常に `premise` �
 - 情報不足が大きい場合のみ、1 問の確認質問。
 - 次フェーズ以降で使う専門家ロール候補。
 
-M2 では、専門家ロール候補を表示してもよいが、編集・確定操作と専門家選定への遷移は M3 の対象とする。M2 の画面上では、候補が返ってきたことを確認できればよい。
+専門家ロール候補の編集・確定操作は M3 の対象とする。M2 では、`request_experts` の応答を受けて既存の専門家選定画面へ遷移できることまでを扱う。
 
 ## M2 の応答制約
 
@@ -145,10 +145,10 @@ M2 は次を満たしたら完了とする。
 
 - 相談内容のみで初回ファシリテーター応答を生成できる。
 - 任意補助入力を含めても初回ファシリテーター応答を生成できる。
-- 必須の確認質問に回答し、前提整理を継続できる。
-- 必須質問が返る限り、ユーザー操作で前提整理を継続できる。
+- 必須の確認質問に回答し、専門家選定へ進める。
+- 必須質問は初回応答で最大1件だけ返り、回答後に追加質問を返さない。
 - 初回応答が `FacilitatorResponse` schema で検証される。
-- M2 のファシリテーター応答は `premise` に留まり、`consultation_input` から `premise` への初期遷移が状態機械と矛盾しない。
+- M2 のファシリテーター応答の `current_phase` は `premise` に留まり、`request_experts` を受けたアプリの `expert_selection` への遷移が状態機械と矛盾しない。
 - `user_question` と `next_action` の組み合わせが M2 の応答制約に従う。
 - M2 の通常フローで `POST /api/session-memo/update` を呼び出さない。
 - 主要な異常系がユーザーに説明可能なエラーとして表示される。
