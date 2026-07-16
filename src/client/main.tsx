@@ -17,7 +17,6 @@ import type {
 } from "../shared/schemas/session";
 import { maximumExpertRequestCount } from "../shared/schemas/session";
 import {
-  addExpertDraft as appendExpertDraft,
   buildFacilitatorDeliberationRequest,
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
@@ -31,7 +30,6 @@ import {
   getSessionConsultation,
   isAcceptedM3FacilitatorResponse,
   isExpertDraftEditingDisabled,
-  replaceExpertDraft as replaceExpertDraftValues,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
 import {
@@ -90,6 +88,9 @@ type StoredSession = {
   };
 };
 
+/** 日本語名: 画面上の候補行を識別する安定ID付き専門家候補。 */
+type ExpertDraft = ExpertRequest & { draftId: string };
+
 function App() {
   const [consultation, setConsultation] = useState("");
   const [startedConsultation, setStartedConsultation] = useState("");
@@ -115,7 +116,8 @@ function App() {
   const [memoNotice, setMemoNotice] = useState("");
   const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
   const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
-  const [expertDrafts, setExpertDrafts] = useState<ExpertRequest[]>([]);
+  const [expertDrafts, setExpertDrafts] = useState<ExpertDraft[]>([]);
+  const expertDraftIdRef = useRef(0);
   const [initialExpertRequests, setInitialExpertRequests] = useState<
     ExpertRequest[]
   >([]);
@@ -232,7 +234,7 @@ function App() {
   ]);
 
   useEffect(() => {
-    setExpertDrafts(response?.expert_requests ?? []);
+    setExpertDrafts((response?.expert_requests ?? []).map(createExpertDraft));
     if (confirmedExpertRequestKeyRef.current === expertRequestKey) {
       confirmedExpertRequestKeyRef.current = "";
     } else {
@@ -735,11 +737,20 @@ function App() {
     });
   }
 
+  /** 専門家候補に入力内容と独立した安定IDを付与する。 */
+  function createExpertDraft(expert: ExpertRequest): ExpertDraft {
+    expertDraftIdRef.current += 1;
+    return { ...expert, draftId: `expert-draft-${expertDraftIdRef.current}` };
+  }
+
   function addExpertDraft() {
     if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
-    setExpertDrafts(appendExpertDraft);
+    setExpertDrafts((current) => [
+      ...current,
+      createExpertDraft({ role_name: "", viewpoint: "", request: "" }),
+    ]);
   }
 
   function removeExpertDraft(index: number) {
@@ -755,7 +766,13 @@ function App() {
     if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
-    setExpertDrafts((current) => replaceExpertDraftValues(current, index));
+    setExpertDrafts((current) =>
+      current.map((expert, currentIndex) =>
+        currentIndex === index
+          ? { ...expert, role_name: "", viewpoint: "", request: "" }
+          : expert,
+      ),
+    );
   }
 
   function resetConfirmedExperts() {
@@ -802,7 +819,7 @@ function App() {
       return;
     }
 
-    setExpertDrafts(initialExpertRequests);
+    setExpertDrafts(initialExpertRequests.map(createExpertDraft));
     setConfirmedExperts(confirmation.experts);
     setExpertComments([]);
     setExpertErrorMessage("");
@@ -1291,7 +1308,7 @@ function App() {
                       {expertDrafts.map((expertRequest, index) => (
                         <article
                           className="expert-request-item"
-                          key={`${expertRequest.role_name}-${expertRequest.viewpoint}-${index}`}
+                          key={expertRequest.draftId}
                         >
                           <label className="field compact-field">
                             <span>専門家</span>
