@@ -1289,10 +1289,7 @@ function App() {
                     <h3>専門家ロール候補</h3>
                     <div className="expert-request-list">
                       {expertDrafts.map((expertRequest, index) => (
-                        <article
-                          className="expert-request-item"
-                          key={`${expertRequest.role_name}-${expertRequest.viewpoint}-${index}`}
-                        >
+                        <article className="expert-request-item" key={index}>
                           <label className="field compact-field">
                             <span>専門家</span>
                             <input
