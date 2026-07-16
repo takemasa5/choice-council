@@ -272,6 +272,14 @@ export const FacilitatorResponseSchema = z
     ]),
   })
   .superRefine((response, context) => {
+    if (response.user_question && response.expert_requests.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: "expert_requests must be empty when user_question is present",
+        path: ["expert_requests"],
+      });
+    }
+
     if (
       response.next_action === "request_experts" &&
       response.expert_requests.length === 0

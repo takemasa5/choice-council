@@ -154,7 +154,7 @@ M2 の前提整理で返せる必須質問は、`/start` の応答で最大1件�
 
 `user_question.options` は2件以上とし、必ず「その他」を含める。「その他」を選んだ場合、アプリは自由入力欄を表示する。`user_question` が `null` ではないにもかかわらず `options` に「その他」が含まれない出力は、バリデーション失敗として扱う。
 
-`expert_requests` は、`next_action` が `request_experts` の場合に1件以上必要とする。`user_question` が存在する場合は空配列とする。
+`expert_requests` は、`next_action` が `request_experts` の場合に1件以上必要とする。`user_question` と非空の `expert_requests` は共存できず、`user_question` が存在する場合は空配列とする。この不変条件は共有 `FacilitatorResponse` schema でも検証する。
 
 `current_phase` と `next_action` はアプリ側が検証する。状態機械で許可されない遷移を示す出力は失敗として扱う。
 
