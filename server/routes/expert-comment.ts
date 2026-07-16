@@ -1,5 +1,4 @@
 import type { RequestHandler } from "express";
-import { zodTextFormat } from "openai/helpers/zod";
 import {
   ExpertCommentRequestSchema,
   ExpertCommentSchema,
@@ -9,8 +8,7 @@ import {
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
-  sendMissingApiKey,
-  sendOpenAIRequestFailed,
+  sendLlmRequestFailed,
 } from "./response-utils";
 import type { AppDependencies } from "./types";
 
@@ -30,26 +28,16 @@ export function createExpertCommentHandler(
       return;
     }
 
-    const apiKey = dependencies.getApiKey();
-    if (!apiKey) {
-      sendMissingApiKey(response);
-      return;
-    }
-
     try {
-      const client = dependencies.createOpenAIClient(apiKey);
+      const provider = dependencies.createLlmProvider();
       const output = await parseStructuredOutputOnceWithRetry<ExpertComment>(
         () =>
-          client.responses.parse({
-            model: dependencies.getModel(),
-            input: [
-              developerMessage(expertDeveloperPrompt),
-              userMessage(parsedRequest.data),
-            ],
-            text: {
-              format: zodTextFormat(ExpertCommentSchema, "expert_comment"),
-            },
-          }) as unknown as Promise<{ output_parsed: ExpertComment | null }>,
+          provider.generateStructuredOutput({
+            systemPrompt: expertDeveloperPrompt,
+            userInput: parsedRequest.data,
+            schema: ExpertCommentSchema,
+            schemaName: "expert_comment",
+          }),
       );
 
       if (!output) {
@@ -63,26 +51,8 @@ export function createExpertCommentHandler(
         viewpoint: parsedRequest.data.expert.viewpoint,
       });
     } catch (error) {
-      sendOpenAIRequestFailed(response, error);
+      sendLlmRequestFailed(response, error);
     }
-  };
-}
-
-/** 日本語名: 開発者メッセージをResponses API形式へ変換する関数。 */
-function developerMessage(text: string) {
-  return {
-    role: "developer" as const,
-    content: [{ type: "input_text" as const, text }],
-  };
-}
-
-/** 日本語名: ユーザー入力をResponses API形式へ変換する関数。 */
-function userMessage(value: unknown) {
-  return {
-    role: "user" as const,
-    content: [
-      { type: "input_text" as const, text: JSON.stringify(value, null, 2) },
-    ],
   };
 }
 

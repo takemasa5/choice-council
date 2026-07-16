@@ -59,7 +59,7 @@ M3 は、M2 のファシリテーター応答が `user_question: null`、`next_a
 
 ## エラーと対象外
 
-各専門家コメントAPIおよびファシリテーター整理APIの入力不正、API key未設定、OpenAI API呼び出し失敗、構造化出力の検証失敗の扱いは、`docs/tasks/milestone-2.md#API エラー表示` および `docs/api/schemas.md#バリデーション` に従う。
+各専門家コメントAPIおよびファシリテーター整理APIの入力不正、API key未設定、LLM API呼び出し失敗、構造化出力の検証失敗の扱いは、`docs/tasks/milestone-2.md#API エラー表示` および `docs/api/schemas.md#バリデーション` に従う。
 
 M3では `POST /api/session-memo/update` を呼び出さない。ファシリテーター整理応答の `memo_updates` は画面表示と後続フェーズの文脈として保持するだけであり、独立したメモ更新、保存、更新完了通知はM4で扱う。
 

@@ -2,6 +2,7 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import type { Express } from "express";
 import { createApp } from "../server/app";
+import { MissingLlmApiKeyError } from "../server/llm/types";
 
 /**
  * APIテストで使う最小のセッションメモ。
@@ -23,7 +24,7 @@ export const memo = {
 };
 
 /**
- * OpenAI APIを呼び出さないテスト用Expressアプリケーションを生成する。
+ * LLM APIを呼び出さないテスト用Expressアプリケーションを生成する。
  *
  * 日本語名: テスト用APIアプリ生成関数。
  */
@@ -34,20 +35,20 @@ export function createTestApp(
 ) {
   let parseCount = 0;
   return createApp({
-    getApiKey: () => apiKey,
-    createOpenAIClient: () =>
-      ({
-        responses: {
-          parse: async (request: unknown) => {
-            onParse?.(request);
-            const outputs = Array.isArray(output) ? output : [output];
-            const currentOutput =
-              outputs[Math.min(parseCount, outputs.length - 1)];
-            parseCount += 1;
-            return { output_parsed: currentOutput };
-          },
+    createLlmProvider: () => {
+      if (!apiKey) throw new MissingLlmApiKeyError("openai");
+
+      return {
+        generateStructuredOutput: async (request: unknown) => {
+          onParse?.(request);
+          const outputs = Array.isArray(output) ? output : [output];
+          const currentOutput =
+            outputs[Math.min(parseCount, outputs.length - 1)];
+          parseCount += 1;
+          return currentOutput;
         },
-      }) as never,
+      } as never;
+    },
   });
 }
 
