@@ -23,6 +23,6 @@ test("POST /api/session-memo/update reports a missing API key", async () => {
   assert.equal(response.status, 500);
   assert.equal(
     (response.body as { error: string }).error,
-    "missing_openai_api_key",
+    "missing_llm_api_key",
   );
 });

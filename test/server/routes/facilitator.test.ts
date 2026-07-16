@@ -96,8 +96,8 @@ test("POST /api/facilitator/respond は質問、回答、メモを文脈とし�
     (response.body as { current_phase: string }).current_phase,
     "premise",
   );
-  assert.match(prompt, /\\"userQuestionAnswer\\": \\"費用\\"/);
-  assert.match(prompt, /\\"theme\\": \\"相談テーマ\\"/);
+  assert.match(prompt, /"userQuestionAnswer":"費用"/);
+  assert.match(prompt, /"theme":"相談テーマ"/);
 });
 
 test("POST /api/facilitator/respond は必須質問以外の入力を拒否する", async () => {
@@ -163,8 +163,8 @@ test("POST /api/facilitator/deliberation は全専門家コメントを渡し方
     (response.body as { current_phase: string }).current_phase,
     "direction",
   );
-  assert.match(prompt, /\\"confirmedExperts\\": \[/);
-  assert.match(prompt, /\\"expertComments\\": \[/);
+  assert.match(prompt, /"confirmedExperts":\[/);
+  assert.match(prompt, /"expertComments":\[/);
 });
 
 test("POST /api/facilitator/deliberation は対応しない専門家コメント数を拒否する", async () => {

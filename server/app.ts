@@ -1,5 +1,5 @@
 import express from "express";
-import OpenAI from "openai";
+import { createLlmProviderFromEnvironment } from "./llm/create-provider";
 import { createExpertCommentHandler } from "./routes/expert-comment";
 import {
   createFacilitatorDeliberationHandler,
@@ -20,9 +20,7 @@ import type { AppDependencies } from "./routes/types";
 export function createApp(overrides: Partial<AppDependencies> = {}) {
   /** APIハンドラへ渡す外部依存の実装。 */
   const dependencies: AppDependencies = {
-    createOpenAIClient: (apiKey) => new OpenAI({ apiKey }),
-    getApiKey: () => process.env.OPENAI_API_KEY,
-    getModel: () => process.env.OPENAI_MODEL ?? "gpt-5-mini",
+    createLlmProvider: () => createLlmProviderFromEnvironment(),
     ...overrides,
   };
   /** HTTPリクエストを処理するExpressアプリケーション。 */

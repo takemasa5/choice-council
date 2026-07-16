@@ -5,7 +5,7 @@
 - 仕様を先に更新し、その後に実装する。
 - 画面、状態遷移、API、プロンプトを分けて管理する。
 - MVPでは TypeScript + React + Node で実装する。
-- OpenAI API はバックエンドから呼び出し、ブラウザへ API キーを渡さない。
+- OpenAI API または Gemini API はバックエンドから呼び出し、ブラウザへ API キーを渡さない。
 - 将来 Python backend が必要になった場合は、LLM 実行層を切り出して置き換える。
 - backend 実装は `server/` に置き、`src/server/` へは移動しない。
 - 仕様書は `docs/current/` と `docs/planned/` に分けず、`docs/` を単一の正として更新する。
