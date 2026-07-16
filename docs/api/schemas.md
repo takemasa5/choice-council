@@ -101,9 +101,9 @@ M2 では初回開始と前提整理での回答を別 endpoint として扱う�
 | userQuestionAnswer | 必須 | 非空文字列。通常の選択肢は選択肢文言、「その他」は自由入力文を送る |
 | memo               | 必須 | 直前の `FacilitatorResponse.memo_updates`                          |
 
-`/respond` のファシリテーターは、質問と回答を前提整理へ反映し、初回の前提整理からやり直さない。
+`/respond` のファシリテーターは、質問と回答を前提整理へ反映し、初回の前提整理からやり直さない。追加質問は返さず、専門家選定へ進むための候補を返す。
 
-M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/respond` の応答で必須質問が再び返る場合、最新の質問、回答、`memo_updates` を用いて `/respond` を繰り返せる。各リクエストはユーザー操作によってのみ送信する。
+M2 の前提整理で返せる必須質問は、`/start` の応答で最大1件とする。`/respond` の応答で必須質問を返してはならない。
 
 ```json
 {
@@ -118,16 +118,7 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
       "request": "費用と生活負担の観点から重要な論点を挙げる"
     }
   ],
-  "user_question": {
-    "question": "この相談では外部情報の調査も使って進めますか？",
-    "options": [
-      "必要に応じて調査する",
-      "まず調査してから議論する",
-      "調査なしで整理する",
-      "その他"
-    ],
-    "required": true
-  },
+  "user_question": null,
   "memo_updates": {
     "theme": "",
     "status": "in_progress",
@@ -141,7 +132,7 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
     "open_questions": [],
     "next_actions": []
   },
-  "next_action": "wait_user | request_experts | update_memo | move_phase | finish"
+  "next_action": "request_experts"
 }
 ```
 
@@ -160,7 +151,7 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
 
 `user_question.options` は2件以上とし、必ず「その他」を含める。「その他」を選んだ場合、アプリは自由入力欄を表示する。`user_question` が `null` ではないにもかかわらず `options` に「その他」が含まれない出力は、バリデーション失敗として扱う。
 
-`expert_requests` は、`next_action` が `request_experts` の場合に1件以上必要とする。
+`expert_requests` は、`next_action` が `request_experts` の場合に1件以上必要とする。`user_question` と非空の `expert_requests` は共存できず、`user_question` が存在する場合は空配列とする。この不変条件は共有 `FacilitatorResponse` schema でも検証する。
 
 `current_phase` と `next_action` はアプリ側が検証する。状態機械で許可されない遷移を示す出力は失敗として扱う。
 
@@ -209,8 +200,9 @@ MVP では、全専門家コメントをこのリクエストに含める。フ�
 `/api/facilitator/start` と `/api/facilitator/respond` は、共通の `FacilitatorResponse` schema に加えて、次を検証する。
 
 - `current_phase` は `premise` である。
-- `user_question` が存在する場合、`required` は `true` かつ `next_action` は `wait_user` である。
-- `user_question` が `null` の場合、`next_action` は `request_experts` であり、`expert_requests` は 1 件以上である。
+- `/start` では、`user_question` が存在する場合、`required` は `true`、`next_action` は `wait_user`、`expert_requests` は空配列である。
+- `/start` で `user_question` が `null` の場合、`next_action` は `request_experts` であり、`expert_requests` は 1 件以上である。
+- `/respond` では、`user_question` は `null`、`next_action` は `request_experts`、`expert_requests` は 1 件以上である。
 - `update_memo`、`move_phase`、`finish`、`required: false` の質問は M2 の route では受け入れない。
 
 ## セッションメモ

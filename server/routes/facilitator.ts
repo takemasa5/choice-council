@@ -27,6 +27,7 @@ export function createFacilitatorStartHandler(
   return createM2FacilitatorHandler(
     dependencies,
     ConsultationStartRequestSchema,
+    isAcceptedM2StartResponse,
   );
 }
 
@@ -42,6 +43,7 @@ export function createFacilitatorRespondHandler(
   return createM2FacilitatorHandler(
     dependencies,
     FacilitatorResponseRequestSchema,
+    isAcceptedM2RespondResponse,
   );
 }
 
@@ -98,6 +100,7 @@ export function createFacilitatorDeliberationHandler(
 function createM2FacilitatorHandler(
   dependencies: AppDependencies,
   requestSchema: z.ZodType,
+  isAcceptedResponse: (response: FacilitatorResponse) => boolean,
 ): RequestHandler {
   return async (request, response) => {
     const parsedRequest = requestSchema.safeParse(request.body);
@@ -118,7 +121,7 @@ function createM2FacilitatorHandler(
               schema: FacilitatorResponseSchema,
               schemaName: "facilitator_response",
             }),
-          (modelResponse) => isAcceptedM2FacilitatorResponse(modelResponse),
+          isAcceptedResponse,
         );
 
       if (!output) {
@@ -138,7 +141,7 @@ function createM2FacilitatorHandler(
  *
  * 仕様対応: `docs/api/schemas.md#M2 route の追加検証`。
  */
-function isAcceptedM2FacilitatorResponse(modelResponse: FacilitatorResponse) {
+function isAcceptedM2StartResponse(modelResponse: FacilitatorResponse) {
   const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);
   if (!parsedResponse.success) return false;
 
@@ -147,11 +150,31 @@ function isAcceptedM2FacilitatorResponse(modelResponse: FacilitatorResponse) {
 
   if (response.user_question) {
     return (
-      response.user_question.required && response.next_action === "wait_user"
+      response.user_question.required &&
+      response.next_action === "wait_user" &&
+      response.expert_requests.length === 0
     );
   }
 
   return (
+    response.next_action === "request_experts" &&
+    response.expert_requests.length > 0
+  );
+}
+
+/**
+ * 確認回答後のモデル応答が専門家選定へ進む制約を満たすか判定する。
+ *
+ * 仕様対応: `docs/api/schemas.md#M2 route の追加検証`。
+ */
+function isAcceptedM2RespondResponse(modelResponse: FacilitatorResponse) {
+  const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);
+  if (!parsedResponse.success) return false;
+
+  const response = parsedResponse.data;
+  return (
+    response.current_phase === "premise" &&
+    response.user_question === null &&
     response.next_action === "request_experts" &&
     response.expert_requests.length > 0
   );
@@ -192,12 +215,13 @@ const facilitatorDeveloperPrompt = `
 - 外部調査は実施できない。必要な場合は未確認事項として残す。
 - 初回応答では相談内容を要約し、事実、希望、不安、不明点を整理する。
 - 初回応答で外部調査が必要な内容は断定せず、memo_updates.open_questions に未確認事項として残す。
-- 初回応答と確認回答では、情報不足が大きい場合のみ確認質問を1問返す。
-- 初回応答では次に必要な専門家ロール候補を expert_requests に含める。専門家が重視する観点は viewpoint に明示する。
+- 初回応答で情報不足が大きい場合のみ確認質問を1問返す。前提が十分なら質問を返さない。
+- 初回応答で確認質問を返す場合、expert_requests は必ず空配列にする。
+- 初回応答で質問を返さない場合は、次に必要な専門家ロール候補を expert_requests に1件以上含める。専門家が重視する観点は viewpoint に明示する。
 - 高リスク領域では専門家ロール候補や次アクションを、判断材料の整理と相談準備に向ける。
 - currentPhase、userQuestion、userQuestionAnswer、memo が入力に含まれる場合は、その質問への回答とメモを前提整理へ反映し、初回の前提整理からやり直さない。
 - 出力の current_phase は必ず premise にする。
-- userQuestion と userQuestionAnswer が入力に含まれる場合は、その質問へのユーザー回答として扱い、memo_updates と次アクションに反映する。
+- userQuestion と userQuestionAnswer が入力に含まれる場合は、その質問へのユーザー回答として扱い、memo_updates と次アクションに反映する。追加質問をしてはならない。user_question は null、next_action は request_experts、expert_requests は1件以上にする。
 - user_question を返す場合、options は2件以上にし、必ず「その他」を含める。
 - 出力は指定 schema に厳密に従う。
 `;

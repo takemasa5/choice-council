@@ -75,7 +75,25 @@ test("POST /api/facilitator/start は有効な M2 応答を返す", async () => 
   assert.match(prompt, /初回の前提整理からやり直さない/);
 });
 
-test("POST /api/facilitator/respond は質問、回答、メモを文脈として前提整理を継続する", async () => {
+test("POST /api/facilitator/start は確認が必要な場合にだけ空の専門家候補と質問を返す", async () => {
+  const response = await requestJson(
+    createTestApp(questionResponse),
+    "/api/facilitator/start",
+    { consultation: "相談内容" },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    (response.body as { next_action: string }).next_action,
+    "wait_user",
+  );
+  assert.deepEqual(
+    (response.body as { expert_requests: unknown[] }).expert_requests,
+    [],
+  );
+});
+
+test("POST /api/facilitator/respond は質問と回答を反映して専門家選定要求を返す", async () => {
   let prompt = "";
   const response = await requestJson(
     createTestApp(expertResponse, "test-api-key", (request) => {
@@ -98,6 +116,49 @@ test("POST /api/facilitator/respond は質問、回答、メモを文脈とし�
   );
   assert.match(prompt, /"userQuestionAnswer":"費用"/);
   assert.match(prompt, /"theme":"相談テーマ"/);
+  assert.match(prompt, /追加質問をしてはならない/);
+});
+
+test("POST /api/facilitator/respond は追加質問を返したモデル出力を一度だけ再試行する", async () => {
+  let requests = 0;
+  const response = await requestJson(
+    createTestApp([questionResponse, questionResponse], "test-api-key", () => {
+      requests += 1;
+    }),
+    "/api/facilitator/respond",
+    {
+      consultation: "相談内容",
+      currentPhase: "premise",
+      userQuestion: questionResponse.user_question,
+      userQuestionAnswer: "費用",
+      memo,
+    },
+  );
+
+  assert.equal(response.status, 502);
+  assert.equal(requests, 2);
+  assert.deepEqual(response.body, {
+    error: "invalid_model_response",
+    message: "この発言の生成に失敗しました。再生成できます。",
+  });
+});
+
+test("POST /api/facilitator/start は質問と専門家候補を同時に返すモデル出力を拒否する", async () => {
+  const invalidStartResponse = {
+    ...questionResponse,
+    expert_requests: expertResponse.expert_requests,
+  };
+  const response = await requestJson(
+    createTestApp([invalidStartResponse, invalidStartResponse]),
+    "/api/facilitator/start",
+    { consultation: "相談内容" },
+  );
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(response.body, {
+    error: "invalid_model_response",
+    message: "この発言の生成に失敗しました。再生成できます。",
+  });
 });
 
 test("POST /api/facilitator/respond は必須質問以外の入力を拒否する", async () => {

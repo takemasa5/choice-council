@@ -77,7 +77,7 @@ M1 では `src/shared/` の Zod schema 実装は変更しない。`docs/` で確
 
 M2 の詳細仕様と完了条件は `docs/tasks/milestone-2.md` に従う。
 
-M2 では、相談開始画面から `POST /api/facilitator/start` を呼び出し、ファシリテーター初回応答を `premise` フェーズとして表示する。必須の確認質問が返った場合は、`POST /api/facilitator/respond` で回答し、`premise` 内で前提整理を継続できる状態を完了条件とする。
+M2 では、相談開始画面から `POST /api/facilitator/start` を呼び出し、ファシリテーター初回応答を `premise` フェーズとして表示する。必須の確認質問が返った場合は、`POST /api/facilitator/respond` で回答し、専門家候補を受けて `expert_selection` フェーズへ遷移できる状態を完了条件とする。
 
 ## M3 の完了条件
 

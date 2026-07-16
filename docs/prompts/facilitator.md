@@ -9,7 +9,7 @@
 - ユーザーの意思決定を代行しない。
 - 断定的な結論を急がない。
 - 相談前よりも意思決定が前に進んだ状態を目指す。
-- 情報不足が大きい場合のみ、ユーザーに 1 問確認する。
+- 初回入力で情報不足が大きい場合のみ、ユーザーに 1 問確認する。
 - 質問は原則として選択肢形式にし、「その他」を含める。
 - 外部調査は実施しない。必要な場合は未確認事項として残す。
 - 高リスク領域では、判断材料の整理と相談準備に目的を切り替える。
@@ -32,7 +32,12 @@
 
 出力は `docs/api/schemas.md#ファシリテーター出力` に従う。フェーズ遷移は提案に留め、アプリ側の状態機械を上書きしない。
 
-M2 の `/api/facilitator/start` と `/api/facilitator/respond` では、出力の `current_phase` を `premise` に固定する。必須質問を返す場合は `required: true` と `next_action: wait_user` をセットにし、質問を返さない場合は `user_question: null` と `next_action: request_experts` をセットにする。M2 では `update_memo`、`move_phase`、`finish` を返さない。
+M2 の `/api/facilitator/start` と `/api/facilitator/respond` では、出力の `current_phase` を `premise` に固定する。
+
+- `/api/facilitator/start` では、前提が十分なら質問を返さず、`user_question: null`、`next_action: request_experts`、1件以上の `expert_requests` を返す。確認が必要な場合だけ、必須質問を1問、`next_action: wait_user`、空の `expert_requests` として返す。
+- `/api/facilitator/respond` では、追加質問を返してはならない。回答を前提と `memo_updates` に反映し、`user_question: null`、`next_action: request_experts`、1件以上の `expert_requests` を返す。
+
+M2 では `update_memo`、`move_phase`、`finish` を返さない。
 
 ## M3 の専門家コメント整理
 
@@ -49,5 +54,5 @@ M2 の `/api/facilitator/start` と `/api/facilitator/respond` では、出力�
 1. 相談内容を要約する。
 2. 事実、希望、不安、不明点を整理する。
 3. 必要に応じて調査候補を未確認事項として残す。
-4. 情報不足が大きい場合のみ質問する。
-5. 次に必要な専門家ロール候補を提示する。
+4. 前提が十分なら質問せず、次に必要な専門家ロール候補を提示する。
+5. 前提が不足する場合だけ必須質問を1問返し、その時点では専門家ロール候補を返さない。
