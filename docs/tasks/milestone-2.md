@@ -64,11 +64,11 @@ M2 で受け入れる `FacilitatorResponse.current_phase` は常に `premise` �
 1. ユーザーが必須質問に回答する。
 2. フロントエンドは `FacilitatorResponseRequest` を `POST /api/facilitator/respond` へ送る。
 3. バックエンドは、回答、直前の質問、`premise` のメモ文脈を用いて `FacilitatorResponse` を生成・検証する。
-4. 応答が有効な場合、アプリは `premise` に留まり、最新のファシリテーター応答と `memo_updates` を表示する。
+4. 応答が有効な場合、アプリは専門家選定へ遷移し、最新のファシリテーター応答と `memo_updates` を表示する。
 
 `/respond` は、`currentPhase: "premise"`、直前の `user_question`、`userQuestionAnswer`、最新の `memo` を必須とする。回答が未入力の場合、フロントエンドは API を呼ばず `質問に回答してください。` と表示する。
 
-`/respond` の応答で再び必須質問が返った場合も、ユーザー操作ごとに同じフローを繰り返せる。フロントエンドは直前の質問、回答、最新の `memo_updates` を用いて次の `FacilitatorResponseRequest` を作る。自動的に連続送信してはならない。
+前提整理の必須質問は初回応答で最大1件とする。`/respond` の応答で追加質問を返してはならず、回答を反映した専門家ロール候補を返す。フロントエンドは `request_experts` を受けたら専門家選定へ遷移する。
 
 回答は `userQuestionAnswer` の非空文字列として送る。通常の選択肢を選んだ場合はその選択肢文言を送る。「その他」を選んだ場合は自由入力の非空文字列を送る。
 
@@ -90,11 +90,11 @@ M2 の `/start` と `/respond` は、`FacilitatorResponse` の共通 schema に�
 
 | `user_question`         | `next_action`     | 扱い                                                        |
 | ----------------------- | ----------------- | ----------------------------------------------------------- |
-| `required: true` の質問 | `wait_user`       | 前提整理画面で回答を待つ                                    |
+| `required: true` の質問 | `wait_user`       | `/start` でのみ返せる。前提整理画面で回答を待つ             |
 | `null`                  | `request_experts` | M3 の専門家選定へ進める候補として専門家ロール候補を表示する |
 
 `update_memo`、`move_phase`、`finish`、`required: false` の質問は、M2 の API 応答としては不正とする。
-M2 の 1 回のファシリテーター応答で返せる確認質問は最大 1 件とする。追加確認が必要な場合は、ユーザーが回答した後の `/respond` で次の質問を返す。
+M2 の前提整理で返せる確認質問は、`/start` の応答で最大1件とする。`/respond` は追加確認を返さず、必ず専門家選定要求を返す。
 
 ## API エラー表示
 
@@ -128,10 +128,10 @@ M2 では実 API 呼び出しによる初回応答の品質確認を行う。た
 - Given 初回応答の `current_phase` が `premise` のとき、When 応答を受け入れるなら、Then 画面の現在フェーズは `premise` になる。
 - Given 初回応答で必須の `user_question` が返ったとき、When ユーザーが回答するなら、Then フロントエンドは `FacilitatorResponseRequest` を `POST /api/facilitator/respond` へ送信する。
 - Given 必須の `user_question` に回答していないとき、When ユーザーが回答を送信しようとするなら、Then API は呼ばれず `質問に回答してください。` と表示される。
-- Given `/api/facilitator/respond` が有効な `FacilitatorResponse` を返したとき、When 応答を受け入れるなら、Then 画面は `premise` に留まり、最新の応答と `memo_updates` を表示する。
-- Given `/api/facilitator/respond` の応答に必須の `user_question` が返ったとき、When ユーザーが回答するなら、Then 直前の質問、回答、最新の `memo_updates` を含むリクエストで `/respond` を再度呼び出せる。
+- Given `/api/facilitator/respond` が有効な `FacilitatorResponse` を返したとき、When 応答を受け入れるなら、Then 画面は `expert_selection` へ遷移し、最新の応答と `memo_updates` を表示する。
+- Given `/api/facilitator/respond` の応答に `user_question` が含まれるとき、When バックエンドが応答を検証するなら、Then その応答は不正として扱う。
 - Given `user_question` が存在するとき、When M2 の API が応答を検証するなら、Then `required` は `true` かつ `next_action` は `wait_user` である。
-- Given M2 のファシリテーターが確認を求めるとき、When 1 回の応答を生成するなら、Then `user_question` は最大 1 件だけ返す。
+- Given M2 のファシリテーターが確認を求めるとき、When `/start` の応答を生成するなら、Then `user_question` は最大 1 件だけ返し、`expert_requests` は空配列である。
 - Given `user_question` が `null` のとき、When M2 の API が応答を検証するなら、Then `next_action` は `request_experts` であり、`expert_requests` は 1 件以上である。
 - Given ファシリテーター応答の `current_phase` が `premise` 以外のとき、When M2 の API が応答を検証するなら、Then その応答は不正として扱う。
 - Given モデル出力が schema に違反したとき、When 1 回の再生成でも回復しないなら、Then `この発言の生成に失敗しました。再生成できます。` と表示される。
