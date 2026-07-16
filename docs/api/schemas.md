@@ -111,17 +111,14 @@ M2 の前提整理で返せる必須質問は、`/start` の応答で最大1件�
   "current_phase_label": "前提整理",
   "phase_goal": "事実、希望、不安、不明点を整理する",
   "facilitator_message": "ユーザーに表示する進行コメント",
-  "expert_requests": [],
-  "user_question": {
-    "question": "この相談では外部情報の調査も使って進めますか？",
-    "options": [
-      "必要に応じて調査する",
-      "まず調査してから議論する",
-      "調査なしで整理する",
-      "その他"
-    ],
-    "required": true
-  },
+  "expert_requests": [
+    {
+      "role_name": "家計・生活負担アドバイザー",
+      "viewpoint": "費用、送迎、親の時間、継続可能性",
+      "request": "費用と生活負担の観点から重要な論点を挙げる"
+    }
+  ],
+  "user_question": null,
   "memo_updates": {
     "theme": "",
     "status": "in_progress",
@@ -135,7 +132,7 @@ M2 の前提整理で返せる必須質問は、`/start` の応答で最大1件�
     "open_questions": [],
     "next_actions": []
   },
-  "next_action": "wait_user"
+  "next_action": "request_experts"
 }
 ```
 
