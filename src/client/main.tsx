@@ -274,7 +274,7 @@ function App() {
       setConfirmedExperts([]);
     }
     setExpertErrorMessage("");
-  }, [expertRequestKey, currentPhase]);
+  }, [expertRequestKey]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return (
@@ -330,6 +330,9 @@ function App() {
     setResponseHistory(clearResponseHistory());
     setCurrentPhase("consultation_input");
     setExpertComments([]);
+    setGroupChatMessages([]);
+    setGroupChatTurn(null);
+    setGroupChatContextSummary("");
     setInitialExpertRequests([]);
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -685,6 +688,9 @@ function App() {
     setInitialExpertRequests([]);
     setConfirmedExperts([]);
     setExpertComments([]);
+    setGroupChatMessages([]);
+    setGroupChatTurn(null);
+    setGroupChatContextSummary("");
     setExpertErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -731,6 +737,11 @@ function App() {
       setConfirmedExperts([]);
     }
     setExpertComments(getExpertCommentsForReturn(targetPhase, expertComments));
+    if (currentPhase === "group_chat" && targetPhase === "deliberation") {
+      setGroupChatMessages([]);
+      setGroupChatTurn(null);
+      setGroupChatContextSummary("");
+    }
     setExpertErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -1780,16 +1791,21 @@ function App() {
                     ))}
                   </div>
                   {currentPhase === "deliberation" && (
-                    <button
-                      className="primary-button"
-                      type="button"
-                      onClick={startGroupChat}
-                      disabled={isStartingGroupChat}
-                    >
-                      {isStartingGroupChat
-                        ? "意見交換を開始中..."
-                        : "意見交換をはじめる"}
-                    </button>
+                    <>
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={startGroupChat}
+                        disabled={isStartingGroupChat}
+                      >
+                        {isStartingGroupChat
+                          ? "意見交換を開始中..."
+                          : "意見交換をはじめる"}
+                      </button>
+                      {expertErrorMessage && (
+                        <p className="error">{expertErrorMessage}</p>
+                      )}
+                    </>
                   )}
                 </section>
               )}
