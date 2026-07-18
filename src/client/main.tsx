@@ -87,6 +87,10 @@ type StoredSession = {
   currentPhase: Phase;
   expertComments?: ExpertComment[];
   initialExpertRequests?: ExpertRequest[];
+  confirmedExperts?: ExpertRequest[];
+  groupChatMessages?: GroupChatMessage[];
+  groupChatTurn?: FacilitatorTurn;
+  groupChatContextSummary?: string;
   finalMarkdown?: string;
   interruption?: {
     isReady: boolean;
@@ -143,6 +147,7 @@ function App() {
   const [groupChatTurn, setGroupChatTurn] = useState<FacilitatorTurn | null>(
     null,
   );
+  const [groupChatContextSummary, setGroupChatContextSummary] = useState("");
   const [groupChatOtherAnswer, setGroupChatOtherAnswer] = useState("");
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
   const [finalMarkdown, setFinalMarkdown] = useState("");
@@ -188,6 +193,13 @@ function App() {
           "consultation_input",
       );
       setExpertComments(parsed.expertComments ?? []);
+      const restoredExperts =
+        parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
+      confirmedExpertRequestKeyRef.current = JSON.stringify(restoredExperts);
+      setConfirmedExperts(restoredExperts);
+      setGroupChatMessages(parsed.groupChatMessages ?? []);
+      setGroupChatTurn(parsed.groupChatTurn ?? null);
+      setGroupChatContextSummary(parsed.groupChatContextSummary ?? "");
       const restoredPhase =
         parsed.currentPhase ??
         parsed.response?.current_phase ??
@@ -241,6 +253,10 @@ function App() {
     responseHistory,
     currentPhase,
     expertComments,
+    confirmedExperts,
+    groupChatMessages,
+    groupChatTurn,
+    groupChatContextSummary,
     initialExpertRequests,
     finalMarkdown,
     selectedQuestionOption,
@@ -968,12 +984,19 @@ function App() {
       moveResponseToPhase("group_chat");
       setGroupChatMessages([message]);
       setGroupChatTurn(parsedTurn.data);
+      const nextMemo = parsedTurn.data.memoUpdate ?? memo;
+      const nextContextSummary =
+        parsedTurn.data.contextSummaryUpdate ?? parsedTurn.data.message;
+      applyGroupChatTurnUpdate(parsedTurn.data);
+      setGroupChatContextSummary(nextContextSummary);
       if (parsedTurn.data.requestedSpeaker.speakerType === "expert") {
         await requestGroupChatExpertReply(
           parsedTurn.data,
           experts,
           [message],
           0,
+          nextMemo,
+          nextContextSummary,
         );
       }
     } catch (error) {
@@ -991,13 +1014,14 @@ function App() {
     experts: Array<ExpertRequest & { participantId: string }>,
     messages: GroupChatMessage[],
     expertRepliesSinceUser: number,
+    currentMemo: SessionMemo,
+    contextSummary: string,
   ) {
     const expert = experts.find(
       (candidate) =>
         candidate.participantId === turn.requestedSpeaker.participantId,
     );
-    if (!expert || !memo)
-      throw new Error("指名された専門家を確認できませんでした。");
+    if (!expert) throw new Error("指名された専門家を確認できませんでした。");
 
     const apiResponse = await fetch("/api/expert/group-chat", {
       method: "POST",
@@ -1005,8 +1029,8 @@ function App() {
       body: JSON.stringify({
         consultation: sessionConsultation,
         currentPhase: "group_chat",
-        memo,
-        contextSummary: turn.contextSummaryUpdate ?? turn.message,
+        memo: currentMemo,
+        contextSummary,
         recentMessages: messages,
         expert,
         facilitatorQuestion: turn.question,
@@ -1021,7 +1045,8 @@ function App() {
       [...messages, parsedMessage.data],
       experts,
       expertRepliesSinceUser + 1,
-      turn.contextSummaryUpdate ?? turn.message,
+      currentMemo,
+      contextSummary,
     );
   }
 
@@ -1030,16 +1055,16 @@ function App() {
     messages: GroupChatMessage[],
     experts: Array<ExpertRequest & { participantId: string }>,
     expertRepliesSinceUser: number,
+    currentMemo: SessionMemo,
     contextSummary: string,
   ) {
-    if (!memo) throw new Error("セッションメモを確認できませんでした。");
     const apiResponse = await fetch("/api/facilitator/group-chat/next", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         consultation: sessionConsultation,
         currentPhase: "group_chat",
-        memo,
+        memo: currentMemo,
         contextSummary,
         recentMessages: messages,
         confirmedExperts: experts,
@@ -1062,6 +1087,11 @@ function App() {
     const nextMessages = [...messages, facilitatorMessage];
     setGroupChatMessages(nextMessages);
     setGroupChatTurn(parsedTurn.data);
+    const nextMemo = parsedTurn.data.memoUpdate ?? currentMemo;
+    const nextContextSummary =
+      parsedTurn.data.contextSummaryUpdate ?? contextSummary;
+    applyGroupChatTurnUpdate(parsedTurn.data);
+    setGroupChatContextSummary(nextContextSummary);
     if (
       parsedTurn.data.requestedSpeaker.speakerType === "expert" &&
       expertRepliesSinceUser < 2
@@ -1071,6 +1101,8 @@ function App() {
         experts,
         nextMessages,
         expertRepliesSinceUser,
+        nextMemo,
+        nextContextSummary,
       );
     }
   }
@@ -1096,7 +1128,8 @@ function App() {
         [...groupChatMessages, message],
         experts,
         0,
-        groupChatTurn.contextSummaryUpdate ?? groupChatTurn.message,
+        memo,
+        groupChatTurn.contextSummaryUpdate ?? groupChatContextSummary,
       );
       setGroupChatOtherAnswer("");
     } catch (error) {
@@ -1106,6 +1139,26 @@ function App() {
     } finally {
       setIsStartingGroupChat(false);
     }
+  }
+
+  /** ファシリテーターターンが返すメモ更新を現在の履歴へ反映する。 */
+  function applyGroupChatTurnUpdate(turn: FacilitatorTurn) {
+    const memoUpdate = turn.memoUpdate;
+    if (!memoUpdate) return;
+    setResponse((currentResponse) =>
+      currentResponse
+        ? { ...currentResponse, memo_updates: memoUpdate }
+        : null,
+    );
+    setResponseHistory((current) => {
+      const currentResponse = current.group_chat;
+      return currentResponse
+        ? {
+            ...current,
+            group_chat: { ...currentResponse, memo_updates: memoUpdate },
+          }
+        : current;
+    });
   }
 
   async function generateFinalMarkdown() {
@@ -1323,6 +1376,10 @@ function App() {
       responseHistory,
       currentPhase,
       expertComments,
+      confirmedExperts,
+      groupChatMessages,
+      groupChatTurn: groupChatTurn ?? undefined,
+      groupChatContextSummary: groupChatContextSummary || undefined,
       initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
       interruption: hasInterruptionState
