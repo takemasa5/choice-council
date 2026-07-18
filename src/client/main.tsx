@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
   ConsultationStartRequest,
@@ -6,7 +6,7 @@ import type {
   ExpertComment,
   ExpertCommentRequest,
   ExpertRequest,
-  FacilitatorDeliberationRequest,
+  FacilitatorTurn,
   FacilitatorResponse,
   FacilitatorResponseRequest,
   FinalMarkdown,
@@ -15,13 +15,15 @@ import type {
   Phase,
   SessionMemo,
   SessionMemoRequest,
+  GroupChatMessage,
 } from "../shared/schemas/session";
 import {
+  FacilitatorTurnSchema,
+  GroupChatMessageSchema,
   maximumExpertRequestCount,
   SessionMemoSchema,
 } from "../shared/schemas/session";
 import {
-  buildFacilitatorDeliberationRequest,
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
   buildInterruptionMemoUpdateRequest,
@@ -29,11 +31,9 @@ import {
   collectExpertCommentGenerationResults,
   confirmExpertDrafts as getExpertDraftConfirmation,
   createFailedFacilitatorRequest,
-  discardFailedDeliberationRequest,
   getFacilitatorResponsePhase,
   getInitialExpertRequests,
   getSessionConsultation,
-  isAcceptedM3FacilitatorResponse,
   isExpertDraftEditingDisabled,
   replaceMemoInFailedFacilitatorRequest,
   type FailedFacilitatorRequest,
@@ -48,6 +48,7 @@ import {
   phaseOrder,
   type ResponseHistory,
 } from "./phase-history";
+import { groupChatReducer, initialGroupChatState } from "./group-chat-state";
 import "./styles.css";
 
 const storageKey = "choice-council-session";
@@ -58,7 +59,7 @@ const phaseLabels: Record<Phase, string> = {
   premise: "前提整理",
   expert_selection: "専門家選定",
   deliberation: "検討",
-  direction: "方向性整理",
+  group_chat: "意見交換",
   final_memo: "終了メモ",
 };
 
@@ -87,6 +88,10 @@ type StoredSession = {
   currentPhase: Phase;
   expertComments?: ExpertComment[];
   initialExpertRequests?: ExpertRequest[];
+  confirmedExperts?: ExpertRequest[];
+  groupChatMessages?: GroupChatMessage[];
+  groupChatTurn?: FacilitatorTurn;
+  groupChatContextSummary?: string;
   finalMarkdown?: string;
   interruption?: {
     isReady: boolean;
@@ -136,8 +141,18 @@ function App() {
   const confirmedExpertRequestKeyRef = useRef("");
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
-  const [isGeneratingDeliberation, setIsGeneratingDeliberation] =
-    useState(false);
+  const [isStartingGroupChat, setIsStartingGroupChat] = useState(false);
+  const [groupChat, dispatchGroupChat] = useReducer(
+    groupChatReducer,
+    initialGroupChatState,
+  );
+  const {
+    messages: groupChatMessages,
+    turn: groupChatTurn,
+    contextSummary: groupChatContextSummary,
+    otherAnswer: groupChatOtherAnswer,
+    expertRepliesSinceUser,
+  } = groupChat;
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
   const [finalMarkdown, setFinalMarkdown] = useState("");
   const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] =
@@ -145,12 +160,11 @@ function App() {
   const [finalMarkdownErrorMessage, setFinalMarkdownErrorMessage] =
     useState("");
   const canRequestPause =
-    isLoading || isGeneratingExperts || isGeneratingDeliberation;
+    isLoading || isGeneratingExperts || isStartingGroupChat;
   const isExpertInteractionDisabled =
-    isExpertDraftEditingDisabled(
-      isGeneratingExperts,
-      isGeneratingDeliberation,
-    ) || isUpdatingInterruptionMemo;
+    isExpertDraftEditingDisabled(isGeneratingExperts) ||
+    isStartingGroupChat ||
+    isUpdatingInterruptionMemo;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
@@ -183,6 +197,18 @@ function App() {
           "consultation_input",
       );
       setExpertComments(parsed.expertComments ?? []);
+      const restoredExperts =
+        parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
+      confirmedExpertRequestKeyRef.current = JSON.stringify(restoredExperts);
+      setConfirmedExperts(restoredExperts);
+      dispatchGroupChat({
+        type: "restore",
+        state: {
+          messages: parsed.groupChatMessages ?? [],
+          turn: parsed.groupChatTurn ?? null,
+          contextSummary: parsed.groupChatContextSummary ?? "",
+        },
+      });
       const restoredPhase =
         parsed.currentPhase ??
         parsed.response?.current_phase ??
@@ -236,6 +262,10 @@ function App() {
     responseHistory,
     currentPhase,
     expertComments,
+    confirmedExperts,
+    groupChatMessages,
+    groupChatTurn,
+    groupChatContextSummary,
     initialExpertRequests,
     finalMarkdown,
     selectedQuestionOption,
@@ -253,7 +283,7 @@ function App() {
       setConfirmedExperts([]);
     }
     setExpertErrorMessage("");
-  }, [expertRequestKey, currentPhase]);
+  }, [expertRequestKey]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return (
@@ -263,11 +293,10 @@ function App() {
   }, [response, responseHistory, currentPhase]);
   const canGenerateFinalMarkdown =
     Boolean(memo) &&
-    (currentPhase === "direction" || currentPhase === "final_memo") &&
+    (currentPhase === "group_chat" || currentPhase === "final_memo") &&
     !getPendingRequiredQuestionMessage() &&
     !isLoading &&
     !isGeneratingExperts &&
-    !isGeneratingDeliberation &&
     !isGeneratingFinalMarkdown &&
     !isUpdatingInterruptionMemo;
   const sessionConsultation = getSessionConsultation(
@@ -310,6 +339,7 @@ function App() {
     setResponseHistory(clearResponseHistory());
     setCurrentPhase("consultation_input");
     setExpertComments([]);
+    dispatchGroupChat({ type: "reset" });
     setInitialExpertRequests([]);
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -519,24 +549,12 @@ function App() {
    * 仕様対応: `docs/tasks/milestone-2.md#API エラー表示`。
    */
   async function retryFailedFacilitatorRequest() {
-    if (
-      !failedFacilitatorRequest ||
-      isLoading ||
-      isGeneratingDeliberation ||
-      isUpdatingInterruptionMemo
-    )
+    if (!failedFacilitatorRequest || isLoading || isUpdatingInterruptionMemo)
       return;
 
     setErrorMessage("");
     if (failedFacilitatorRequest.endpoint === "start") {
       await sendStartRequest(failedFacilitatorRequest.request);
-      return;
-    }
-
-    if (failedFacilitatorRequest.endpoint === "deliberation") {
-      await sendFacilitatorDeliberationRequest(
-        failedFacilitatorRequest.request,
-      );
       return;
     }
 
@@ -648,7 +666,7 @@ function App() {
     if (
       isLoading ||
       isGeneratingExperts ||
-      isGeneratingDeliberation ||
+      isStartingGroupChat ||
       isGeneratingFinalMarkdown ||
       isUpdatingInterruptionMemo
     )
@@ -678,6 +696,7 @@ function App() {
     setInitialExpertRequests([]);
     setConfirmedExperts([]);
     setExpertComments([]);
+    dispatchGroupChat({ type: "reset" });
     setExpertErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -687,7 +706,7 @@ function App() {
     if (
       isLoading ||
       isGeneratingExperts ||
-      isGeneratingDeliberation ||
+      isStartingGroupChat ||
       isGeneratingFinalMarkdown ||
       isUpdatingInterruptionMemo
     )
@@ -721,8 +740,13 @@ function App() {
     if (targetPhase !== "expert_selection") {
       setInitialExpertRequests([]);
     }
-    setConfirmedExperts([]);
+    if (!(currentPhase === "group_chat" && targetPhase === "deliberation")) {
+      setConfirmedExperts([]);
+    }
     setExpertComments(getExpertCommentsForReturn(targetPhase, expertComments));
+    if (currentPhase === "group_chat" && targetPhase === "deliberation") {
+      dispatchGroupChat({ type: "reset" });
+    }
     setExpertErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -732,7 +756,6 @@ function App() {
     if (
       isLoading ||
       isGeneratingExperts ||
-      isGeneratingDeliberation ||
       isGeneratingFinalMarkdown ||
       isUpdatingInterruptionMemo ||
       !response ||
@@ -809,7 +832,7 @@ function App() {
   function resetConfirmedExperts() {
     if (isExpertInteractionDisabled) return;
 
-    setFailedFacilitatorRequest(discardFailedDeliberationRequest);
+    setFailedFacilitatorRequest(null);
     setConfirmedExperts([]);
     setExpertComments([]);
     setExpertErrorMessage("");
@@ -918,21 +941,8 @@ function App() {
       }
 
       setExpertComments(result.comments);
-      const request = buildFacilitatorDeliberationRequest({
-        consultation: sessionConsultation,
-        memo,
-        confirmedExperts,
-        expertComments: result.comments,
-      });
-      if (!request) {
-        setExpertErrorMessage(
-          "専門家コメントの整理に必要なセッションメモがありません。",
-        );
-        return;
-      }
-
+      confirmedExpertRequestKeyRef.current = JSON.stringify(confirmedExperts);
       moveResponseToPhase("deliberation");
-      await sendFacilitatorDeliberationRequest(request);
     } catch (error) {
       setExpertErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
@@ -942,63 +952,272 @@ function App() {
     }
   }
 
-  /**
-   * 全専門家コメントを整理し、成功時だけ方向性整理へ遷移する。
-   *
-   * 仕様対応: `docs/tasks/milestone-3.md#ファシリテーター整理と方向性整理への遷移` と
-   * `docs/api/schemas.md#POST /api/facilitator/deliberation`。
-   */
-  async function sendFacilitatorDeliberationRequest(
-    request: FacilitatorDeliberationRequest,
-  ) {
-    setIsGeneratingDeliberation(true);
-    setErrorMessage("");
+  /** 初回専門家コメントからグループチャットを開始する。 */
+  async function startGroupChat() {
+    if (
+      isStartingGroupChat ||
+      !memo ||
+      confirmedExperts.length === 0 ||
+      confirmedExperts.length !== expertComments.length
+    ) {
+      setExpertErrorMessage(
+        "意見交換を始めるための専門家コメントを確認してください。",
+      );
+      return;
+    }
 
+    const experts = confirmedExperts.map((expert, index) => ({
+      ...expert,
+      participantId: `expert-${index + 1}`,
+    }));
+    setIsStartingGroupChat(true);
+    setExpertErrorMessage("");
+    dispatchGroupChat({ type: "reset" });
     try {
-      const apiResponse = await fetch("/api/facilitator/deliberation", {
+      const apiResponse = await fetch("/api/facilitator/group-chat/start", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(request),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          consultation: sessionConsultation,
+          currentPhase: "group_chat",
+          memo,
+          confirmedExperts: experts,
+          initialExpertComments: expertComments,
+        }),
       });
-      const body = await apiResponse.json();
-
-      if (!apiResponse.ok) {
-        setErrorMessage(body.message ?? invalidGenerationMessage);
-        setFailedFacilitatorRequest(
-          createFailedFacilitatorRequest({ endpoint: "deliberation", request }),
-        );
-        return;
+      const body: unknown = await apiResponse.json();
+      const parsedTurn = FacilitatorTurnSchema.safeParse(body);
+      if (!apiResponse.ok || !parsedTurn.success) {
+        throw new Error("意見交換の開始に失敗しました。再試行してください。");
       }
 
-      const facilitatorResponse = body as FacilitatorResponse;
-      if (!isAcceptedM3FacilitatorResponse(facilitatorResponse)) {
-        setErrorMessage("方向性整理として受け入れられない応答が返されました。");
-        setFailedFacilitatorRequest(
-          createFailedFacilitatorRequest({ endpoint: "deliberation", request }),
+      const message: GroupChatMessage = {
+        id: `facilitator-${Date.now()}`,
+        speakerType: "facilitator",
+        speakerName: "ファシリテーター",
+        participantId: "facilitator",
+        content: parsedTurn.data.message,
+        createdAt: new Date().toISOString(),
+      };
+      moveResponseToPhase("group_chat");
+      const nextMemo = parsedTurn.data.memoUpdate ?? memo;
+      const nextContextSummary =
+        parsedTurn.data.contextSummaryUpdate ?? parsedTurn.data.message;
+      applyGroupChatTurnUpdate(parsedTurn.data);
+      dispatchGroupChat({
+        type: "set_turn",
+        messages: [message],
+        turn: parsedTurn.data,
+        contextSummary: nextContextSummary,
+        expertRepliesSinceUser: 0,
+      });
+      if (parsedTurn.data.requestedSpeaker.speakerType === "expert") {
+        await requestGroupChatExpertReply(
+          parsedTurn.data,
+          experts,
+          [message],
+          0,
+          nextMemo,
+          nextContextSummary,
         );
-        return;
       }
-
-      setFailedFacilitatorRequest(null);
-      setCurrentPhase("direction");
-      setResponse(facilitatorResponse);
-      setResponseHistory((current) => ({
-        ...keepResponsesThroughPhase(current, "expert_selection"),
-        direction: facilitatorResponse,
-      }));
     } catch (error) {
-      setErrorMessage(
+      setExpertErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
       );
-      setFailedFacilitatorRequest(
-        createFailedFacilitatorRequest({ endpoint: "deliberation", request }),
-      );
     } finally {
-      setIsGeneratingDeliberation(false);
+      setIsStartingGroupChat(false);
       showInterruptionOptionsIfPaused();
     }
+  }
+
+  /** 指名専門家の発言を生成し、次の進行ターンを要求する。 */
+  async function requestGroupChatExpertReply(
+    turn: FacilitatorTurn,
+    experts: Array<ExpertRequest & { participantId: string }>,
+    messages: GroupChatMessage[],
+    expertRepliesSinceUser: number,
+    currentMemo: SessionMemo,
+    contextSummary: string,
+  ) {
+    const expert = experts.find(
+      (candidate) =>
+        candidate.participantId === turn.requestedSpeaker.participantId,
+    );
+    if (!expert) throw new Error("指名された専門家を確認できませんでした。");
+
+    const apiResponse = await fetch("/api/expert/group-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        consultation: sessionConsultation,
+        currentPhase: "group_chat",
+        memo: currentMemo,
+        contextSummary,
+        recentMessages: messages,
+        expert,
+        facilitatorQuestion: turn.question,
+      }),
+    });
+    const body: unknown = await apiResponse.json();
+    const parsedMessage = GroupChatMessageSchema.safeParse(body);
+    if (!apiResponse.ok || !parsedMessage.success) {
+      throw new Error("専門家の回答生成に失敗しました。再試行してください。");
+    }
+    await requestNextGroupChatTurn(
+      [...messages, parsedMessage.data],
+      experts,
+      expertRepliesSinceUser + 1,
+      currentMemo,
+      contextSummary,
+    );
+  }
+
+  /** 次の発言者を要求し、専門家指名なら連続回答を進める。 */
+  async function requestNextGroupChatTurn(
+    messages: GroupChatMessage[],
+    experts: Array<ExpertRequest & { participantId: string }>,
+    expertRepliesSinceUser: number,
+    currentMemo: SessionMemo,
+    contextSummary: string,
+  ) {
+    const apiResponse = await fetch("/api/facilitator/group-chat/next", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        consultation: sessionConsultation,
+        currentPhase: "group_chat",
+        memo: currentMemo,
+        contextSummary,
+        recentMessages: messages,
+        confirmedExperts: experts,
+        expertRepliesSinceUser,
+      }),
+    });
+    const body: unknown = await apiResponse.json();
+    const parsedTurn = FacilitatorTurnSchema.safeParse(body);
+    if (!apiResponse.ok || !parsedTurn.success) {
+      throw new Error("次の意見交換の進行に失敗しました。再試行してください。");
+    }
+    const facilitatorMessage: GroupChatMessage = {
+      id: `facilitator-${Date.now()}`,
+      speakerType: "facilitator",
+      speakerName: "ファシリテーター",
+      participantId: "facilitator",
+      content: parsedTurn.data.message,
+      createdAt: new Date().toISOString(),
+    };
+    const nextMessages = [...messages, facilitatorMessage];
+    const nextMemo = parsedTurn.data.memoUpdate ?? currentMemo;
+    const nextContextSummary =
+      parsedTurn.data.contextSummaryUpdate ?? contextSummary;
+    applyGroupChatTurnUpdate(parsedTurn.data);
+    dispatchGroupChat({
+      type: "set_turn",
+      messages: nextMessages,
+      turn: parsedTurn.data,
+      contextSummary: nextContextSummary,
+      expertRepliesSinceUser,
+    });
+    if (pauseRequestedRef.current) return;
+    if (
+      parsedTurn.data.requestedSpeaker.speakerType === "expert" &&
+      expertRepliesSinceUser < 2
+    ) {
+      await requestGroupChatExpertReply(
+        parsedTurn.data,
+        experts,
+        nextMessages,
+        expertRepliesSinceUser,
+        nextMemo,
+        nextContextSummary,
+      );
+    }
+  }
+
+  /** ユーザー発言を記録して次の進行ターンを要求する。 */
+  async function sendGroupChatUserAnswer(answer: string) {
+    if (!groupChatTurn || !memo || !answer.trim()) return;
+    const experts = confirmedExperts.map((expert, index) => ({
+      ...expert,
+      participantId: `expert-${index + 1}`,
+    }));
+    setIsStartingGroupChat(true);
+    try {
+      const message: GroupChatMessage = {
+        id: `user-${Date.now()}`,
+        speakerType: "user",
+        speakerName: "あなた",
+        participantId: "user",
+        content: answer.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      await requestNextGroupChatTurn(
+        [...groupChatMessages, message],
+        experts,
+        0,
+        memo,
+        groupChatTurn.contextSummaryUpdate ?? groupChatContextSummary,
+      );
+      dispatchGroupChat({ type: "set_other_answer", value: "" });
+    } catch (error) {
+      setExpertErrorMessage(
+        error instanceof Error ? error.message : "通信に失敗しました。",
+      );
+    } finally {
+      setIsStartingGroupChat(false);
+    }
+  }
+
+  /** 失敗した専門家回答を、同じ指名ターンで再生成する。 */
+  async function retryGroupChatExpertReply() {
+    if (
+      !groupChatTurn ||
+      groupChatTurn.requestedSpeaker.speakerType !== "expert" ||
+      !memo ||
+      isStartingGroupChat
+    )
+      return;
+    const experts = confirmedExperts.map((expert, index) => ({
+      ...expert,
+      participantId: `expert-${index + 1}`,
+    }));
+    setIsStartingGroupChat(true);
+    setExpertErrorMessage("");
+    try {
+      await requestGroupChatExpertReply(
+        groupChatTurn,
+        experts,
+        groupChatMessages,
+        expertRepliesSinceUser,
+        memo,
+        groupChatContextSummary || groupChatTurn.message,
+      );
+    } catch (error) {
+      setExpertErrorMessage(
+        error instanceof Error ? error.message : "通信に失敗しました。",
+      );
+    } finally {
+      setIsStartingGroupChat(false);
+    }
+  }
+
+  /** ファシリテーターターンが返すメモ更新を現在の履歴へ反映する。 */
+  function applyGroupChatTurnUpdate(turn: FacilitatorTurn) {
+    const memoUpdate = turn.memoUpdate;
+    if (!memoUpdate) return;
+    setResponse((currentResponse) =>
+      currentResponse ? { ...currentResponse, memo_updates: memoUpdate } : null,
+    );
+    setResponseHistory((current) => {
+      const currentResponse = current.group_chat;
+      return currentResponse
+        ? {
+            ...current,
+            group_chat: { ...currentResponse, memo_updates: memoUpdate },
+          }
+        : current;
+    });
   }
 
   async function generateFinalMarkdown() {
@@ -1216,6 +1435,10 @@ function App() {
       responseHistory,
       currentPhase,
       expertComments,
+      confirmedExperts,
+      groupChatMessages,
+      groupChatTurn: groupChatTurn ?? undefined,
+      groupChatContextSummary: groupChatContextSummary || undefined,
       initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
       interruption: hasInterruptionState
@@ -1249,7 +1472,7 @@ function App() {
       currentPhase === "premise" ? "expert_selection" : currentPhase;
 
     confirmedExpertRequestKeyRef.current = JSON.stringify(experts);
-    setFailedFacilitatorRequest(discardFailedDeliberationRequest);
+    setFailedFacilitatorRequest(null);
     setCurrentPhase(nextPhase);
     setResponse((currentResponse) => {
       if (!currentResponse) return currentResponse;
@@ -1346,7 +1569,7 @@ function App() {
                 disabled={
                   isLoading ||
                   isGeneratingExperts ||
-                  isGeneratingDeliberation ||
+                  isStartingGroupChat ||
                   isGeneratingFinalMarkdown ||
                   isUpdatingInterruptionMemo
                 }
@@ -1376,11 +1599,7 @@ function App() {
                     className="secondary-button"
                     type="button"
                     onClick={retryFailedFacilitatorRequest}
-                    disabled={
-                      isLoading ||
-                      isGeneratingDeliberation ||
-                      isUpdatingInterruptionMemo
-                    }
+                    disabled={isLoading || isUpdatingInterruptionMemo}
                   >
                     {isLoading ? "リトライ中..." : "同じ内容でリトライ"}
                   </button>
@@ -1406,7 +1625,7 @@ function App() {
                     disabled={
                       isLoading ||
                       isGeneratingExperts ||
-                      isGeneratingDeliberation ||
+                      isStartingGroupChat ||
                       isGeneratingFinalMarkdown ||
                       isUpdatingInterruptionMemo
                     }
@@ -1589,6 +1808,101 @@ function App() {
                       </article>
                     ))}
                   </div>
+                  {currentPhase === "deliberation" && (
+                    <>
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={startGroupChat}
+                        disabled={isStartingGroupChat}
+                      >
+                        {isStartingGroupChat
+                          ? "意見交換を開始中..."
+                          : "意見交換をはじめる"}
+                      </button>
+                      {expertErrorMessage && (
+                        <p className="error">{expertErrorMessage}</p>
+                      )}
+                    </>
+                  )}
+                </section>
+              )}
+
+              {currentPhase === "group_chat" && groupChatTurn && (
+                <section className="expert-comment-box" aria-label="意見交換">
+                  <h3>意見交換</h3>
+                  {groupChatMessages.map((message) => (
+                    <article className="expert-comment-item" key={message.id}>
+                      <strong>{message.speakerName}</strong>
+                      <p>{message.content}</p>
+                    </article>
+                  ))}
+                  <p>{groupChatTurn.question}</p>
+                  {groupChatTurn.requestedSpeaker.speakerType === "user" &&
+                    groupChatTurn.userOptions && (
+                      <div className="option-list">
+                        {groupChatTurn.userOptions.map((option) => (
+                          <button
+                            type="button"
+                            key={option}
+                            onClick={() =>
+                              option === "その他"
+                                ? dispatchGroupChat({
+                                    type: "set_other_answer",
+                                    value: " ",
+                                  })
+                                : void sendGroupChatUserAnswer(option)
+                            }
+                            disabled={isStartingGroupChat}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                        {groupChatOtherAnswer && (
+                          <label className="field inline-field">
+                            <span>自由入力</span>
+                            <textarea
+                              value={groupChatOtherAnswer.trim()}
+                              onChange={(event) =>
+                                dispatchGroupChat({
+                                  type: "set_other_answer",
+                                  value: event.target.value,
+                                })
+                              }
+                              rows={3}
+                            />
+                            <button
+                              className="primary-button"
+                              type="button"
+                              onClick={() =>
+                                void sendGroupChatUserAnswer(
+                                  groupChatOtherAnswer,
+                                )
+                              }
+                              disabled={isStartingGroupChat}
+                            >
+                              回答を送る
+                            </button>
+                          </label>
+                        )}
+                      </div>
+                    )}
+                  {expertErrorMessage && (
+                    <>
+                      <p className="error">{expertErrorMessage}</p>
+                      {groupChatTurn.requestedSpeaker.speakerType ===
+                        "expert" && (
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => void retryGroupChatExpertReply()}
+                          disabled={isStartingGroupChat}
+                        >
+                          専門家回答を再生成する
+                        </button>
+                      )}
+                    </>
+                  )}
                 </section>
               )}
 
@@ -1708,7 +2022,6 @@ function App() {
                     disabled={
                       isLoading ||
                       isGeneratingExperts ||
-                      isGeneratingDeliberation ||
                       isGeneratingFinalMarkdown
                     }
                   >
@@ -1731,8 +2044,8 @@ function App() {
                 disabled={
                   isLoading ||
                   isGeneratingExperts ||
+                  isStartingGroupChat ||
                   isGeneratingFinalMarkdown ||
-                  isGeneratingDeliberation ||
                   isUpdatingInterruptionMemo
                 }
               >

@@ -1,8 +1,12 @@
 import express from "express";
 import { createLlmProviderFromEnvironment } from "./llm/create-provider";
 import { createExpertCommentHandler } from "./routes/expert-comment";
+import { createGroupChatExpertReplyHandler } from "./routes/expert-group-chat";
 import {
-  createFacilitatorDeliberationHandler,
+  createGroupChatNextHandler,
+  createGroupChatStartHandler,
+} from "./routes/facilitator-group-chat";
+import {
   createFacilitatorRespondHandler,
   createFacilitatorStartHandler,
 } from "./routes/facilitator";
@@ -37,11 +41,19 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     "/api/facilitator/respond",
     createFacilitatorRespondHandler(dependencies),
   );
-  app.post(
-    "/api/facilitator/deliberation",
-    createFacilitatorDeliberationHandler(dependencies),
-  );
   app.post("/api/expert/comment", createExpertCommentHandler(dependencies));
+  app.post(
+    "/api/expert/group-chat",
+    createGroupChatExpertReplyHandler(dependencies),
+  );
+  app.post(
+    "/api/facilitator/group-chat/start",
+    createGroupChatStartHandler(dependencies),
+  );
+  app.post(
+    "/api/facilitator/group-chat/next",
+    createGroupChatNextHandler(dependencies),
+  );
   app.post("/api/session-memo/update", createSessionMemoHandler(dependencies));
   app.post(
     "/api/final-markdown/generate",

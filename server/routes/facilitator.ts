@@ -1,7 +1,6 @@
 import type { RequestHandler } from "express";
 import type { z } from "zod";
 import {
-  FacilitatorDeliberationRequestSchema,
   ConsultationStartRequestSchema,
   FacilitatorResponseRequestSchema,
   FacilitatorResponseSchema,
@@ -45,51 +44,6 @@ export function createFacilitatorRespondHandler(
     FacilitatorResponseRequestSchema,
     isAcceptedM2RespondResponse,
   );
-}
-
-/**
- * 全専門家コメントを整理し、方向性整理へ遷移する応答を生成する API ハンドラを作成する。
- *
- * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/deliberation` と
- * `docs/prompts/facilitator.md#M3 の専門家コメント整理`。
- */
-export function createFacilitatorDeliberationHandler(
-  dependencies: AppDependencies,
-): RequestHandler {
-  return async (request, response) => {
-    const parsedRequest = FacilitatorDeliberationRequestSchema.safeParse(
-      request.body,
-    );
-
-    if (!parsedRequest.success) {
-      sendInvalidRequest(response, parsedRequest.error.flatten());
-      return;
-    }
-
-    try {
-      const provider = dependencies.createLlmProvider();
-      const output =
-        await parseStructuredOutputOnceWithRetry<FacilitatorResponse>(
-          () =>
-            provider.generateStructuredOutput({
-              systemPrompt: facilitatorDeliberationDeveloperPrompt,
-              userInput: parsedRequest.data,
-              schema: FacilitatorResponseSchema,
-              schemaName: "facilitator_response",
-            }),
-          isAcceptedM3FacilitatorResponse,
-        );
-
-      if (!output) {
-        sendInvalidModelResponse(response);
-        return;
-      }
-
-      response.json(output);
-    } catch (error) {
-      sendLlmRequestFailed(response, error);
-    }
-  };
 }
 
 /**
@@ -181,24 +135,6 @@ function isAcceptedM2RespondResponse(modelResponse: FacilitatorResponse) {
 }
 
 /**
- * モデル応答が M3 の専門家コメント整理専用制約を満たすか判定する。
- *
- * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/deliberation`。
- */
-function isAcceptedM3FacilitatorResponse(modelResponse: FacilitatorResponse) {
-  const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);
-  if (!parsedResponse.success) return false;
-
-  const response = parsedResponse.data;
-  return (
-    response.current_phase === "direction" &&
-    response.next_action === "move_phase" &&
-    response.user_question === null &&
-    response.expert_requests.length === 0
-  );
-}
-
-/**
  * ファシリテーターへ渡す開発者プロンプト。
  *
  * 日本語名: ファシリテーター開発者プロンプト。
@@ -223,27 +159,5 @@ const facilitatorDeveloperPrompt = `
 - 出力の current_phase は必ず premise にする。
 - userQuestion と userQuestionAnswer が入力に含まれる場合は、その質問へのユーザー回答として扱い、memo_updates と次アクションに反映する。追加質問をしてはならない。user_question は null、next_action は request_experts、expert_requests は1件以上にする。
 - user_question を返す場合、options は2件以上にし、必ず「その他」を含める。
-- 出力は指定 schema に厳密に従う。
-`;
-
-/**
- * M3 の専門家コメント整理でファシリテーターへ渡す開発者プロンプト。
- *
- * 日本語名: ファシリテーター整理開発者プロンプト。
- * 仕様対応: `docs/prompts/facilitator.md#M3 の専門家コメント整理`。
- */
-const facilitatorDeliberationDeveloperPrompt = `
-あなたは Choice Council のファシリテーターです。
-目的は、ユーザーの意思決定を代行することではなく、専門家コメントを判断材料として整理し、相談前よりも意思決定が前に進んだ状態を作ることです。
-
-守ること:
-- 日本語で自然に進行する。
-- 入力された相談内容、現在メモ、確定済み専門家ロール、全専門家コメントをすべて考慮する。
-- 確定済み専門家ロールとコメントは入力配列の同じ位置で対応する。ロール名や観点が重複していても、コメントを統合または除外しない。
-- コメントを単純に列挙せず、判断軸、意見が一致した点・割れた点、未確認事項、次アクション候補を整理する。
-- 専門家コメントに含まれる未確認事項や外部調査の必要性は断定せず、memo_updates.open_questions に反映する。外部調査は実行しない。
-- memo_updates に、専門家コメントの要点、対立点、未確認事項、次アクション候補を反映する。
-- 出力の current_phase は必ず direction、next_action は必ず move_phase にする。
-- user_question は必ず null、expert_requests は必ず空配列にする。
 - 出力は指定 schema に厳密に従う。
 `;
