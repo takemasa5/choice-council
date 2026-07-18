@@ -7,6 +7,7 @@ import type {
   FacilitatorResponseRequest,
   Phase,
   SessionMemo,
+  SessionMemoRequest,
 } from "../shared/schemas/session";
 import { maximumExpertRequestCount } from "../shared/schemas/session";
 
@@ -69,6 +70,14 @@ export type FacilitatorResponseInput = {
   memo: SessionMemo | null | undefined;
 };
 
+/** 日本語名: 割り込み操作をセッションメモへ記録する入力値。 */
+export type InterruptionMemoUpdateInput = {
+  consultation: string;
+  currentPhase: Phase;
+  previousMemo: SessionMemo | null;
+  userAction: string;
+};
+
 /**
  * 相談開始 API に送る初回入力を作成する。
  *
@@ -118,6 +127,28 @@ export function buildFacilitatorResponseRequest(
 }
 
 /**
+ * 割り込み時に選択した調整方針をセッションメモ API へ送る入力を作成する。
+ *
+ * 仕様対応: `docs/api/schemas.md#セッションメモ`、
+ * `docs/design/state-machine.md#割り込み`。
+ */
+export function buildInterruptionMemoUpdateRequest(
+  input: InterruptionMemoUpdateInput,
+): SessionMemoRequest | null {
+  const userAction = input.userAction.trim();
+  if (!input.consultation.trim() || !input.previousMemo || !userAction) {
+    return null;
+  }
+
+  return {
+    consultation: input.consultation,
+    currentPhase: input.currentPhase,
+    previousMemo: input.previousMemo,
+    userAction,
+  };
+}
+
+/**
  * 全専門家コメントをファシリテーター整理 API に送る入力を作成する。
  *
  * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/deliberation`。
@@ -152,6 +183,32 @@ export function createFailedFacilitatorRequest(
   failedRequest: FailedFacilitatorRequest,
 ): FailedFacilitatorRequest {
   return failedRequest;
+}
+
+/**
+ * セッションメモ更新後も、失敗した回答・整理リクエストを最新メモで再試行可能にする。
+ *
+ * 仕様対応: `docs/api/schemas.md#セッションメモ`。
+ */
+export function replaceMemoInFailedFacilitatorRequest(
+  failedRequest: FailedFacilitatorRequest | null,
+  memo: SessionMemo,
+): FailedFacilitatorRequest | null {
+  if (!failedRequest || failedRequest.endpoint === "start") {
+    return failedRequest;
+  }
+
+  if (failedRequest.endpoint === "respond") {
+    return {
+      endpoint: "respond",
+      request: { ...failedRequest.request, memo },
+    };
+  }
+
+  return {
+    endpoint: "deliberation",
+    request: { ...failedRequest.request, memo },
+  };
 }
 
 /**

@@ -14,12 +14,17 @@ import type {
   FinalSessionMemo,
   Phase,
   SessionMemo,
+  SessionMemoRequest,
 } from "../shared/schemas/session";
-import { maximumExpertRequestCount } from "../shared/schemas/session";
+import {
+  maximumExpertRequestCount,
+  SessionMemoSchema,
+} from "../shared/schemas/session";
 import {
   buildFacilitatorDeliberationRequest,
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
+  buildInterruptionMemoUpdateRequest,
   canProceedToExpertSelection,
   collectExpertCommentGenerationResults,
   confirmExpertDrafts as getExpertDraftConfirmation,
@@ -30,6 +35,7 @@ import {
   getSessionConsultation,
   isAcceptedM3FacilitatorResponse,
   isExpertDraftEditingDisabled,
+  replaceMemoInFailedFacilitatorRequest,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
 import {
@@ -114,6 +120,10 @@ function App() {
   const [selectedInterruptionOption, setSelectedInterruptionOption] =
     useState("");
   const [interruptionOtherAnswer, setInterruptionOtherAnswer] = useState("");
+  const [isUpdatingInterruptionMemo, setIsUpdatingInterruptionMemo] =
+    useState(false);
+  const [interruptionMemoErrorMessage, setInterruptionMemoErrorMessage] =
+    useState("");
   const [memoNotice, setMemoNotice] = useState("");
   const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
   const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
@@ -136,10 +146,11 @@ function App() {
     useState("");
   const canRequestPause =
     isLoading || isGeneratingExperts || isGeneratingDeliberation;
-  const isExpertInteractionDisabled = isExpertDraftEditingDisabled(
-    isGeneratingExperts,
-    isGeneratingDeliberation,
-  );
+  const isExpertInteractionDisabled =
+    isExpertDraftEditingDisabled(
+      isGeneratingExperts,
+      isGeneratingDeliberation,
+    ) || isUpdatingInterruptionMemo;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
@@ -257,7 +268,8 @@ function App() {
     !isLoading &&
     !isGeneratingExperts &&
     !isGeneratingDeliberation &&
-    !isGeneratingFinalMarkdown;
+    !isGeneratingFinalMarkdown &&
+    !isUpdatingInterruptionMemo;
   const sessionConsultation = getSessionConsultation(
     startedConsultation,
     consultation,
@@ -267,6 +279,8 @@ function App() {
   }, [currentPhase, responseHistory]);
 
   async function startSession() {
+    if (isUpdatingInterruptionMemo) return;
+
     setErrorMessage("");
 
     const request = buildStartRequest();
@@ -388,6 +402,8 @@ function App() {
    * 仕様対応: `docs/tasks/milestone-2.md#前提整理での確認回答`。
    */
   async function respondToQuestion() {
+    if (isUpdatingInterruptionMemo) return;
+
     setErrorMessage("");
 
     const question = response?.user_question;
@@ -503,7 +519,12 @@ function App() {
    * 仕様対応: `docs/tasks/milestone-2.md#API エラー表示`。
    */
   async function retryFailedFacilitatorRequest() {
-    if (!failedFacilitatorRequest || isLoading || isGeneratingDeliberation)
+    if (
+      !failedFacilitatorRequest ||
+      isLoading ||
+      isGeneratingDeliberation ||
+      isUpdatingInterruptionMemo
+    )
       return;
 
     setErrorMessage("");
@@ -628,7 +649,8 @@ function App() {
       isLoading ||
       isGeneratingExperts ||
       isGeneratingDeliberation ||
-      isGeneratingFinalMarkdown
+      isGeneratingFinalMarkdown ||
+      isUpdatingInterruptionMemo
     )
       return;
 
@@ -666,7 +688,8 @@ function App() {
       isLoading ||
       isGeneratingExperts ||
       isGeneratingDeliberation ||
-      isGeneratingFinalMarkdown
+      isGeneratingFinalMarkdown ||
+      isUpdatingInterruptionMemo
     )
       return;
 
@@ -711,6 +734,7 @@ function App() {
       isGeneratingExperts ||
       isGeneratingDeliberation ||
       isGeneratingFinalMarkdown ||
+      isUpdatingInterruptionMemo ||
       !response ||
       !canProceedToExpertSelection(response)
     ) {
@@ -978,6 +1002,8 @@ function App() {
   }
 
   async function generateFinalMarkdown() {
+    if (isUpdatingInterruptionMemo) return;
+
     setFinalMarkdownErrorMessage("");
 
     const requiredQuestionMessage = getPendingRequiredQuestionMessage();
@@ -1067,24 +1093,103 @@ function App() {
   }
 
   function chooseInterruptionOption(option: string) {
-    if (option === "その他") {
-      setSelectedInterruptionOption(option);
+    setSelectedInterruptionOption(option);
+    if (option !== "その他") setInterruptionOtherAnswer("");
+    setInterruptionMemoErrorMessage("");
+  }
+
+  /**
+   * 割り込みで選んだ調整方針を、ユーザー操作としてセッションメモへ記録する。
+   *
+   * 仕様対応: `docs/api/schemas.md#セッションメモ`、
+   * `docs/design/user-experience.md#「ちょっと待って」ボタン`。
+   */
+  async function confirmInterruptionOption() {
+    if (isUpdatingInterruptionMemo) return;
+
+    const userAction =
+      selectedInterruptionOption === "その他"
+        ? interruptionOtherAnswer
+        : selectedInterruptionOption;
+    const request = buildInterruptionMemoUpdateRequest({
+      consultation: sessionConsultation,
+      currentPhase,
+      previousMemo: memo,
+      userAction,
+    });
+    if (!request) {
+      setInterruptionMemoErrorMessage(
+        "記録する調整方針とセッションメモを確認してください。",
+      );
       return;
     }
 
-    setSelectedInterruptionOption(option);
-    setInterruptionOtherAnswer("");
-    setIsInterruptionReady(false);
-    setPauseRequested(false);
-    pauseRequestedRef.current = false;
-    setMemoNotice("選択内容を確認しました。次の整理で反映してください。");
+    setIsUpdatingInterruptionMemo(true);
+    setInterruptionMemoErrorMessage("");
+
+    try {
+      const updatedMemo = await requestSessionMemoUpdate(request);
+      const updatedResponse = response
+        ? { ...response, memo_updates: updatedMemo }
+        : null;
+
+      setResponse(updatedResponse);
+      setResponseHistory((current) => {
+        if (!updatedResponse) return current;
+
+        return { ...current, [currentPhase]: updatedResponse };
+      });
+      setFailedFacilitatorRequest((current) =>
+        replaceMemoInFailedFacilitatorRequest(current, updatedMemo),
+      );
+      setIsInterruptionReady(false);
+      setSelectedInterruptionOption("");
+      setInterruptionOtherAnswer("");
+      setPauseRequested(false);
+      pauseRequestedRef.current = false;
+      setMemoNotice("メモを更新しました。");
+    } catch (error) {
+      setInterruptionMemoErrorMessage(
+        error instanceof Error ? error.message : "メモの更新に失敗しました。",
+      );
+    } finally {
+      setIsUpdatingInterruptionMemo(false);
+    }
   }
 
-  function submitInterruptionOther() {
-    const answer = emptyToUndefined(interruptionOtherAnswer);
-    if (!answer) return;
+  /**
+   * セッションメモ更新 API のレスポンスを検証して返す。
+   *
+   * 仕様対応: `docs/api/schemas.md#セッションメモ`。
+   */
+  async function requestSessionMemoUpdate(
+    request: SessionMemoRequest,
+  ): Promise<SessionMemo> {
+    const apiResponse = await fetch("/api/session-memo/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    const body: unknown = await apiResponse.json();
 
-    chooseInterruptionOption(answer);
+    if (!apiResponse.ok) {
+      const message =
+        typeof body === "object" && body !== null && "message" in body
+          ? body.message
+          : undefined;
+      throw new Error(
+        typeof message === "string" ? message : "メモの更新に失敗しました。",
+      );
+    }
+
+    const parsedMemo = SessionMemoSchema.safeParse(body);
+    if (!parsedMemo.success) {
+      throw new Error(
+        "メモの更新結果を確認できませんでした。再試行してください。",
+      );
+    }
+
+    return parsedMemo.data;
   }
 
   function saveCurrentSession() {
@@ -1242,7 +1347,8 @@ function App() {
                   isLoading ||
                   isGeneratingExperts ||
                   isGeneratingDeliberation ||
-                  isGeneratingFinalMarkdown
+                  isGeneratingFinalMarkdown ||
+                  isUpdatingInterruptionMemo
                 }
               >
                 {isLoading
@@ -1270,7 +1376,11 @@ function App() {
                     className="secondary-button"
                     type="button"
                     onClick={retryFailedFacilitatorRequest}
-                    disabled={isLoading || isGeneratingDeliberation}
+                    disabled={
+                      isLoading ||
+                      isGeneratingDeliberation ||
+                      isUpdatingInterruptionMemo
+                    }
                   >
                     {isLoading ? "リトライ中..." : "同じ内容でリトライ"}
                   </button>
@@ -1297,7 +1407,8 @@ function App() {
                       isLoading ||
                       isGeneratingExperts ||
                       isGeneratingDeliberation ||
-                      isGeneratingFinalMarkdown
+                      isGeneratingFinalMarkdown ||
+                      isUpdatingInterruptionMemo
                     }
                   >
                     専門家選定へ進む
@@ -1495,7 +1606,7 @@ function App() {
                             : undefined
                         }
                         onClick={() => setSelectedQuestionOption(option)}
-                        disabled={isLoading}
+                        disabled={isLoading || isUpdatingInterruptionMemo}
                       >
                         {option}
                       </button>
@@ -1510,7 +1621,7 @@ function App() {
                           setOtherQuestionAnswer(event.target.value)
                         }
                         rows={3}
-                        disabled={isLoading}
+                        disabled={isLoading || isUpdatingInterruptionMemo}
                       />
                     </label>
                   )}
@@ -1519,7 +1630,7 @@ function App() {
                       className="primary-button"
                       type="button"
                       onClick={respondToQuestion}
-                      disabled={isLoading}
+                      disabled={isLoading || isUpdatingInterruptionMemo}
                     >
                       {isLoading ? "回答を整理中..." : "回答を送る"}
                     </button>
@@ -1541,6 +1652,7 @@ function App() {
                             : undefined
                         }
                         onClick={() => chooseInterruptionOption(option)}
+                        disabled={isUpdatingInterruptionMemo}
                       >
                         {option}
                       </button>
@@ -1555,15 +1667,28 @@ function App() {
                           setInterruptionOtherAnswer(event.target.value)
                         }
                         rows={3}
+                        disabled={isUpdatingInterruptionMemo}
                       />
-                      <button
-                        className="secondary-button"
-                        type="button"
-                        onClick={submitInterruptionOther}
-                      >
-                        反映する
-                      </button>
                     </label>
+                  )}
+                  {selectedInterruptionOption && (
+                    <div className="action-row">
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={confirmInterruptionOption}
+                        disabled={isUpdatingInterruptionMemo}
+                      >
+                        {isUpdatingInterruptionMemo
+                          ? "メモを更新中..."
+                          : interruptionMemoErrorMessage
+                            ? "もう一度記録する"
+                            : "選択を記録する"}
+                      </button>
+                    </div>
+                  )}
+                  {interruptionMemoErrorMessage && (
+                    <p className="error">{interruptionMemoErrorMessage}</p>
                   )}
                 </div>
               )}
@@ -1607,7 +1732,8 @@ function App() {
                   isLoading ||
                   isGeneratingExperts ||
                   isGeneratingFinalMarkdown ||
-                  isGeneratingDeliberation
+                  isGeneratingDeliberation ||
+                  isUpdatingInterruptionMemo
                 }
               >
                 削除

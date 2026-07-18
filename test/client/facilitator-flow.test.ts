@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   addExpertDraft,
+  buildInterruptionMemoUpdateRequest,
   buildConsultationStartRequest,
   buildFacilitatorDeliberationRequest,
   buildFacilitatorResponseRequest,
@@ -15,6 +16,7 @@ import {
   getSessionConsultation,
   isAcceptedM3FacilitatorResponse,
   isExpertDraftEditingDisabled,
+  replaceMemoInFailedFacilitatorRequest,
   replaceExpertDraft,
 } from "../../src/client/facilitator-flow";
 import { maximumExpertRequestCount } from "../../src/shared/schemas/session";
@@ -110,6 +112,44 @@ test("必須質問への回答がない場合は回答リクエストを作ら�
   assert.equal(request, null);
 });
 
+test("割り込みで選んだ調整方針は現在のメモとともに更新 API へ送る", () => {
+  assert.deepEqual(
+    buildInterruptionMemoUpdateRequest({
+      consultation: "中学受験について相談したい",
+      currentPhase: "premise",
+      previousMemo: memo,
+      userAction: "  この論点を深掘りしたい  ",
+    }),
+    {
+      consultation: "中学受験について相談したい",
+      currentPhase: "premise",
+      previousMemo: memo,
+      userAction: "この論点を深掘りしたい",
+    },
+  );
+});
+
+test("割り込み操作または既存メモがなければメモ更新リクエストを作らない", () => {
+  assert.equal(
+    buildInterruptionMemoUpdateRequest({
+      consultation: "中学受験について相談したい",
+      currentPhase: "premise",
+      previousMemo: memo,
+      userAction: "",
+    }),
+    null,
+  );
+  assert.equal(
+    buildInterruptionMemoUpdateRequest({
+      consultation: "中学受験について相談したい",
+      currentPhase: "premise",
+      previousMemo: null,
+      userAction: "この論点を深掘りしたい",
+    }),
+    null,
+  );
+});
+
 test("全専門家コメントの成功後は整理 API 用の同一順序の入力を作成する", () => {
   assert.deepEqual(
     buildFacilitatorDeliberationRequest({
@@ -167,6 +207,40 @@ test("失敗リクエストは同一内容でリトライできる形で保持�
     endpoint: "respond",
     request,
   });
+});
+
+test("メモ更新後の失敗した整理リクエストは最新メモで再試行する", () => {
+  const updatedMemo: SessionMemo = { ...memo, next_actions: ["再確認する"] };
+  const failedRequest = createFailedFacilitatorRequest({
+    endpoint: "deliberation",
+    request: {
+      consultation: "中学受験について相談したい",
+      currentPhase: "deliberation",
+      memo,
+      confirmedExperts: [expert],
+      expertComments: [expertComment],
+    },
+  });
+
+  assert.deepEqual(
+    replaceMemoInFailedFacilitatorRequest(failedRequest, updatedMemo),
+    {
+      ...failedRequest,
+      request: { ...failedRequest.request, memo: updatedMemo },
+    },
+  );
+});
+
+test("相談開始の失敗リクエストはメモ更新後も変更しない", () => {
+  const failedRequest = createFailedFacilitatorRequest({
+    endpoint: "start",
+    request: { consultation: "中学受験について相談したい" },
+  });
+
+  assert.equal(
+    replaceMemoInFailedFacilitatorRequest(failedRequest, memo),
+    failedRequest,
+  );
 });
 
 test("ファシリテーター整理の失敗リクエストは同一内容で保持する", () => {
