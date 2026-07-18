@@ -4,12 +4,12 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 
 ## 呼び出し単位
 
-| 呼び出し      | 役割                                             |
-| ------------- | ------------------------------------------------ |
-| facilitator   | フェーズ管理、質問、専門家選定、次アクション決定 |
-| expert        | 指定観点からの短い意見、懸念、確認事項の提示     |
-| sessionMemo   | フェーズ区切りでの整理メモ更新                   |
-| finalMarkdown | 終了時の意思決定メモ生成                         |
+| 呼び出し      | 役割                                                                           |
+| ------------- | ------------------------------------------------------------------------------ |
+| facilitator   | フェーズ管理、質問、専門家選定、グループチャットの発言者指名、次アクション決定 |
+| expert        | 指定観点からの初回コメント、または指名されたグループチャット回答               |
+| sessionMemo   | フェーズ区切りでの整理メモ更新                                                 |
+| finalMarkdown | 終了時の意思決定メモ生成                                                       |
 
 ## バリデーション
 
@@ -163,37 +163,92 @@ M3 で受け入れるファシリテーターの `expert_requests` は、シス�
 
 M3 では、ユーザーが確定した専門家ロールごとに `POST /api/expert/comment` を1回呼び出す。各リクエストは `ExpertCommentRequest` に従い、`currentPhase` は `deliberation` とする。確定済み専門家ロールは1〜5件とし、同じ `role_name` と `viewpoint` の組み合わせを複数含めることを許容する。
 
-フロントエンドは全リクエストを並列で開始し、すべてが成功した場合のみ専門家コメント一覧を表示して、ファシリテーター整理へ進める。1件でも失敗した場合は、すべてのリクエストが完了してから成功分を破棄し、専門家コメントを表示・保存しない。画面には `専門家コメントの生成に失敗しました。もう一度お試しください。` を表示する。ユーザーが再試行した場合は、確定済みの全専門家ロールに対して同じリクエストを再送する。
+フロントエンドは全リクエストを並列で開始し、すべてが成功した場合のみ専門家コメント一覧と「意見交換をはじめる」操作を表示する。1件でも失敗した場合は、すべてのリクエストが完了してから成功分を破棄し、専門家コメントを表示・保存しない。画面には `専門家コメントの生成に失敗しました。もう一度お試しください。` を表示する。ユーザーが再試行した場合は、確定済みの全専門家ロールに対して同じリクエストを再送する。
 
 バックエンドは各コメント生成で共通のバリデーション規則に従い、構造化出力の検証失敗時に1回だけ再生成する。クライアントは専門家コメント単位の自動再試行を行わない。
 
-### `POST /api/facilitator/deliberation`
+### グループチャット
 
 状態: `決定`
 
-M3 のファシリテーター整理は、全専門家コメントの生成成功後に呼び出す。`FacilitatorDeliberationRequest` は strict schema とする。
+全初回専門家コメントを表示した後、ユーザーの「意見交換をはじめる」操作で `group_chat` に遷移する。M4 の実装では、`src/shared/schemas` の `PhaseSchema`、`server/app.ts` の route 登録、`src/client/` のフローをこの契約へ同期してから、従来の `POST /api/facilitator/deliberation` と `direction` フェーズを削除する。同期完了前の既存実装は旧フローのままとし、旧フローとグループチャットを混在させてはならない。
 
-| フィールド       | 必須 | 内容                                                                           |
-| ---------------- | ---: | ------------------------------------------------------------------------------ |
-| consultation     | 必須 | 初回に入力した相談内容                                                         |
-| currentPhase     | 必須 | 固定値 `deliberation`                                                          |
-| memo             | 必須 | 前提整理時点の最新 `SessionMemo`                                               |
-| confirmedExperts | 必須 | ユーザーが確定した `ExpertRequest` の配列。1〜5件                              |
-| expertComments   | 必須 | 全件生成に成功した `ExpertComment` の配列。`confirmedExperts` と同数で同じ順序 |
+#### 共通データ
 
-`confirmedExperts` と `expertComments` は配列の位置で対応付ける。同じロール名・観点の重複を許可するため、ロール名・観点だけで対応付けてはならない。
+`GroupChatMessage` は、画面に表示する発言を表す strict schema とする。
 
-MVP では、全専門家コメントをこのリクエストに含める。ファシリテーターは応答を `FacilitatorResponse` として返し、M3 では次の追加制約を満たす応答だけを受け入れる。
+| フィールド    | 必須 | 内容                                                               |
+| ------------- | ---: | ------------------------------------------------------------------ |
+| id            | 必須 | 発言を一意に識別するID                                             |
+| speakerType   | 必須 | `facilitator`、`expert`、`user` のいずれか                         |
+| speakerName   | 必須 | 表示用の発言者名                                                   |
+| participantId | 必須 | 発言者を一意に識別するID。専門家名・観点の重複を許容するために使う |
+| content       | 必須 | 表示する発言本文                                                   |
+| createdAt     | 必須 | 発言時刻                                                           |
 
-- `current_phase` は `direction` である。
-- `user_question` は `null` である。
-- `expert_requests` は空配列である。
-- `next_action` は `move_phase` である。
-- `memo_updates` には、専門家コメントの要点、対立点、未確認事項および次アクション候補を反映する。
+`speakerType` と `speakerName` は、ファシリテーターが次の発言者を指定する構造でも同じ名称を使う。`participantId` は内部の対応付けに使い、表示上の発言者名には用いない。
 
-応答が有効な場合、アプリはファシリテーター整理と `memo_updates` を表示・保持し、`deliberation` から `direction` へ遷移する。M3 では `POST /api/session-memo/update` を呼び出さない。
+`FacilitatorTurn` は、ファシリテーターの進行発言と次の発言者の指定を表す strict schema とする。
 
-このAPIの呼び出しまたは応答検証に失敗した場合、生成済みの専門家コメントは保持して表示する。画面にはエラーと再試行操作を表示し、ユーザーが再試行した場合は同一の `FacilitatorDeliberationRequest` だけを再送する。専門家コメントを自動再生成してはならない。
+| フィールド           |     必須 | 内容                                                                                                       |
+| -------------------- | -------: | ---------------------------------------------------------------------------------------------------------- |
+| message              |     必須 | 指名理由と質問を含む、表示用のファシリテーター発言                                                         |
+| requestedSpeaker     |     必須 | `speakerType` が `expert` または `user` であり、`speakerName`、`participantId` を持つ、次に回答する1人     |
+| requestReason        |     必須 | その参加者を指名した理由                                                                                   |
+| question             |     必須 | 指名相手に回答してほしい内容                                                                               |
+| userOptions          | 条件付き | 指名先が `user` の場合は2件以上。必ず「その他」と「そのまま意見交換を続けて」を含む。専門家の場合は `null` |
+| memoUpdate           |     必須 | 重要な整理がある場合の完全な `SessionMemo`、ない場合は `null`                                              |
+| contextSummaryUpdate |     必須 | 古い発言を圧縮した会話要約の更新、不要な場合は `null`                                                      |
+
+アプリ側は `requestedSpeaker` が常に1人だけであり、`speakerType` が `expert` または `user` であることを検証する。`facilitator` は次の回答者として指定してはならない。確定済み専門家と同名・同観点の専門家が複数いる場合、`participantId` で対象を照合する。
+
+#### `POST /api/facilitator/group-chat/start`
+
+`GroupChatStartRequest` は、初回専門家コメントからグループチャットを開始する strict schema とする。
+
+| フィールド            | 必須 | 内容                                                               |
+| --------------------- | ---: | ------------------------------------------------------------------ |
+| consultation          | 必須 | 初回に入力した相談内容。画面には再表示しない                       |
+| currentPhase          | 必須 | 固定値 `group_chat`                                                |
+| memo                  | 必須 | グループチャット開始時の `SessionMemo`                             |
+| confirmedExperts      | 必須 | 1〜5件の確定済み専門家。各要素に一意な `participantId` を持つ      |
+| initialExpertComments | 必須 | 全件生成に成功した初回専門家コメント。確定済み専門家と同数・同順序 |
+
+応答は `FacilitatorTurn` とする。ファシリテーターは、初回コメントの単純な再要約をせず、会話の論点を示して次の1人を指名する。
+
+#### `POST /api/expert/group-chat`
+
+`GroupChatExpertReplyRequest` は、指名された専門家の1回の回答を生成する strict schema とする。
+
+| フィールド          | 必須 | 内容                                                |
+| ------------------- | ---: | --------------------------------------------------- |
+| consultation        | 必須 | 初回に入力した相談内容                              |
+| currentPhase        | 必須 | 固定値 `group_chat`                                 |
+| memo                | 必須 | 最新の `SessionMemo`                                |
+| contextSummary      | 必須 | 過去発言の累積要約                                  |
+| recentMessages      | 必須 | 文脈として必要な直近の `GroupChatMessage` 配列      |
+| expert              | 必須 | `FacilitatorTurn.requestedSpeaker` と一致する専門家 |
+| facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問            |
+
+応答は、指定専門家の `GroupChatMessage` 1件とする。専門家の回答後、クライアントは次のファシリテーターターンを要求する。
+
+#### `POST /api/facilitator/group-chat/next`
+
+`GroupChatNextRequest` は、専門家またはユーザーの1回答後に次の進行を決める strict schema とする。
+
+| フィールド             | 必須 | 内容                                                   |
+| ---------------------- | ---: | ------------------------------------------------------ |
+| consultation           | 必須 | 初回に入力した相談内容                                 |
+| currentPhase           | 必須 | 固定値 `group_chat`                                    |
+| memo                   | 必須 | 最新の `SessionMemo`                                   |
+| contextSummary         | 必須 | 過去発言の累積要約                                     |
+| recentMessages         | 必須 | 直近の `GroupChatMessage` 配列                         |
+| confirmedExperts       | 必須 | 一意な `participantId` を含む確定済み専門家            |
+| expertRepliesSinceUser | 必須 | 前回のユーザー意思表示以降の連続した専門家回答数。0〜2 |
+
+応答は `FacilitatorTurn` とする。アプリ側は、`expertRepliesSinceUser` が2の場合に専門家を指名する応答を不正として扱う。値が1の場合、ファシリテーターは専門家またはユーザーを指名できる。ユーザーの自由入力、選択肢回答、「そのまま意見交換を続けて」のいずれもユーザー意思表示としてカウンタを0へ戻す。
+
+発言生成または構造化出力の検証が失敗した場合、アプリは会話履歴、セッションメモ、`expertRepliesSinceUser` を更新してはならない。対象の発言だけをユーザー操作で再生成できる状態にする。
 
 ### M2 route の追加検証
 
@@ -260,7 +315,7 @@ MVP では、全専門家コメントをこのリクエストに含める。フ�
 | pending_family_discussion | 家族・関係者相談待ち |
 | action_plan               | 実行計画             |
 
-`in_progress` はセッション途中の表示状態であり、終了状態ではない。`finalMarkdown` 呼び出し時に `SessionMemo.status` が `in_progress` の場合、アプリ側は終了メモ生成へ進まず、方向性整理または次アクション確認へ戻す。
+`in_progress` はセッション途中の表示状態であり、終了状態ではない。`finalMarkdown` 呼び出し時に `SessionMemo.status` が `in_progress` の場合、アプリ側は終了メモ生成へ進まない。`group_chat` の終了確認でユーザーが選んだ終了状態を `SessionMemo.status` へ設定してから呼び出す。
 
 ## Markdown 終了メモ
 
@@ -277,6 +332,8 @@ MVP では、全専門家コメントをこのリクエストに含める。フ�
 | フィールド | 必須 | 内容                                                                     |
 | ---------- | ---: | ------------------------------------------------------------------------ |
 | markdown   | 必須 | `docs/design/memo-and-output.md#Markdown 終了メモ` の構成に従う Markdown |
+
+終了メモ生成リクエストは、終了状態が設定された `SessionMemo` に加え、グループチャットの累積要約と直近発言を含む。終了メモの `セッションログ要約` には、重要な論点の展開、ユーザーの意思表示、終了状態に至った経緯を反映する。発言全文は出力しない。
 
 Markdown 内では、断定できないことを断定しない。未確認事項と次アクションを必ず含める。
 
