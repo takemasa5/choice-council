@@ -1141,14 +1141,45 @@ function App() {
     }
   }
 
+  /** 失敗した専門家回答を、同じ指名ターンで再生成する。 */
+  async function retryGroupChatExpertReply() {
+    if (
+      !groupChatTurn ||
+      groupChatTurn.requestedSpeaker.speakerType !== "expert" ||
+      !memo ||
+      isStartingGroupChat
+    )
+      return;
+    const experts = confirmedExperts.map((expert, index) => ({
+      ...expert,
+      participantId: `expert-${index + 1}`,
+    }));
+    setIsStartingGroupChat(true);
+    setExpertErrorMessage("");
+    try {
+      await requestGroupChatExpertReply(
+        groupChatTurn,
+        experts,
+        groupChatMessages,
+        0,
+        memo,
+        groupChatContextSummary || groupChatTurn.message,
+      );
+    } catch (error) {
+      setExpertErrorMessage(
+        error instanceof Error ? error.message : "通信に失敗しました。",
+      );
+    } finally {
+      setIsStartingGroupChat(false);
+    }
+  }
+
   /** ファシリテーターターンが返すメモ更新を現在の履歴へ反映する。 */
   function applyGroupChatTurnUpdate(turn: FacilitatorTurn) {
     const memoUpdate = turn.memoUpdate;
     if (!memoUpdate) return;
     setResponse((currentResponse) =>
-      currentResponse
-        ? { ...currentResponse, memo_updates: memoUpdate }
-        : null,
+      currentResponse ? { ...currentResponse, memo_updates: memoUpdate } : null,
     );
     setResponseHistory((current) => {
       const currentResponse = current.group_chat;
@@ -1510,6 +1541,7 @@ function App() {
                 disabled={
                   isLoading ||
                   isGeneratingExperts ||
+                  isStartingGroupChat ||
                   isGeneratingFinalMarkdown ||
                   isUpdatingInterruptionMemo
                 }
@@ -1816,7 +1848,20 @@ function App() {
                       </div>
                     )}
                   {expertErrorMessage && (
-                    <p className="error">{expertErrorMessage}</p>
+                    <>
+                      <p className="error">{expertErrorMessage}</p>
+                      {groupChatTurn.requestedSpeaker.speakerType ===
+                        "expert" && (
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => void retryGroupChatExpertReply()}
+                          disabled={isStartingGroupChat}
+                        >
+                          専門家回答を再生成する
+                        </button>
+                      )}
+                    </>
                   )}
                 </section>
               )}
