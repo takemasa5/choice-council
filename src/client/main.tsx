@@ -145,10 +145,11 @@ function App() {
     useState("");
   const canRequestPause =
     isLoading || isGeneratingExperts || isGeneratingDeliberation;
-  const isExpertInteractionDisabled = isExpertDraftEditingDisabled(
-    isGeneratingExperts,
-    isGeneratingDeliberation,
-  );
+  const isExpertInteractionDisabled =
+    isExpertDraftEditingDisabled(
+      isGeneratingExperts,
+      isGeneratingDeliberation,
+    ) || isUpdatingInterruptionMemo;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
@@ -266,7 +267,8 @@ function App() {
     !isLoading &&
     !isGeneratingExperts &&
     !isGeneratingDeliberation &&
-    !isGeneratingFinalMarkdown;
+    !isGeneratingFinalMarkdown &&
+    !isUpdatingInterruptionMemo;
   const sessionConsultation = getSessionConsultation(
     startedConsultation,
     consultation,
@@ -399,6 +401,8 @@ function App() {
    * 仕様対応: `docs/tasks/milestone-2.md#前提整理での確認回答`。
    */
   async function respondToQuestion() {
+    if (isUpdatingInterruptionMemo) return;
+
     setErrorMessage("");
 
     const question = response?.user_question;
@@ -514,7 +518,12 @@ function App() {
    * 仕様対応: `docs/tasks/milestone-2.md#API エラー表示`。
    */
   async function retryFailedFacilitatorRequest() {
-    if (!failedFacilitatorRequest || isLoading || isGeneratingDeliberation)
+    if (
+      !failedFacilitatorRequest ||
+      isLoading ||
+      isGeneratingDeliberation ||
+      isUpdatingInterruptionMemo
+    )
       return;
 
     setErrorMessage("");
@@ -724,6 +733,7 @@ function App() {
       isGeneratingExperts ||
       isGeneratingDeliberation ||
       isGeneratingFinalMarkdown ||
+      isUpdatingInterruptionMemo ||
       !response ||
       !canProceedToExpertSelection(response)
     ) {
@@ -991,6 +1001,8 @@ function App() {
   }
 
   async function generateFinalMarkdown() {
+    if (isUpdatingInterruptionMemo) return;
+
     setFinalMarkdownErrorMessage("");
 
     const requiredQuestionMessage = getPendingRequiredQuestionMessage();
@@ -1360,7 +1372,11 @@ function App() {
                     className="secondary-button"
                     type="button"
                     onClick={retryFailedFacilitatorRequest}
-                    disabled={isLoading || isGeneratingDeliberation}
+                    disabled={
+                      isLoading ||
+                      isGeneratingDeliberation ||
+                      isUpdatingInterruptionMemo
+                    }
                   >
                     {isLoading ? "リトライ中..." : "同じ内容でリトライ"}
                   </button>
@@ -1586,7 +1602,7 @@ function App() {
                             : undefined
                         }
                         onClick={() => setSelectedQuestionOption(option)}
-                        disabled={isLoading}
+                        disabled={isLoading || isUpdatingInterruptionMemo}
                       >
                         {option}
                       </button>
@@ -1601,7 +1617,7 @@ function App() {
                           setOtherQuestionAnswer(event.target.value)
                         }
                         rows={3}
-                        disabled={isLoading}
+                        disabled={isLoading || isUpdatingInterruptionMemo}
                       />
                     </label>
                   )}
@@ -1610,7 +1626,7 @@ function App() {
                       className="primary-button"
                       type="button"
                       onClick={respondToQuestion}
-                      disabled={isLoading}
+                      disabled={isLoading || isUpdatingInterruptionMemo}
                     >
                       {isLoading ? "回答を整理中..." : "回答を送る"}
                     </button>
