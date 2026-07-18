@@ -15,6 +15,7 @@ import type {
   Phase,
   SessionMemo,
   SessionMemoRequest,
+  GroupChatMessage,
 } from "../shared/schemas/session";
 import {
   FacilitatorTurnSchema,
@@ -86,6 +87,9 @@ type StoredSession = {
   currentPhase: Phase;
   expertComments?: ExpertComment[];
   initialExpertRequests?: ExpertRequest[];
+  confirmedExperts?: ExpertRequest[];
+  groupChatMessages?: GroupChatMessage[];
+  groupChatTurn?: FacilitatorTurn;
   finalMarkdown?: string;
   interruption?: {
     isReady: boolean;
@@ -136,6 +140,12 @@ function App() {
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
   const [isStartingGroupChat, setIsStartingGroupChat] = useState(false);
+  const [groupChatMessages, setGroupChatMessages] = useState<
+    GroupChatMessage[]
+  >([]);
+  const [groupChatTurn, setGroupChatTurn] = useState<FacilitatorTurn | null>(
+    null,
+  );
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
   const [finalMarkdown, setFinalMarkdown] = useState("");
   const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] =
@@ -180,6 +190,12 @@ function App() {
           "consultation_input",
       );
       setExpertComments(parsed.expertComments ?? []);
+      const restoredExperts =
+        parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
+      confirmedExpertRequestKeyRef.current = JSON.stringify(restoredExperts);
+      setConfirmedExperts(restoredExperts);
+      setGroupChatMessages(parsed.groupChatMessages ?? []);
+      setGroupChatTurn(parsed.groupChatTurn ?? null);
       const restoredPhase =
         parsed.currentPhase ??
         parsed.response?.current_phase ??
@@ -233,6 +249,9 @@ function App() {
     responseHistory,
     currentPhase,
     expertComments,
+    confirmedExperts,
+    groupChatMessages,
+    groupChatTurn,
     initialExpertRequests,
     finalMarkdown,
     selectedQuestionOption,
@@ -307,6 +326,8 @@ function App() {
     setResponseHistory(clearResponseHistory());
     setCurrentPhase("consultation_input");
     setExpertComments([]);
+    setGroupChatMessages([]);
+    setGroupChatTurn(null);
     setInitialExpertRequests([]);
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -708,6 +729,10 @@ function App() {
       setConfirmedExperts([]);
     }
     setExpertComments(getExpertCommentsForReturn(targetPhase, expertComments));
+    if (currentPhase === "group_chat" && targetPhase === "deliberation") {
+      setGroupChatMessages([]);
+      setGroupChatTurn(null);
+    }
     setExpertErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -956,9 +981,19 @@ function App() {
       }
 
       moveResponseToPhase("group_chat");
+      const facilitatorMessage = createFacilitatorGroupChatMessage(
+        startTurn.data,
+      );
+      setGroupChatMessages([facilitatorMessage]);
+      setGroupChatTurn(startTurn.data);
       if (startTurn.data.requestedSpeaker.speakerType === "user") return;
 
-      await requestGroupChatExpertReply(startTurn.data, groupChatExperts, memo);
+      await requestGroupChatExpertReply(
+        startTurn.data,
+        groupChatExperts,
+        memo,
+        facilitatorMessage,
+      );
     } catch (error) {
       setExpertErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
@@ -977,6 +1012,7 @@ function App() {
     turn: FacilitatorTurn,
     groupChatExperts: Array<ExpertRequest & { participantId: string }>,
     currentMemo: SessionMemo,
+    facilitatorMessage: GroupChatMessage,
   ) {
     const expert = groupChatExperts.find(
       (candidate) =>
@@ -986,14 +1022,6 @@ function App() {
       throw new Error("指名された専門家を確認できませんでした。");
     }
 
-    const facilitatorMessage = {
-      id: "facilitator-start",
-      speakerType: "facilitator" as const,
-      speakerName: "ファシリテーター",
-      participantId: "facilitator",
-      content: turn.message,
-      createdAt: new Date().toISOString(),
-    };
     const expertResponse = await fetch("/api/expert/group-chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1033,6 +1061,22 @@ function App() {
     if (!nextResponse.ok || !nextTurn.success) {
       throw new Error("次の意見交換の進行に失敗しました。再試行してください。");
     }
+    setGroupChatMessages((messages) => [...messages, expertMessage.data]);
+    setGroupChatTurn(nextTurn.data);
+  }
+
+  /** ファシリテーターターンを表示用の発言へ変換する。 */
+  function createFacilitatorGroupChatMessage(
+    turn: FacilitatorTurn,
+  ): GroupChatMessage {
+    return {
+      id: `facilitator-${Date.now()}`,
+      speakerType: "facilitator",
+      speakerName: "ファシリテーター",
+      participantId: "facilitator",
+      content: turn.message,
+      createdAt: new Date().toISOString(),
+    };
   }
 
   async function generateFinalMarkdown() {
@@ -1250,6 +1294,9 @@ function App() {
       responseHistory,
       currentPhase,
       expertComments,
+      confirmedExperts,
+      groupChatMessages,
+      groupChatTurn: groupChatTurn ?? undefined,
       initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
       interruption: hasInterruptionState
@@ -1629,6 +1676,31 @@ function App() {
                         : "意見交換をはじめる"}
                     </button>
                   )}
+                </section>
+              )}
+
+              {currentPhase === "group_chat" && groupChatTurn && (
+                <section className="expert-comment-box" aria-label="意見交換">
+                  <h3>意見交換</h3>
+                  <div className="expert-comment-list">
+                    {groupChatMessages.map((message) => (
+                      <article className="expert-comment-item" key={message.id}>
+                        <strong>{message.speakerName}</strong>
+                        <p>{message.content}</p>
+                      </article>
+                    ))}
+                  </div>
+                  <p>{groupChatTurn.question}</p>
+                  {groupChatTurn.requestedSpeaker.speakerType === "user" &&
+                    groupChatTurn.userOptions && (
+                      <div className="option-list">
+                        {groupChatTurn.userOptions.map((option) => (
+                          <button type="button" key={option} disabled>
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                 </section>
               )}
 

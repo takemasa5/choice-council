@@ -72,6 +72,23 @@ test("POST /api/facilitator/group-chat/next は無効な発言者種別を再試
   assert.equal(response.status, 502);
 });
 
+test("POST /api/facilitator/group-chat/next は専門家の連続3回目を拒否する", async () => {
+  const response = await requestJson(
+    createTestApp([turn, turn]),
+    "/api/facilitator/group-chat/next",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages: [],
+      confirmedExperts: [expert],
+      expertRepliesSinceUser: 2,
+    },
+  );
+  assert.equal(response.status, 502);
+});
+
 test("POST /api/expert/group-chat は専門家として発言を返し未知の入力を拒否する", async () => {
   const reply = {
     id: "reply-1",

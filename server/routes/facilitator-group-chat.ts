@@ -53,7 +53,11 @@ function createGroupChatHandler(
             schema: FacilitatorTurnSchema,
             schemaName: "facilitator_turn",
           }),
-        (turn) => FacilitatorTurnSchema.safeParse(turn).success,
+        (turn) =>
+          isAcceptedGroupChatTurn(
+            turn,
+            parsedRequest.data as { expertRepliesSinceUser?: number },
+          ),
       );
       if (!output) {
         sendInvalidModelResponse(response);
@@ -64,6 +68,18 @@ function createGroupChatHandler(
       sendLlmRequestFailed(response, error);
     }
   };
+}
+
+/** 専門家の連続発言上限を含め、進行ターンを受け入れ可能か判定する。 */
+function isAcceptedGroupChatTurn(
+  turn: FacilitatorTurn,
+  request: { expertRepliesSinceUser?: number },
+) {
+  if (!FacilitatorTurnSchema.safeParse(turn).success) return false;
+  return !(
+    request.expertRepliesSinceUser === 2 &&
+    turn.requestedSpeaker.speakerType === "expert"
+  );
 }
 
 /** グループチャット進行用プロンプト。仕様対応: `docs/tasks/milestone-4.md#会話制御`。 */
