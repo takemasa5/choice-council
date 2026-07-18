@@ -6,6 +6,7 @@ import type {
   ExpertComment,
   ExpertCommentRequest,
   ExpertRequest,
+  FacilitatorTurn,
   FacilitatorResponse,
   FacilitatorResponseRequest,
   FinalMarkdown,
@@ -14,8 +15,10 @@ import type {
   Phase,
   SessionMemo,
   SessionMemoRequest,
+  GroupChatMessage,
 } from "../shared/schemas/session";
 import {
+  FacilitatorTurnSchema,
   maximumExpertRequestCount,
   SessionMemoSchema,
 } from "../shared/schemas/session";
@@ -132,15 +135,24 @@ function App() {
   const confirmedExpertRequestKeyRef = useRef("");
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
+  const [isStartingGroupChat, setIsStartingGroupChat] = useState(false);
+  const [groupChatMessages, setGroupChatMessages] = useState<
+    GroupChatMessage[]
+  >([]);
+  const [groupChatTurn, setGroupChatTurn] = useState<FacilitatorTurn | null>(
+    null,
+  );
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
   const [finalMarkdown, setFinalMarkdown] = useState("");
   const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] =
     useState(false);
   const [finalMarkdownErrorMessage, setFinalMarkdownErrorMessage] =
     useState("");
-  const canRequestPause = isLoading || isGeneratingExperts;
+  const canRequestPause =
+    isLoading || isGeneratingExperts || isStartingGroupChat;
   const isExpertInteractionDisabled =
     isExpertDraftEditingDisabled(isGeneratingExperts) ||
+    isStartingGroupChat ||
     isUpdatingInterruptionMemo;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
@@ -905,6 +917,63 @@ function App() {
     }
   }
 
+  /** 初回専門家コメントからグループチャットを開始する。 */
+  async function startGroupChat() {
+    if (
+      isStartingGroupChat ||
+      !memo ||
+      confirmedExperts.length === 0 ||
+      confirmedExperts.length !== expertComments.length
+    ) {
+      setExpertErrorMessage(
+        "意見交換を始めるための専門家コメントを確認してください。",
+      );
+      return;
+    }
+
+    const experts = confirmedExperts.map((expert, index) => ({
+      ...expert,
+      participantId: `expert-${index + 1}`,
+    }));
+    setIsStartingGroupChat(true);
+    try {
+      const apiResponse = await fetch("/api/facilitator/group-chat/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          consultation: sessionConsultation,
+          currentPhase: "group_chat",
+          memo,
+          confirmedExperts: experts,
+          initialExpertComments: expertComments,
+        }),
+      });
+      const body: unknown = await apiResponse.json();
+      const parsedTurn = FacilitatorTurnSchema.safeParse(body);
+      if (!apiResponse.ok || !parsedTurn.success) {
+        throw new Error("意見交換の開始に失敗しました。再試行してください。");
+      }
+
+      const message: GroupChatMessage = {
+        id: `facilitator-${Date.now()}`,
+        speakerType: "facilitator",
+        speakerName: "ファシリテーター",
+        participantId: "facilitator",
+        content: parsedTurn.data.message,
+        createdAt: new Date().toISOString(),
+      };
+      moveResponseToPhase("group_chat");
+      setGroupChatMessages([message]);
+      setGroupChatTurn(parsedTurn.data);
+    } catch (error) {
+      setExpertErrorMessage(
+        error instanceof Error ? error.message : "通信に失敗しました。",
+      );
+    } finally {
+      setIsStartingGroupChat(false);
+    }
+  }
+
   async function generateFinalMarkdown() {
     if (isUpdatingInterruptionMemo) return;
 
@@ -1487,6 +1556,41 @@ function App() {
                       </article>
                     ))}
                   </div>
+                  {currentPhase === "deliberation" && (
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={startGroupChat}
+                      disabled={isStartingGroupChat}
+                    >
+                      {isStartingGroupChat
+                        ? "意見交換を開始中..."
+                        : "意見交換をはじめる"}
+                    </button>
+                  )}
+                </section>
+              )}
+
+              {currentPhase === "group_chat" && groupChatTurn && (
+                <section className="expert-comment-box" aria-label="意見交換">
+                  <h3>意見交換</h3>
+                  {groupChatMessages.map((message) => (
+                    <article className="expert-comment-item" key={message.id}>
+                      <strong>{message.speakerName}</strong>
+                      <p>{message.content}</p>
+                    </article>
+                  ))}
+                  <p>{groupChatTurn.question}</p>
+                  {groupChatTurn.requestedSpeaker.speakerType === "user" &&
+                    groupChatTurn.userOptions && (
+                      <div className="option-list">
+                        {groupChatTurn.userOptions.map((option) => (
+                          <button type="button" key={option} disabled>
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                 </section>
               )}
 

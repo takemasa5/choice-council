@@ -89,6 +89,25 @@ test("POST /api/facilitator/group-chat/next は専門家の連続3回目を拒�
   assert.equal(response.status, 502);
 });
 
+test("POST /api/facilitator/group-chat/start は未確定専門家の指名を拒否する", async () => {
+  const invalidTurn = {
+    ...turn,
+    requestedSpeaker: { ...turn.requestedSpeaker, participantId: "unknown" },
+  };
+  const response = await requestJson(
+    createTestApp([invalidTurn, invalidTurn]),
+    "/api/facilitator/group-chat/start",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      confirmedExperts: [expert],
+      initialExpertComments: [comment],
+    },
+  );
+  assert.equal(response.status, 502);
+});
+
 test("POST /api/expert/group-chat は専門家として発言を返し未知の入力を拒否する", async () => {
   const reply = {
     id: "reply-1",

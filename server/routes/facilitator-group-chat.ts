@@ -56,7 +56,10 @@ function createGroupChatHandler(
         (turn) =>
           isAcceptedGroupChatTurn(
             turn,
-            parsedRequest.data as { expertRepliesSinceUser?: number },
+            parsedRequest.data as {
+              expertRepliesSinceUser?: number;
+              confirmedExperts?: Array<{ participantId: string }>;
+            },
           ),
       );
       if (!output) {
@@ -73,9 +76,20 @@ function createGroupChatHandler(
 /** 専門家の連続発言上限を含め、進行ターンを受け入れ可能か判定する。 */
 function isAcceptedGroupChatTurn(
   turn: FacilitatorTurn,
-  request: { expertRepliesSinceUser?: number },
+  request: {
+    expertRepliesSinceUser?: number;
+    confirmedExperts?: Array<{ participantId: string }>;
+  },
 ) {
   if (!FacilitatorTurnSchema.safeParse(turn).success) return false;
+  if (
+    turn.requestedSpeaker.speakerType === "expert" &&
+    !request.confirmedExperts?.some(
+      (expert) => expert.participantId === turn.requestedSpeaker.participantId,
+    )
+  ) {
+    return false;
+  }
   return !(
     request.expertRepliesSinceUser === 2 &&
     turn.requestedSpeaker.speakerType === "expert"
