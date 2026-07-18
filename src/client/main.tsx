@@ -12,6 +12,7 @@ import type {
   FinalMarkdown,
   FinalMarkdownRequest,
   FinalSessionMemo,
+  FinalMemoStatus,
   Phase,
   SessionMemo,
   SessionMemoRequest,
@@ -48,7 +49,11 @@ import {
   phaseOrder,
   type ResponseHistory,
 } from "./phase-history";
-import { groupChatReducer, initialGroupChatState } from "./group-chat-state";
+import {
+  getRecentGroupChatMessages,
+  groupChatReducer,
+  initialGroupChatState,
+} from "./group-chat-state";
 import "./styles.css";
 
 const storageKey = "choice-council-session";
@@ -79,6 +84,14 @@ const interruptionOptions = [
   "いったんまとめたい",
   "その他",
 ];
+const finalMemoStatusOptions: Array<{ label: string; value: FinalMemoStatus }> =
+  [
+    { label: "暫定結論", value: "tentative_conclusion" },
+    { label: "判断保留", value: "pending_decision" },
+    { label: "追加調査待ち", value: "pending_research" },
+    { label: "家族・関係者相談待ち", value: "pending_family_discussion" },
+    { label: "実行計画", value: "action_plan" },
+  ];
 
 type StoredSession = {
   request: ConsultationRequest;
@@ -292,7 +305,8 @@ function App() {
     );
   }, [response, responseHistory, currentPhase]);
   const canGenerateFinalMarkdown =
-    Boolean(memo) &&
+    memo !== null &&
+    isFinalSessionMemo(memo) &&
     (currentPhase === "group_chat" || currentPhase === "final_memo") &&
     !getPendingRequiredQuestionMessage() &&
     !isLoading &&
@@ -1054,7 +1068,7 @@ function App() {
         currentPhase: "group_chat",
         memo: currentMemo,
         contextSummary,
-        recentMessages: messages,
+        recentMessages: getRecentGroupChatMessages(messages),
         expert,
         facilitatorQuestion: turn.question,
       }),
@@ -1089,7 +1103,7 @@ function App() {
         currentPhase: "group_chat",
         memo: currentMemo,
         contextSummary,
-        recentMessages: messages,
+        recentMessages: getRecentGroupChatMessages(messages),
         confirmedExperts: experts,
         expertRepliesSinceUser,
       }),
@@ -1206,6 +1220,11 @@ function App() {
   function applyGroupChatTurnUpdate(turn: FacilitatorTurn) {
     const memoUpdate = turn.memoUpdate;
     if (!memoUpdate) return;
+    applyGroupChatMemoUpdate(memoUpdate);
+  }
+
+  /** グループチャットで確定したメモを現在の応答と履歴へ反映する。 */
+  function applyGroupChatMemoUpdate(memoUpdate: SessionMemo) {
     setResponse((currentResponse) =>
       currentResponse ? { ...currentResponse, memo_updates: memoUpdate } : null,
     );
@@ -1218,6 +1237,28 @@ function App() {
           }
         : current;
     });
+  }
+
+  /** 終了状態を選択し、終了メモ生成前にセッションメモへ反映する。 */
+  function finishGroupChat() {
+    if (!memo || !groupChatTurn || isStartingGroupChat) return;
+    const selectedLabel = window.prompt(
+      `終了状態を選択してください。\n${finalMemoStatusOptions
+        .map((option) => option.label)
+        .join(" / ")}`,
+      finalMemoStatusOptions[0].label,
+    );
+    const selected = finalMemoStatusOptions.find(
+      (option) => option.label === selectedLabel,
+    );
+    if (!selected) return;
+    if (
+      !window.confirm(`終了状態を「${selected.label}」にします。よいですか？`)
+    ) {
+      return;
+    }
+    applyGroupChatMemoUpdate({ ...memo, status: selected.value });
+    moveResponseToPhase("final_memo");
   }
 
   async function generateFinalMarkdown() {
@@ -1831,6 +1872,14 @@ function App() {
               {currentPhase === "group_chat" && groupChatTurn && (
                 <section className="expert-comment-box" aria-label="意見交換">
                   <h3>意見交換</h3>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={finishGroupChat}
+                    disabled={isStartingGroupChat}
+                  >
+                    検討を終える
+                  </button>
                   {groupChatMessages.map((message) => (
                     <article className="expert-comment-item" key={message.id}>
                       <strong>{message.speakerName}</strong>

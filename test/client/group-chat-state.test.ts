@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  getRecentGroupChatMessages,
   groupChatReducer,
   initialGroupChatState,
 } from "../../src/client/group-chat-state";
@@ -60,4 +61,23 @@ test("グループチャットのリセットはすべての会話状態を初�
   );
 
   assert.deepEqual(state, initialGroupChatState);
+});
+
+test("LLMには直近6件だけのチャット発言を渡す", () => {
+  const messages = Array.from({ length: 8 }, (_, index) => ({
+    ...message,
+    id: `message-${index}`,
+  }));
+
+  assert.deepEqual(
+    getRecentGroupChatMessages(messages).map((item) => item.id),
+    [
+      "message-2",
+      "message-3",
+      "message-4",
+      "message-5",
+      "message-6",
+      "message-7",
+    ],
+  );
 });
