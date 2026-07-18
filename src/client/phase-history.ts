@@ -22,7 +22,7 @@ export function getReturnablePhases(
 
   return phaseOrder.slice(0, currentIndex).filter((phase) => {
     return (
-      phase !== "deliberation" &&
+      (phase !== "deliberation" || currentPhase === "group_chat") &&
       (phase === "consultation_input" || Boolean(responseHistory[phase]))
     );
   });
@@ -64,12 +64,12 @@ export function createResponseHistoryForNewConsultation(
   };
 }
 
-/** 方向性整理へ戻る場合だけ、根拠となる専門家コメントを残す。 */
+/** 検討へ戻る場合だけ、根拠となる専門家コメントを残す。 */
 export function getExpertCommentsForReturn(
   targetPhase: Phase,
   expertComments: ExpertComment[],
 ) {
-  return targetPhase === "direction" ? expertComments : [];
+  return targetPhase === "deliberation" ? expertComments : [];
 }
 
 /** 指定フェーズ用の応答を作り、専門家ロールの編集内容も保持する。 */
@@ -90,6 +90,6 @@ export const phaseOrder: Phase[] = [
   "premise",
   "expert_selection",
   "deliberation",
-  "direction",
+  "group_chat",
   "final_memo",
 ];

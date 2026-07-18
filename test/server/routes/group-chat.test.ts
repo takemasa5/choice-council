@@ -1,0 +1,109 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createTestApp, memo, requestJson } from "../../../test-support/server";
+
+const expert = {
+  participantId: "financial-adviser",
+  role_name: "家計アドバイザー",
+  viewpoint: "費用",
+  request: "費用面を検討してください",
+};
+const comment = {
+  role_name: expert.role_name,
+  viewpoint: expert.viewpoint,
+  summary: "費用を確認します。",
+  key_point: "予算",
+  concern: "支出",
+  question_to_user: "予算はありますか。",
+  confidence: "medium",
+  needs_research: false,
+} as const;
+const turn = {
+  message: "家計アドバイザーに伺います。",
+  requestedSpeaker: {
+    speakerType: "expert",
+    speakerName: expert.role_name,
+    participantId: expert.participantId,
+  },
+  requestReason: "費用面を深掘りするためです。",
+  question: "予算の考え方を教えてください。",
+  userOptions: null,
+  memoUpdate: null,
+  contextSummaryUpdate: "費用を検討中です。",
+} as const;
+
+test("POST /api/facilitator/group-chat/start は厳密なターンを返す", async () => {
+  const response = await requestJson(
+    createTestApp(turn),
+    "/api/facilitator/group-chat/start",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      confirmedExperts: [expert],
+      initialExpertComments: [comment],
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(
+    (response.body as typeof turn).requestedSpeaker.speakerType,
+    "expert",
+  );
+});
+
+test("POST /api/facilitator/group-chat/next は無効な発言者種別を再試行後に拒否する", async () => {
+  const invalidTurn = {
+    ...turn,
+    requestedSpeaker: { ...turn.requestedSpeaker, speakerType: "facilitator" },
+  };
+  const response = await requestJson(
+    createTestApp([invalidTurn, invalidTurn]),
+    "/api/facilitator/group-chat/next",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages: [],
+      confirmedExperts: [expert],
+      expertRepliesSinceUser: 1,
+    },
+  );
+  assert.equal(response.status, 502);
+});
+
+test("POST /api/expert/group-chat は専門家として発言を返し未知の入力を拒否する", async () => {
+  const reply = {
+    id: "reply-1",
+    speakerType: "user",
+    speakerName: "誤り",
+    participantId: "wrong",
+    content: "予算を確認します。",
+    createdAt: "2026-07-18T00:00:00.000Z",
+  };
+  const request = {
+    consultation: "相談内容",
+    currentPhase: "group_chat",
+    memo,
+    contextSummary: "費用を検討中です。",
+    recentMessages: [],
+    expert,
+    facilitatorQuestion: "予算の考え方を教えてください。",
+  };
+  const response = await requestJson(
+    createTestApp(reply),
+    "/api/expert/group-chat",
+    request,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(
+    (response.body as { speakerType: string }).speakerType,
+    "expert",
+  );
+  const invalidResponse = await requestJson(
+    createTestApp(reply),
+    "/api/expert/group-chat",
+    { ...request, unexpected: true },
+  );
+  assert.equal(invalidResponse.status, 400);
+});
