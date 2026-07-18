@@ -3,14 +3,6 @@ import type {
   GroupChatMessage,
 } from "../shared/schemas/session";
 
-/** LLM に渡す直近発言数。累積要約と併用して会話履歴の無制限な増加を防ぐ。 */
-const recentMessageLimit = 6;
-
-/** 日本語名: LLM 呼び出し用に直近発言だけを取り出す。仕様対応: `docs/tasks/milestone-4.md#セッションメモと会話文脈`。 */
-export function getRecentGroupChatMessages(messages: GroupChatMessage[]) {
-  return messages.slice(-recentMessageLimit);
-}
-
 /** 日本語名: グループチャットの画面状態。仕様対応: `docs/tasks/milestone-4.md#前提と遷移`。 */
 export type GroupChatState = {
   messages: GroupChatMessage[];
