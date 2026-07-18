@@ -35,6 +35,7 @@ import {
 import {
   clearResponseHistory,
   createResponseForPhase,
+  createResponseHistoryForNewConsultation,
   getExpertCommentsForReturn,
   getReturnablePhases,
   keepResponsesThroughPhase,
@@ -290,6 +291,12 @@ function App() {
     setPauseRequested(false);
     pauseRequestedRef.current = false;
     setMemoNotice("");
+    setStartedConsultation("");
+    setResponse(null);
+    setResponseHistory(clearResponseHistory());
+    setCurrentPhase("consultation_input");
+    setExpertComments([]);
+    setInitialExpertRequests([]);
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
 
@@ -352,13 +359,13 @@ function App() {
           ? facilitatorResponse.expert_requests
           : [],
       );
-      setResponseHistory((current) => ({
-        ...keepResponsesThroughPhase(current, currentPhase),
-        premise: facilitatorResponse,
-        ...(nextPhase === "expert_selection"
-          ? { expert_selection: nextResponse }
-          : {}),
-      }));
+      setResponseHistory(
+        createResponseHistoryForNewConsultation(
+          facilitatorResponse,
+          nextResponse,
+          nextPhase,
+        ),
+      );
       showInterruptionOptionsIfPaused();
     } catch (error) {
       setErrorMessage(

@@ -47,6 +47,23 @@ export function clearResponseHistory(): ResponseHistory {
   return {};
 }
 
+/**
+ * 新しい相談の開始応答だけを履歴として保持する。
+ *
+ * 仕様対応: `docs/design/safety-and-privacy.md#保存とプライバシー`、
+ * `docs/design/memo-and-output.md#Markdown 終了メモ`。
+ */
+export function createResponseHistoryForNewConsultation(
+  premiseResponse: FacilitatorResponse,
+  nextResponse: FacilitatorResponse,
+  phase: Phase,
+): ResponseHistory {
+  return {
+    premise: premiseResponse,
+    ...(phase === "expert_selection" ? { expert_selection: nextResponse } : {}),
+  };
+}
+
 /** 方向性整理へ戻る場合だけ、根拠となる専門家コメントを残す。 */
 export function getExpertCommentsForReturn(
   targetPhase: Phase,
