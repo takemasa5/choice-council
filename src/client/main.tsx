@@ -907,6 +907,7 @@ function App() {
       }
 
       setExpertComments(result.comments);
+      confirmedExpertRequestKeyRef.current = JSON.stringify(confirmedExperts);
       moveResponseToPhase("deliberation");
     } catch (error) {
       setExpertErrorMessage(
