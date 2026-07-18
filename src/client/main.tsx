@@ -19,6 +19,7 @@ import type {
 } from "../shared/schemas/session";
 import {
   FacilitatorTurnSchema,
+  GroupChatMessageSchema,
   maximumExpertRequestCount,
   SessionMemoSchema,
 } from "../shared/schemas/session";
@@ -142,6 +143,7 @@ function App() {
   const [groupChatTurn, setGroupChatTurn] = useState<FacilitatorTurn | null>(
     null,
   );
+  const [groupChatOtherAnswer, setGroupChatOtherAnswer] = useState("");
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
   const [finalMarkdown, setFinalMarkdown] = useState("");
   const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] =
@@ -966,6 +968,137 @@ function App() {
       moveResponseToPhase("group_chat");
       setGroupChatMessages([message]);
       setGroupChatTurn(parsedTurn.data);
+      if (parsedTurn.data.requestedSpeaker.speakerType === "expert") {
+        await requestGroupChatExpertReply(
+          parsedTurn.data,
+          experts,
+          [message],
+          0,
+        );
+      }
+    } catch (error) {
+      setExpertErrorMessage(
+        error instanceof Error ? error.message : "通信に失敗しました。",
+      );
+    } finally {
+      setIsStartingGroupChat(false);
+    }
+  }
+
+  /** 指名専門家の発言を生成し、次の進行ターンを要求する。 */
+  async function requestGroupChatExpertReply(
+    turn: FacilitatorTurn,
+    experts: Array<ExpertRequest & { participantId: string }>,
+    messages: GroupChatMessage[],
+    expertRepliesSinceUser: number,
+  ) {
+    const expert = experts.find(
+      (candidate) =>
+        candidate.participantId === turn.requestedSpeaker.participantId,
+    );
+    if (!expert || !memo)
+      throw new Error("指名された専門家を確認できませんでした。");
+
+    const apiResponse = await fetch("/api/expert/group-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        consultation: sessionConsultation,
+        currentPhase: "group_chat",
+        memo,
+        contextSummary: turn.contextSummaryUpdate ?? turn.message,
+        recentMessages: messages,
+        expert,
+        facilitatorQuestion: turn.question,
+      }),
+    });
+    const body: unknown = await apiResponse.json();
+    const parsedMessage = GroupChatMessageSchema.safeParse(body);
+    if (!apiResponse.ok || !parsedMessage.success) {
+      throw new Error("専門家の回答生成に失敗しました。再試行してください。");
+    }
+    await requestNextGroupChatTurn(
+      [...messages, parsedMessage.data],
+      experts,
+      expertRepliesSinceUser + 1,
+      turn.contextSummaryUpdate ?? turn.message,
+    );
+  }
+
+  /** 次の発言者を要求し、専門家指名なら連続回答を進める。 */
+  async function requestNextGroupChatTurn(
+    messages: GroupChatMessage[],
+    experts: Array<ExpertRequest & { participantId: string }>,
+    expertRepliesSinceUser: number,
+    contextSummary: string,
+  ) {
+    if (!memo) throw new Error("セッションメモを確認できませんでした。");
+    const apiResponse = await fetch("/api/facilitator/group-chat/next", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        consultation: sessionConsultation,
+        currentPhase: "group_chat",
+        memo,
+        contextSummary,
+        recentMessages: messages,
+        confirmedExperts: experts,
+        expertRepliesSinceUser,
+      }),
+    });
+    const body: unknown = await apiResponse.json();
+    const parsedTurn = FacilitatorTurnSchema.safeParse(body);
+    if (!apiResponse.ok || !parsedTurn.success) {
+      throw new Error("次の意見交換の進行に失敗しました。再試行してください。");
+    }
+    const facilitatorMessage: GroupChatMessage = {
+      id: `facilitator-${Date.now()}`,
+      speakerType: "facilitator",
+      speakerName: "ファシリテーター",
+      participantId: "facilitator",
+      content: parsedTurn.data.message,
+      createdAt: new Date().toISOString(),
+    };
+    const nextMessages = [...messages, facilitatorMessage];
+    setGroupChatMessages(nextMessages);
+    setGroupChatTurn(parsedTurn.data);
+    if (
+      parsedTurn.data.requestedSpeaker.speakerType === "expert" &&
+      expertRepliesSinceUser < 2
+    ) {
+      await requestGroupChatExpertReply(
+        parsedTurn.data,
+        experts,
+        nextMessages,
+        expertRepliesSinceUser,
+      );
+    }
+  }
+
+  /** ユーザー発言を記録して次の進行ターンを要求する。 */
+  async function sendGroupChatUserAnswer(answer: string) {
+    if (!groupChatTurn || !memo || !answer.trim()) return;
+    const experts = confirmedExperts.map((expert, index) => ({
+      ...expert,
+      participantId: `expert-${index + 1}`,
+    }));
+    setIsStartingGroupChat(true);
+    try {
+      const message: GroupChatMessage = {
+        id: `user-${Date.now()}`,
+        speakerType: "user",
+        speakerName: "あなた",
+        participantId: "user",
+        content: answer.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      await requestNextGroupChatTurn(
+        [...groupChatMessages, message],
+        experts,
+        0,
+        groupChatTurn.contextSummaryUpdate ?? groupChatTurn.message,
+      );
+      setGroupChatOtherAnswer("");
     } catch (error) {
       setExpertErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
@@ -1586,12 +1719,48 @@ function App() {
                     groupChatTurn.userOptions && (
                       <div className="option-list">
                         {groupChatTurn.userOptions.map((option) => (
-                          <button type="button" key={option} disabled>
+                          <button
+                            type="button"
+                            key={option}
+                            onClick={() =>
+                              option === "その他"
+                                ? setGroupChatOtherAnswer(" ")
+                                : void sendGroupChatUserAnswer(option)
+                            }
+                            disabled={isStartingGroupChat}
+                          >
                             {option}
                           </button>
                         ))}
+                        {groupChatOtherAnswer && (
+                          <label className="field inline-field">
+                            <span>自由入力</span>
+                            <textarea
+                              value={groupChatOtherAnswer.trim()}
+                              onChange={(event) =>
+                                setGroupChatOtherAnswer(event.target.value)
+                              }
+                              rows={3}
+                            />
+                            <button
+                              className="primary-button"
+                              type="button"
+                              onClick={() =>
+                                void sendGroupChatUserAnswer(
+                                  groupChatOtherAnswer,
+                                )
+                              }
+                              disabled={isStartingGroupChat}
+                            >
+                              回答を送る
+                            </button>
+                          </label>
+                        )}
                       </div>
                     )}
+                  {expertErrorMessage && (
+                    <p className="error">{expertErrorMessage}</p>
+                  )}
                 </section>
               )}
 
