@@ -35,6 +35,7 @@ import {
   getSessionConsultation,
   isAcceptedM3FacilitatorResponse,
   isExpertDraftEditingDisabled,
+  replaceMemoInFailedFacilitatorRequest,
   type FailedFacilitatorRequest,
 } from "./facilitator-flow";
 import {
@@ -1138,6 +1139,9 @@ function App() {
 
         return { ...current, [currentPhase]: updatedResponse };
       });
+      setFailedFacilitatorRequest((current) =>
+        replaceMemoInFailedFacilitatorRequest(current, updatedMemo),
+      );
       setIsInterruptionReady(false);
       setSelectedInterruptionOption("");
       setInterruptionOtherAnswer("");

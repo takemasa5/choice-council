@@ -186,6 +186,32 @@ export function createFailedFacilitatorRequest(
 }
 
 /**
+ * セッションメモ更新後も、失敗した回答・整理リクエストを最新メモで再試行可能にする。
+ *
+ * 仕様対応: `docs/api/schemas.md#セッションメモ`。
+ */
+export function replaceMemoInFailedFacilitatorRequest(
+  failedRequest: FailedFacilitatorRequest | null,
+  memo: SessionMemo,
+): FailedFacilitatorRequest | null {
+  if (!failedRequest || failedRequest.endpoint === "start") {
+    return failedRequest;
+  }
+
+  if (failedRequest.endpoint === "respond") {
+    return {
+      endpoint: "respond",
+      request: { ...failedRequest.request, memo },
+    };
+  }
+
+  return {
+    endpoint: "deliberation",
+    request: { ...failedRequest.request, memo },
+  };
+}
+
+/**
  * 専門家候補の変更後に古い整理リクエストを再送しないよう破棄する。
  *
  * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/deliberation`。

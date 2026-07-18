@@ -16,6 +16,7 @@ import {
   getSessionConsultation,
   isAcceptedM3FacilitatorResponse,
   isExpertDraftEditingDisabled,
+  replaceMemoInFailedFacilitatorRequest,
   replaceExpertDraft,
 } from "../../src/client/facilitator-flow";
 import { maximumExpertRequestCount } from "../../src/shared/schemas/session";
@@ -206,6 +207,40 @@ test("失敗リクエストは同一内容でリトライできる形で保持�
     endpoint: "respond",
     request,
   });
+});
+
+test("メモ更新後の失敗した整理リクエストは最新メモで再試行する", () => {
+  const updatedMemo: SessionMemo = { ...memo, next_actions: ["再確認する"] };
+  const failedRequest = createFailedFacilitatorRequest({
+    endpoint: "deliberation",
+    request: {
+      consultation: "中学受験について相談したい",
+      currentPhase: "deliberation",
+      memo,
+      confirmedExperts: [expert],
+      expertComments: [expertComment],
+    },
+  });
+
+  assert.deepEqual(
+    replaceMemoInFailedFacilitatorRequest(failedRequest, updatedMemo),
+    {
+      ...failedRequest,
+      request: { ...failedRequest.request, memo: updatedMemo },
+    },
+  );
+});
+
+test("相談開始の失敗リクエストはメモ更新後も変更しない", () => {
+  const failedRequest = createFailedFacilitatorRequest({
+    endpoint: "start",
+    request: { consultation: "中学受験について相談したい" },
+  });
+
+  assert.equal(
+    replaceMemoInFailedFacilitatorRequest(failedRequest, memo),
+    failedRequest,
+  );
 });
 
 test("ファシリテーター整理の失敗リクエストは同一内容で保持する", () => {
