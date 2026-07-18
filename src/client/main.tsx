@@ -1652,6 +1652,7 @@ function App() {
                             : undefined
                         }
                         onClick={() => chooseInterruptionOption(option)}
+                        disabled={isUpdatingInterruptionMemo}
                       >
                         {option}
                       </button>
@@ -1666,6 +1667,7 @@ function App() {
                           setInterruptionOtherAnswer(event.target.value)
                         }
                         rows={3}
+                        disabled={isUpdatingInterruptionMemo}
                       />
                     </label>
                   )}
