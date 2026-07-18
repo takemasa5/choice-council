@@ -276,6 +276,8 @@ function App() {
   }, [currentPhase, responseHistory]);
 
   async function startSession() {
+    if (isUpdatingInterruptionMemo) return;
+
     setErrorMessage("");
 
     const request = buildStartRequest();
@@ -637,7 +639,8 @@ function App() {
       isLoading ||
       isGeneratingExperts ||
       isGeneratingDeliberation ||
-      isGeneratingFinalMarkdown
+      isGeneratingFinalMarkdown ||
+      isUpdatingInterruptionMemo
     )
       return;
 
@@ -675,7 +678,8 @@ function App() {
       isLoading ||
       isGeneratingExperts ||
       isGeneratingDeliberation ||
-      isGeneratingFinalMarkdown
+      isGeneratingFinalMarkdown ||
+      isUpdatingInterruptionMemo
     )
       return;
 
@@ -1327,7 +1331,8 @@ function App() {
                   isLoading ||
                   isGeneratingExperts ||
                   isGeneratingDeliberation ||
-                  isGeneratingFinalMarkdown
+                  isGeneratingFinalMarkdown ||
+                  isUpdatingInterruptionMemo
                 }
               >
                 {isLoading
@@ -1382,7 +1387,8 @@ function App() {
                       isLoading ||
                       isGeneratingExperts ||
                       isGeneratingDeliberation ||
-                      isGeneratingFinalMarkdown
+                      isGeneratingFinalMarkdown ||
+                      isUpdatingInterruptionMemo
                     }
                   >
                     専門家選定へ進む
@@ -1704,7 +1710,8 @@ function App() {
                   isLoading ||
                   isGeneratingExperts ||
                   isGeneratingFinalMarkdown ||
-                  isGeneratingDeliberation
+                  isGeneratingDeliberation ||
+                  isUpdatingInterruptionMemo
                 }
               >
                 削除
