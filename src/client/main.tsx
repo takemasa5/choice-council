@@ -12,6 +12,7 @@ import type {
   FinalMarkdown,
   FinalMarkdownRequest,
   FinalSessionMemo,
+  FinalMemoStatus,
   Phase,
   SessionMemo,
   SessionMemoRequest,
@@ -78,6 +79,14 @@ const interruptionOptions = [
   "いったんまとめたい",
   "その他",
 ];
+const finalMemoStatusOptions: Array<{ label: string; value: FinalMemoStatus }> =
+  [
+    { label: "暫定結論", value: "tentative_conclusion" },
+    { label: "判断保留", value: "pending_decision" },
+    { label: "追加調査待ち", value: "pending_research" },
+    { label: "家族・関係者相談待ち", value: "pending_family_discussion" },
+    { label: "実行計画", value: "action_plan" },
+  ];
 
 type StoredSession = {
   request: ConsultationRequest;
@@ -91,6 +100,7 @@ type StoredSession = {
   groupChatMessages?: GroupChatMessage[];
   groupChatTurn?: FacilitatorTurn;
   groupChatContextSummary?: string;
+  expertRepliesSinceUser?: number;
   finalMarkdown?: string;
   interruption?: {
     isReady: boolean;
@@ -137,7 +147,7 @@ function App() {
     ExpertRequest[]
   >([]);
   const [confirmedExperts, setConfirmedExperts] = useState<ExpertRequest[]>([]);
-  const confirmedExpertRequestKeyRef = useRef("");
+  const previousExpertRequestKeyRef = useRef<string | null>(null);
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
   const [isStartingGroupChat, setIsStartingGroupChat] = useState(false);
@@ -196,11 +206,11 @@ function App() {
       setExpertComments(parsed.expertComments ?? []);
       const restoredExperts =
         parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
-      confirmedExpertRequestKeyRef.current = JSON.stringify(restoredExperts);
       setConfirmedExperts(restoredExperts);
       setGroupChatMessages(parsed.groupChatMessages ?? []);
       setGroupChatTurn(parsed.groupChatTurn ?? null);
       setGroupChatContextSummary(parsed.groupChatContextSummary ?? "");
+      setExpertRepliesSinceUser(parsed.expertRepliesSinceUser ?? 0);
       const restoredPhase =
         parsed.currentPhase ??
         parsed.response?.current_phase ??
@@ -269,13 +279,15 @@ function App() {
 
   useEffect(() => {
     setExpertDrafts((response?.expert_requests ?? []).map(createExpertDraft));
-    if (confirmedExpertRequestKeyRef.current === expertRequestKey) {
-      confirmedExpertRequestKeyRef.current = "";
-    } else {
+    if (
+      previousExpertRequestKeyRef.current !== null &&
+      previousExpertRequestKeyRef.current !== expertRequestKey
+    ) {
       setConfirmedExperts([]);
     }
+    previousExpertRequestKeyRef.current = expertRequestKey;
     setExpertErrorMessage("");
-  }, [expertRequestKey]);
+  }, [expertRequestKey, currentPhase]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return (
@@ -284,7 +296,8 @@ function App() {
     );
   }, [response, responseHistory, currentPhase]);
   const canGenerateFinalMarkdown =
-    Boolean(memo) &&
+    memo !== null &&
+    isFinalSessionMemo(memo) &&
     (currentPhase === "group_chat" || currentPhase === "final_memo") &&
     !getPendingRequiredQuestionMessage() &&
     !isLoading &&
@@ -737,7 +750,10 @@ function App() {
     if (targetPhase !== "expert_selection") {
       setInitialExpertRequests([]);
     }
-    if (!(currentPhase === "group_chat" && targetPhase === "deliberation")) {
+    if (
+      !(currentPhase === "group_chat" && targetPhase === "deliberation") &&
+      targetPhase !== "group_chat"
+    ) {
       setConfirmedExperts([]);
     }
     setExpertComments(getExpertCommentsForReturn(targetPhase, expertComments));
@@ -941,7 +957,6 @@ function App() {
       }
 
       setExpertComments(result.comments);
-      confirmedExpertRequestKeyRef.current = JSON.stringify(confirmedExperts);
       moveResponseToPhase("deliberation");
     } catch (error) {
       setExpertErrorMessage(
@@ -1213,6 +1228,35 @@ function App() {
     });
   }
 
+  /** ユーザーが選んだ終了状態をメモへ反映して、終了メモ生成を可能にする。 */
+  function finishGroupChat() {
+    if (!memo || !groupChatTurn || isStartingGroupChat) return;
+    const selectedLabel = window.prompt(
+      `終了状態を選択してください。\n${finalMemoStatusOptions
+        .map((option) => option.label)
+        .join(" / ")}`,
+      finalMemoStatusOptions[0].label,
+    );
+    if (!selectedLabel) return;
+    const selected = finalMemoStatusOptions.find(
+      (option) => option.label === selectedLabel,
+    );
+    if (!selected) {
+      setExpertErrorMessage("表示された終了状態から選択してください。");
+      return;
+    }
+    if (
+      !window.confirm(`終了状態を「${selected.label}」にします。よいですか？`)
+    ) {
+      return;
+    }
+    applyGroupChatTurnUpdate({
+      ...groupChatTurn,
+      memoUpdate: { ...memo, status: selected.value },
+    });
+    moveResponseToPhase("final_memo");
+  }
+
   async function generateFinalMarkdown() {
     if (isUpdatingInterruptionMemo) return;
 
@@ -1432,6 +1476,7 @@ function App() {
       groupChatMessages,
       groupChatTurn: groupChatTurn ?? undefined,
       groupChatContextSummary: groupChatContextSummary || undefined,
+      expertRepliesSinceUser,
       initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
       interruption: hasInterruptionState
@@ -1464,7 +1509,7 @@ function App() {
     const nextPhase =
       currentPhase === "premise" ? "expert_selection" : currentPhase;
 
-    confirmedExpertRequestKeyRef.current = JSON.stringify(experts);
+    previousExpertRequestKeyRef.current = JSON.stringify(experts);
     setFailedFacilitatorRequest(null);
     setCurrentPhase(nextPhase);
     setResponse((currentResponse) => {
@@ -1824,6 +1869,14 @@ function App() {
               {currentPhase === "group_chat" && groupChatTurn && (
                 <section className="expert-comment-box" aria-label="意見交換">
                   <h3>意見交換</h3>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={finishGroupChat}
+                    disabled={isStartingGroupChat}
+                  >
+                    検討を終える
+                  </button>
                   {groupChatMessages.map((message) => (
                     <article className="expert-comment-item" key={message.id}>
                       <strong>{message.speakerName}</strong>
