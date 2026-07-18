@@ -14,12 +14,17 @@ import type {
   FinalSessionMemo,
   Phase,
   SessionMemo,
+  SessionMemoRequest,
 } from "../shared/schemas/session";
-import { maximumExpertRequestCount } from "../shared/schemas/session";
+import {
+  maximumExpertRequestCount,
+  SessionMemoSchema,
+} from "../shared/schemas/session";
 import {
   buildFacilitatorDeliberationRequest,
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
+  buildInterruptionMemoUpdateRequest,
   canProceedToExpertSelection,
   collectExpertCommentGenerationResults,
   confirmExpertDrafts as getExpertDraftConfirmation,
@@ -114,6 +119,10 @@ function App() {
   const [selectedInterruptionOption, setSelectedInterruptionOption] =
     useState("");
   const [interruptionOtherAnswer, setInterruptionOtherAnswer] = useState("");
+  const [isUpdatingInterruptionMemo, setIsUpdatingInterruptionMemo] =
+    useState(false);
+  const [interruptionMemoErrorMessage, setInterruptionMemoErrorMessage] =
+    useState("");
   const [memoNotice, setMemoNotice] = useState("");
   const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
   const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
@@ -1067,24 +1076,100 @@ function App() {
   }
 
   function chooseInterruptionOption(option: string) {
-    if (option === "その他") {
-      setSelectedInterruptionOption(option);
+    setSelectedInterruptionOption(option);
+    if (option !== "その他") setInterruptionOtherAnswer("");
+    setInterruptionMemoErrorMessage("");
+  }
+
+  /**
+   * 割り込みで選んだ調整方針を、ユーザー操作としてセッションメモへ記録する。
+   *
+   * 仕様対応: `docs/api/schemas.md#セッションメモ`、
+   * `docs/design/user-experience.md#「ちょっと待って」ボタン`。
+   */
+  async function confirmInterruptionOption() {
+    if (isUpdatingInterruptionMemo) return;
+
+    const userAction =
+      selectedInterruptionOption === "その他"
+        ? interruptionOtherAnswer
+        : selectedInterruptionOption;
+    const request = buildInterruptionMemoUpdateRequest({
+      consultation: sessionConsultation,
+      currentPhase,
+      previousMemo: memo,
+      userAction,
+    });
+    if (!request) {
+      setInterruptionMemoErrorMessage(
+        "記録する調整方針とセッションメモを確認してください。",
+      );
       return;
     }
 
-    setSelectedInterruptionOption(option);
-    setInterruptionOtherAnswer("");
-    setIsInterruptionReady(false);
-    setPauseRequested(false);
-    pauseRequestedRef.current = false;
-    setMemoNotice("選択内容を確認しました。次の整理で反映してください。");
+    setIsUpdatingInterruptionMemo(true);
+    setInterruptionMemoErrorMessage("");
+
+    try {
+      const updatedMemo = await requestSessionMemoUpdate(request);
+      const updatedResponse = response
+        ? { ...response, memo_updates: updatedMemo }
+        : null;
+
+      setResponse(updatedResponse);
+      setResponseHistory((current) => {
+        if (!updatedResponse) return current;
+
+        return { ...current, [currentPhase]: updatedResponse };
+      });
+      setIsInterruptionReady(false);
+      setSelectedInterruptionOption("");
+      setInterruptionOtherAnswer("");
+      setPauseRequested(false);
+      pauseRequestedRef.current = false;
+      setMemoNotice("メモを更新しました。");
+    } catch (error) {
+      setInterruptionMemoErrorMessage(
+        error instanceof Error ? error.message : "メモの更新に失敗しました。",
+      );
+    } finally {
+      setIsUpdatingInterruptionMemo(false);
+    }
   }
 
-  function submitInterruptionOther() {
-    const answer = emptyToUndefined(interruptionOtherAnswer);
-    if (!answer) return;
+  /**
+   * セッションメモ更新 API のレスポンスを検証して返す。
+   *
+   * 仕様対応: `docs/api/schemas.md#セッションメモ`。
+   */
+  async function requestSessionMemoUpdate(
+    request: SessionMemoRequest,
+  ): Promise<SessionMemo> {
+    const apiResponse = await fetch("/api/session-memo/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    const body: unknown = await apiResponse.json();
 
-    chooseInterruptionOption(answer);
+    if (!apiResponse.ok) {
+      const message =
+        typeof body === "object" && body !== null && "message" in body
+          ? body.message
+          : undefined;
+      throw new Error(
+        typeof message === "string" ? message : "メモの更新に失敗しました。",
+      );
+    }
+
+    const parsedMemo = SessionMemoSchema.safeParse(body);
+    if (!parsedMemo.success) {
+      throw new Error(
+        "メモの更新結果を確認できませんでした。再試行してください。",
+      );
+    }
+
+    return parsedMemo.data;
   }
 
   function saveCurrentSession() {
@@ -1556,14 +1641,26 @@ function App() {
                         }
                         rows={3}
                       />
-                      <button
-                        className="secondary-button"
-                        type="button"
-                        onClick={submitInterruptionOther}
-                      >
-                        反映する
-                      </button>
                     </label>
+                  )}
+                  {selectedInterruptionOption && (
+                    <div className="action-row">
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={confirmInterruptionOption}
+                        disabled={isUpdatingInterruptionMemo}
+                      >
+                        {isUpdatingInterruptionMemo
+                          ? "メモを更新中..."
+                          : interruptionMemoErrorMessage
+                            ? "もう一度記録する"
+                            : "選択を記録する"}
+                      </button>
+                    </div>
+                  )}
+                  {interruptionMemoErrorMessage && (
+                    <p className="error">{interruptionMemoErrorMessage}</p>
                   )}
                 </div>
               )}
