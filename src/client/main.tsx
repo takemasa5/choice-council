@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
   ConsultationStartRequest,
@@ -12,7 +12,6 @@ import type {
   FinalMarkdown,
   FinalMarkdownRequest,
   FinalSessionMemo,
-  FinalMemoStatus,
   Phase,
   SessionMemo,
   SessionMemoRequest,
@@ -49,6 +48,7 @@ import {
   phaseOrder,
   type ResponseHistory,
 } from "./phase-history";
+import { groupChatReducer, initialGroupChatState } from "./group-chat-state";
 import "./styles.css";
 
 const storageKey = "choice-council-session";
@@ -79,14 +79,6 @@ const interruptionOptions = [
   "いったんまとめたい",
   "その他",
 ];
-const finalMemoStatusOptions: Array<{ label: string; value: FinalMemoStatus }> =
-  [
-    { label: "暫定結論", value: "tentative_conclusion" },
-    { label: "判断保留", value: "pending_decision" },
-    { label: "追加調査待ち", value: "pending_research" },
-    { label: "家族・関係者相談待ち", value: "pending_family_discussion" },
-    { label: "実行計画", value: "action_plan" },
-  ];
 
 type StoredSession = {
   request: ConsultationRequest;
@@ -100,7 +92,6 @@ type StoredSession = {
   groupChatMessages?: GroupChatMessage[];
   groupChatTurn?: FacilitatorTurn;
   groupChatContextSummary?: string;
-  expertRepliesSinceUser?: number;
   finalMarkdown?: string;
   interruption?: {
     isReady: boolean;
@@ -147,19 +138,21 @@ function App() {
     ExpertRequest[]
   >([]);
   const [confirmedExperts, setConfirmedExperts] = useState<ExpertRequest[]>([]);
-  const previousExpertRequestKeyRef = useRef<string | null>(null);
+  const confirmedExpertRequestKeyRef = useRef("");
   const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
   const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
   const [isStartingGroupChat, setIsStartingGroupChat] = useState(false);
-  const [groupChatMessages, setGroupChatMessages] = useState<
-    GroupChatMessage[]
-  >([]);
-  const [groupChatTurn, setGroupChatTurn] = useState<FacilitatorTurn | null>(
-    null,
+  const [groupChat, dispatchGroupChat] = useReducer(
+    groupChatReducer,
+    initialGroupChatState,
   );
-  const [groupChatContextSummary, setGroupChatContextSummary] = useState("");
-  const [groupChatOtherAnswer, setGroupChatOtherAnswer] = useState("");
-  const [expertRepliesSinceUser, setExpertRepliesSinceUser] = useState(0);
+  const {
+    messages: groupChatMessages,
+    turn: groupChatTurn,
+    contextSummary: groupChatContextSummary,
+    otherAnswer: groupChatOtherAnswer,
+    expertRepliesSinceUser,
+  } = groupChat;
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
   const [finalMarkdown, setFinalMarkdown] = useState("");
   const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] =
@@ -206,11 +199,16 @@ function App() {
       setExpertComments(parsed.expertComments ?? []);
       const restoredExperts =
         parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
+      confirmedExpertRequestKeyRef.current = JSON.stringify(restoredExperts);
       setConfirmedExperts(restoredExperts);
-      setGroupChatMessages(parsed.groupChatMessages ?? []);
-      setGroupChatTurn(parsed.groupChatTurn ?? null);
-      setGroupChatContextSummary(parsed.groupChatContextSummary ?? "");
-      setExpertRepliesSinceUser(parsed.expertRepliesSinceUser ?? 0);
+      dispatchGroupChat({
+        type: "restore",
+        state: {
+          messages: parsed.groupChatMessages ?? [],
+          turn: parsed.groupChatTurn ?? null,
+          contextSummary: parsed.groupChatContextSummary ?? "",
+        },
+      });
       const restoredPhase =
         parsed.currentPhase ??
         parsed.response?.current_phase ??
@@ -279,15 +277,13 @@ function App() {
 
   useEffect(() => {
     setExpertDrafts((response?.expert_requests ?? []).map(createExpertDraft));
-    if (
-      previousExpertRequestKeyRef.current !== null &&
-      previousExpertRequestKeyRef.current !== expertRequestKey
-    ) {
+    if (confirmedExpertRequestKeyRef.current === expertRequestKey) {
+      confirmedExpertRequestKeyRef.current = "";
+    } else {
       setConfirmedExperts([]);
     }
-    previousExpertRequestKeyRef.current = expertRequestKey;
     setExpertErrorMessage("");
-  }, [expertRequestKey, currentPhase]);
+  }, [expertRequestKey]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return (
@@ -296,8 +292,7 @@ function App() {
     );
   }, [response, responseHistory, currentPhase]);
   const canGenerateFinalMarkdown =
-    memo !== null &&
-    isFinalSessionMemo(memo) &&
+    Boolean(memo) &&
     (currentPhase === "group_chat" || currentPhase === "final_memo") &&
     !getPendingRequiredQuestionMessage() &&
     !isLoading &&
@@ -344,10 +339,7 @@ function App() {
     setResponseHistory(clearResponseHistory());
     setCurrentPhase("consultation_input");
     setExpertComments([]);
-    setGroupChatMessages([]);
-    setGroupChatTurn(null);
-    setGroupChatContextSummary("");
-    setExpertRepliesSinceUser(0);
+    dispatchGroupChat({ type: "reset" });
     setInitialExpertRequests([]);
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -704,9 +696,7 @@ function App() {
     setInitialExpertRequests([]);
     setConfirmedExperts([]);
     setExpertComments([]);
-    setGroupChatMessages([]);
-    setGroupChatTurn(null);
-    setGroupChatContextSummary("");
+    dispatchGroupChat({ type: "reset" });
     setExpertErrorMessage("");
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -750,18 +740,12 @@ function App() {
     if (targetPhase !== "expert_selection") {
       setInitialExpertRequests([]);
     }
-    if (
-      !(currentPhase === "group_chat" && targetPhase === "deliberation") &&
-      targetPhase !== "group_chat"
-    ) {
+    if (!(currentPhase === "group_chat" && targetPhase === "deliberation")) {
       setConfirmedExperts([]);
     }
     setExpertComments(getExpertCommentsForReturn(targetPhase, expertComments));
     if (currentPhase === "group_chat" && targetPhase === "deliberation") {
-      setGroupChatMessages([]);
-      setGroupChatTurn(null);
-      setGroupChatContextSummary("");
-      setExpertRepliesSinceUser(0);
+      dispatchGroupChat({ type: "reset" });
     }
     setExpertErrorMessage("");
     setFinalMarkdown("");
@@ -957,6 +941,7 @@ function App() {
       }
 
       setExpertComments(result.comments);
+      confirmedExpertRequestKeyRef.current = JSON.stringify(confirmedExperts);
       moveResponseToPhase("deliberation");
     } catch (error) {
       setExpertErrorMessage(
@@ -987,7 +972,7 @@ function App() {
     }));
     setIsStartingGroupChat(true);
     setExpertErrorMessage("");
-    setExpertRepliesSinceUser(0);
+    dispatchGroupChat({ type: "reset" });
     try {
       const apiResponse = await fetch("/api/facilitator/group-chat/start", {
         method: "POST",
@@ -1015,13 +1000,17 @@ function App() {
         createdAt: new Date().toISOString(),
       };
       moveResponseToPhase("group_chat");
-      setGroupChatMessages([message]);
-      setGroupChatTurn(parsedTurn.data);
       const nextMemo = parsedTurn.data.memoUpdate ?? memo;
       const nextContextSummary =
         parsedTurn.data.contextSummaryUpdate ?? parsedTurn.data.message;
       applyGroupChatTurnUpdate(parsedTurn.data);
-      setGroupChatContextSummary(nextContextSummary);
+      dispatchGroupChat({
+        type: "set_turn",
+        messages: [message],
+        turn: parsedTurn.data,
+        contextSummary: nextContextSummary,
+        expertRepliesSinceUser: 0,
+      });
       if (parsedTurn.data.requestedSpeaker.speakerType === "expert") {
         await requestGroupChatExpertReply(
           parsedTurn.data,
@@ -1119,14 +1108,17 @@ function App() {
       createdAt: new Date().toISOString(),
     };
     const nextMessages = [...messages, facilitatorMessage];
-    setGroupChatMessages(nextMessages);
-    setGroupChatTurn(parsedTurn.data);
     const nextMemo = parsedTurn.data.memoUpdate ?? currentMemo;
     const nextContextSummary =
       parsedTurn.data.contextSummaryUpdate ?? contextSummary;
     applyGroupChatTurnUpdate(parsedTurn.data);
-    setGroupChatContextSummary(nextContextSummary);
-    setExpertRepliesSinceUser(expertRepliesSinceUser);
+    dispatchGroupChat({
+      type: "set_turn",
+      messages: nextMessages,
+      turn: parsedTurn.data,
+      contextSummary: nextContextSummary,
+      expertRepliesSinceUser,
+    });
     if (pauseRequestedRef.current) return;
     if (
       parsedTurn.data.requestedSpeaker.speakerType === "expert" &&
@@ -1167,7 +1159,7 @@ function App() {
         memo,
         groupChatTurn.contextSummaryUpdate ?? groupChatContextSummary,
       );
-      setGroupChatOtherAnswer("");
+      dispatchGroupChat({ type: "set_other_answer", value: "" });
     } catch (error) {
       setExpertErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
@@ -1226,35 +1218,6 @@ function App() {
           }
         : current;
     });
-  }
-
-  /** ユーザーが選んだ終了状態をメモへ反映して、終了メモ生成を可能にする。 */
-  function finishGroupChat() {
-    if (!memo || !groupChatTurn || isStartingGroupChat) return;
-    const selectedLabel = window.prompt(
-      `終了状態を選択してください。\n${finalMemoStatusOptions
-        .map((option) => option.label)
-        .join(" / ")}`,
-      finalMemoStatusOptions[0].label,
-    );
-    if (!selectedLabel) return;
-    const selected = finalMemoStatusOptions.find(
-      (option) => option.label === selectedLabel,
-    );
-    if (!selected) {
-      setExpertErrorMessage("表示された終了状態から選択してください。");
-      return;
-    }
-    if (
-      !window.confirm(`終了状態を「${selected.label}」にします。よいですか？`)
-    ) {
-      return;
-    }
-    applyGroupChatTurnUpdate({
-      ...groupChatTurn,
-      memoUpdate: { ...memo, status: selected.value },
-    });
-    moveResponseToPhase("final_memo");
   }
 
   async function generateFinalMarkdown() {
@@ -1476,7 +1439,6 @@ function App() {
       groupChatMessages,
       groupChatTurn: groupChatTurn ?? undefined,
       groupChatContextSummary: groupChatContextSummary || undefined,
-      expertRepliesSinceUser,
       initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
       interruption: hasInterruptionState
@@ -1509,7 +1471,7 @@ function App() {
     const nextPhase =
       currentPhase === "premise" ? "expert_selection" : currentPhase;
 
-    previousExpertRequestKeyRef.current = JSON.stringify(experts);
+    confirmedExpertRequestKeyRef.current = JSON.stringify(experts);
     setFailedFacilitatorRequest(null);
     setCurrentPhase(nextPhase);
     setResponse((currentResponse) => {
@@ -1869,14 +1831,6 @@ function App() {
               {currentPhase === "group_chat" && groupChatTurn && (
                 <section className="expert-comment-box" aria-label="意見交換">
                   <h3>意見交換</h3>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={finishGroupChat}
-                    disabled={isStartingGroupChat}
-                  >
-                    検討を終える
-                  </button>
                   {groupChatMessages.map((message) => (
                     <article className="expert-comment-item" key={message.id}>
                       <strong>{message.speakerName}</strong>
@@ -1893,7 +1847,10 @@ function App() {
                             key={option}
                             onClick={() =>
                               option === "その他"
-                                ? setGroupChatOtherAnswer(" ")
+                                ? dispatchGroupChat({
+                                    type: "set_other_answer",
+                                    value: " ",
+                                  })
                                 : void sendGroupChatUserAnswer(option)
                             }
                             disabled={isStartingGroupChat}
@@ -1907,7 +1864,10 @@ function App() {
                             <textarea
                               value={groupChatOtherAnswer.trim()}
                               onChange={(event) =>
-                                setGroupChatOtherAnswer(event.target.value)
+                                dispatchGroupChat({
+                                  type: "set_other_answer",
+                                  value: event.target.value,
+                                })
                               }
                               rows={3}
                             />
