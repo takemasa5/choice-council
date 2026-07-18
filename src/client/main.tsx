@@ -149,6 +149,7 @@ function App() {
   );
   const [groupChatContextSummary, setGroupChatContextSummary] = useState("");
   const [groupChatOtherAnswer, setGroupChatOtherAnswer] = useState("");
+  const [expertRepliesSinceUser, setExpertRepliesSinceUser] = useState(0);
   const [expertErrorMessage, setExpertErrorMessage] = useState("");
   const [finalMarkdown, setFinalMarkdown] = useState("");
   const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] =
@@ -333,6 +334,7 @@ function App() {
     setGroupChatMessages([]);
     setGroupChatTurn(null);
     setGroupChatContextSummary("");
+    setExpertRepliesSinceUser(0);
     setInitialExpertRequests([]);
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -659,6 +661,7 @@ function App() {
     if (
       isLoading ||
       isGeneratingExperts ||
+      isStartingGroupChat ||
       isGeneratingFinalMarkdown ||
       isUpdatingInterruptionMemo
     )
@@ -700,6 +703,7 @@ function App() {
     if (
       isLoading ||
       isGeneratingExperts ||
+      isStartingGroupChat ||
       isGeneratingFinalMarkdown ||
       isUpdatingInterruptionMemo
     )
@@ -741,6 +745,7 @@ function App() {
       setGroupChatMessages([]);
       setGroupChatTurn(null);
       setGroupChatContextSummary("");
+      setExpertRepliesSinceUser(0);
     }
     setExpertErrorMessage("");
     setFinalMarkdown("");
@@ -966,6 +971,8 @@ function App() {
       participantId: `expert-${index + 1}`,
     }));
     setIsStartingGroupChat(true);
+    setExpertErrorMessage("");
+    setExpertRepliesSinceUser(0);
     try {
       const apiResponse = await fetch("/api/facilitator/group-chat/start", {
         method: "POST",
@@ -1016,6 +1023,7 @@ function App() {
       );
     } finally {
       setIsStartingGroupChat(false);
+      showInterruptionOptionsIfPaused();
     }
   }
 
@@ -1103,6 +1111,8 @@ function App() {
       parsedTurn.data.contextSummaryUpdate ?? contextSummary;
     applyGroupChatTurnUpdate(parsedTurn.data);
     setGroupChatContextSummary(nextContextSummary);
+    setExpertRepliesSinceUser(expertRepliesSinceUser);
+    if (pauseRequestedRef.current) return;
     if (
       parsedTurn.data.requestedSpeaker.speakerType === "expert" &&
       expertRepliesSinceUser < 2
@@ -1172,7 +1182,7 @@ function App() {
         groupChatTurn,
         experts,
         groupChatMessages,
-        0,
+        expertRepliesSinceUser,
         memo,
         groupChatContextSummary || groupChatTurn.message,
       );
@@ -1608,6 +1618,7 @@ function App() {
                     disabled={
                       isLoading ||
                       isGeneratingExperts ||
+                      isStartingGroupChat ||
                       isGeneratingFinalMarkdown ||
                       isUpdatingInterruptionMemo
                     }
@@ -2020,6 +2031,7 @@ function App() {
                 disabled={
                   isLoading ||
                   isGeneratingExperts ||
+                  isStartingGroupChat ||
                   isGeneratingFinalMarkdown ||
                   isUpdatingInterruptionMemo
                 }
