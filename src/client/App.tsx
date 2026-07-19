@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConsultationStartRequest,
   ConsultationRequest,
@@ -8,9 +8,6 @@ import type {
   FacilitatorTurn,
   FacilitatorResponse,
   FacilitatorResponseRequest,
-  FinalMarkdown,
-  FinalMarkdownRequest,
-  FinalSessionMemo,
   Phase,
   SessionMemo,
   SessionMemoRequest,
@@ -34,7 +31,6 @@ import {
   getSessionConsultation,
   isExpertDraftEditingDisabled,
   replaceMemoInFailedFacilitatorRequest,
-  type FailedFacilitatorRequest,
 } from "./facilitator-flow";
 import {
   clearResponseHistory,
@@ -46,7 +42,13 @@ import {
   phaseOrder,
   type ResponseHistory,
 } from "./phase-history";
-import { groupChatReducer, initialGroupChatState } from "./group-chat-state";
+import { useGroupChatPhase } from "./hooks/use-group-chat-phase";
+import { usePremisePhase } from "./hooks/use-premise-phase";
+import { useConsultationPhase } from "./hooks/use-consultation-phase";
+import { useFinalMemoPhase } from "./hooks/use-final-memo-phase";
+import { useFacilitatorRequest } from "./hooks/use-facilitator-request";
+import { useExpertSelectionPhase } from "./hooks/use-expert-selection-phase";
+import { useSessionPersistence } from "./hooks/use-session-persistence";
 import { ConsultationInputPhase } from "./phases/ConsultationInputPhase";
 import { DeliberationPhase } from "./phases/DeliberationPhase";
 import { ExpertSelectionPhase } from "./phases/ExpertSelectionPhase";
@@ -105,25 +107,33 @@ type StoredSession = {
   };
 };
 
-/** 日本語名: 画面上の候補行を識別する安定ID付き専門家候補。 */
-type ExpertDraft = ExpertRequest & { draftId: string };
-
 /** 日本語名: フェーズ横断のセッション状態とアプリケーションシェルを管理するコンポーネント。 */
 export function App() {
-  const [consultation, setConsultation] = useState("");
+  const finalMemoPhase = useFinalMemoPhase();
+  const {
+    consultation,
+    setConsultation,
+    facts,
+    setFacts,
+    values,
+    setValues,
+    concerns,
+    setConcerns,
+    expectedOutcome,
+    setExpectedOutcome,
+  } = useConsultationPhase();
   const [startedConsultation, setStartedConsultation] = useState("");
-  const [facts, setFacts] = useState("");
-  const [values, setValues] = useState("");
-  const [concerns, setConcerns] = useState("");
-  const [expectedOutcome, setExpectedOutcome] = useState("");
   const [response, setResponse] = useState<FacilitatorResponse | null>(null);
   const [responseHistory, setResponseHistory] = useState<ResponseHistory>({});
   const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
-  const [hasRestoredSession, setHasRestoredSession] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [failedFacilitatorRequest, setFailedFacilitatorRequest] =
-    useState<FailedFacilitatorRequest | null>(null);
+  const {
+    isLoading,
+    setIsLoading,
+    errorMessage,
+    setErrorMessage,
+    failedRequest: failedFacilitatorRequest,
+    setFailedRequest: setFailedFacilitatorRequest,
+  } = useFacilitatorRequest();
   const [pauseRequested, setPauseRequested] = useState(false);
   const pauseRequestedRef = useRef(false);
   const [isInterruptionReady, setIsInterruptionReady] = useState(false);
@@ -135,22 +145,40 @@ export function App() {
   const [interruptionMemoErrorMessage, setInterruptionMemoErrorMessage] =
     useState("");
   const [memoNotice, setMemoNotice] = useState("");
-  const [selectedQuestionOption, setSelectedQuestionOption] = useState("");
-  const [otherQuestionAnswer, setOtherQuestionAnswer] = useState("");
-  const [expertDrafts, setExpertDrafts] = useState<ExpertDraft[]>([]);
-  const expertDraftIdRef = useRef(0);
-  const [initialExpertRequests, setInitialExpertRequests] = useState<
-    ExpertRequest[]
-  >([]);
-  const [confirmedExperts, setConfirmedExperts] = useState<ExpertRequest[]>([]);
-  const confirmedExpertRequestKeyRef = useRef("");
-  const [expertComments, setExpertComments] = useState<ExpertComment[]>([]);
-  const [isGeneratingExperts, setIsGeneratingExperts] = useState(false);
-  const [isStartingGroupChat, setIsStartingGroupChat] = useState(false);
-  const [groupChat, dispatchGroupChat] = useReducer(
-    groupChatReducer,
-    initialGroupChatState,
-  );
+  const {
+    selectedQuestionOption,
+    setSelectedQuestionOption,
+    otherQuestionAnswer,
+    setOtherQuestionAnswer,
+  } = usePremisePhase();
+  const {
+    expertDrafts,
+    setExpertDrafts,
+    initialExpertRequests,
+    setInitialExpertRequests,
+    confirmedExperts,
+    setConfirmedExperts,
+    expertComments,
+    setExpertComments,
+    isGenerating: isGeneratingExperts,
+    setIsGenerating: setIsGeneratingExperts,
+    errorMessage: expertErrorMessage,
+    setErrorMessage: setExpertErrorMessage,
+    confirmedRequestKeyRef: confirmedExpertRequestKeyRef,
+    createDraft: createExpertDraft,
+    updateDraft,
+    addDraft,
+    removeDraft,
+    replaceDraft,
+  } = useExpertSelectionPhase();
+  const {
+    state: groupChat,
+    dispatch: dispatchGroupChat,
+    isLoading: isStartingGroupChat,
+    setIsLoading: setIsStartingGroupChat,
+    errorMessage: groupChatErrorMessage,
+    setErrorMessage: setGroupChatErrorMessage,
+  } = useGroupChatPhase();
   const {
     messages: groupChatMessages,
     turn: groupChatTurn,
@@ -158,12 +186,13 @@ export function App() {
     otherAnswer: groupChatOtherAnswer,
     expertRepliesSinceUser,
   } = groupChat;
-  const [expertErrorMessage, setExpertErrorMessage] = useState("");
-  const [finalMarkdown, setFinalMarkdown] = useState("");
-  const [isGeneratingFinalMarkdown, setIsGeneratingFinalMarkdown] =
-    useState(false);
-  const [finalMarkdownErrorMessage, setFinalMarkdownErrorMessage] =
-    useState("");
+  const {
+    finalMarkdown,
+    setFinalMarkdown,
+    isGenerating: isGeneratingFinalMarkdown,
+    errorMessage: finalMarkdownErrorMessage,
+    setErrorMessage: setFinalMarkdownErrorMessage,
+  } = finalMemoPhase;
   const canRequestPause =
     isLoading || isGeneratingExperts || isStartingGroupChat;
   const isExpertInteractionDisabled =
@@ -174,111 +203,96 @@ export function App() {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem(storageKey);
-    if (!stored) {
-      setHasRestoredSession(true);
-      return;
-    }
+  useSessionPersistence<StoredSession>({
+    storageKey,
+    restore: restoreSession,
+    createSession: buildStoredSession,
+    hasSessionContent: () =>
+      Boolean(
+        consultation.trim() ||
+        facts.trim() ||
+        values.trim() ||
+        concerns.trim() ||
+        expectedOutcome.trim() ||
+        response ||
+        Object.keys(responseHistory).length > 0 ||
+        expertComments.length > 0 ||
+        finalMarkdown,
+      ),
+    dependencies: [
+      consultation,
+      startedConsultation,
+      facts,
+      values,
+      concerns,
+      expectedOutcome,
+      response,
+      responseHistory,
+      currentPhase,
+      expertComments,
+      confirmedExperts,
+      groupChatMessages,
+      groupChatTurn,
+      groupChatContextSummary,
+      initialExpertRequests,
+      finalMarkdown,
+      selectedQuestionOption,
+      otherQuestionAnswer,
+      selectedInterruptionOption,
+      interruptionOtherAnswer,
+    ],
+  });
 
-    try {
-      const parsed = JSON.parse(stored) as StoredSession;
-      setConsultation(parsed.request.consultation);
-      setStartedConsultation(
-        parsed.startedConsultation ??
-          (parsed.response ? parsed.request.consultation : ""),
-      );
-      setFacts(parsed.request.facts ?? "");
-      setValues(parsed.request.values ?? "");
-      setConcerns(parsed.request.concerns ?? "");
-      setExpectedOutcome(parsed.request.expectedOutcome ?? "");
-      setResponse(parsed.response);
-      setResponseHistory(
-        parsed.responseHistory ?? responseToHistory(parsed.response),
-      );
-      setCurrentPhase(
-        parsed.currentPhase ??
-          parsed.response?.current_phase ??
-          "consultation_input",
-      );
-      setExpertComments(parsed.expertComments ?? []);
-      const restoredExperts =
-        parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
-      confirmedExpertRequestKeyRef.current = JSON.stringify(restoredExperts);
-      setConfirmedExperts(restoredExperts);
-      dispatchGroupChat({
-        type: "restore",
-        state: {
-          messages: parsed.groupChatMessages ?? [],
-          turn: parsed.groupChatTurn ?? null,
-          contextSummary: parsed.groupChatContextSummary ?? "",
-        },
-      });
-      const restoredPhase =
-        parsed.currentPhase ??
+  /** 日本語名: 保存済みのフェーズ横断セッション状態を復元する処理。 */
+  function restoreSession(parsed: StoredSession | null) {
+    if (!parsed) return;
+
+    setConsultation(parsed.request.consultation);
+    setStartedConsultation(
+      parsed.startedConsultation ??
+        (parsed.response ? parsed.request.consultation : ""),
+    );
+    setFacts(parsed.request.facts ?? "");
+    setValues(parsed.request.values ?? "");
+    setConcerns(parsed.request.concerns ?? "");
+    setExpectedOutcome(parsed.request.expectedOutcome ?? "");
+    setResponse(parsed.response);
+    setResponseHistory(
+      parsed.responseHistory ?? responseToHistory(parsed.response),
+    );
+    setCurrentPhase(
+      parsed.currentPhase ??
         parsed.response?.current_phase ??
-        "consultation_input";
-      setInitialExpertRequests(
-        getInitialExpertRequests(
-          parsed.initialExpertRequests,
-          restoredPhase,
-          parsed.response,
-        ),
-      );
-      setFinalMarkdown(parsed.finalMarkdown ?? "");
-      restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
-      restoreInterruption(parsed.interruption);
-    } catch {
-      window.localStorage.removeItem(storageKey);
-    } finally {
-      setHasRestoredSession(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!hasRestoredSession) return;
-
-    const hasSessionContent =
-      consultation.trim() ||
-      facts.trim() ||
-      values.trim() ||
-      concerns.trim() ||
-      expectedOutcome.trim() ||
-      response ||
-      Object.keys(responseHistory).length > 0 ||
-      expertComments.length > 0 ||
-      finalMarkdown;
-
-    if (!hasSessionContent) {
-      window.localStorage.removeItem(storageKey);
-      return;
-    }
-
-    const session = buildStoredSession();
-    window.localStorage.setItem(storageKey, JSON.stringify(session));
-  }, [
-    consultation,
-    startedConsultation,
-    facts,
-    values,
-    concerns,
-    expectedOutcome,
-    response,
-    responseHistory,
-    currentPhase,
-    expertComments,
-    confirmedExperts,
-    groupChatMessages,
-    groupChatTurn,
-    groupChatContextSummary,
-    initialExpertRequests,
-    finalMarkdown,
-    selectedQuestionOption,
-    otherQuestionAnswer,
-    selectedInterruptionOption,
-    interruptionOtherAnswer,
-    hasRestoredSession,
-  ]);
+        "consultation_input",
+    );
+    setExpertComments(parsed.expertComments ?? []);
+    const restoredExperts =
+      parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
+    confirmedExpertRequestKeyRef.current = JSON.stringify(restoredExperts);
+    setConfirmedExperts(restoredExperts);
+    dispatchGroupChat({
+      type: "restore",
+      state: {
+        messages: parsed.groupChatMessages ?? [],
+        turn: parsed.groupChatTurn ?? null,
+        contextSummary: parsed.groupChatContextSummary ?? "",
+      },
+    });
+    const restoredPhase =
+      parsed.currentPhase ??
+      parsed.response?.current_phase ??
+      "consultation_input";
+    setInitialExpertRequests(
+      getInitialExpertRequests(
+        parsed.initialExpertRequests,
+        restoredPhase,
+        parsed.response,
+      ),
+    );
+    setFinalMarkdown(parsed.finalMarkdown ?? "");
+    restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
+    restoreInterruption(parsed.interruption);
+  }
 
   useEffect(() => {
     setExpertDrafts((response?.expert_requests ?? []).map(createExpertDraft));
@@ -789,49 +803,28 @@ export function App() {
     if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
-    setExpertDrafts((current) => {
-      return current.map((expert, currentIndex) => {
-        return currentIndex === index ? { ...expert, [field]: value } : expert;
-      });
-    });
-  }
-
-  /** 専門家候補に入力内容と独立した安定IDを付与する。 */
-  function createExpertDraft(expert: ExpertRequest): ExpertDraft {
-    expertDraftIdRef.current += 1;
-    return { ...expert, draftId: `expert-draft-${expertDraftIdRef.current}` };
+    updateDraft(index, field, value);
   }
 
   function addExpertDraft() {
     if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
-    setExpertDrafts((current) => [
-      ...current,
-      createExpertDraft({ role_name: "", viewpoint: "", request: "" }),
-    ]);
+    addDraft();
   }
 
   function removeExpertDraft(index: number) {
     if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
-    setExpertDrafts((current) =>
-      current.filter((_, currentIndex) => currentIndex !== index),
-    );
+    removeDraft(index);
   }
 
   function replaceExpertDraft(index: number) {
     if (isExpertInteractionDisabled) return;
 
     resetConfirmedExperts();
-    setExpertDrafts((current) =>
-      current.map((expert, currentIndex) =>
-        currentIndex === index
-          ? { ...expert, role_name: "", viewpoint: "", request: "" }
-          : expert,
-      ),
-    );
+    replaceDraft(index);
   }
 
   function resetConfirmedExperts() {
@@ -949,7 +942,7 @@ export function App() {
       confirmedExpertRequestKeyRef.current = JSON.stringify(confirmedExperts);
       moveResponseToPhase("deliberation");
     } catch (error) {
-      setExpertErrorMessage(
+      setGroupChatErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
       );
     } finally {
@@ -976,7 +969,7 @@ export function App() {
       participantId: `expert-${index + 1}`,
     }));
     setIsStartingGroupChat(true);
-    setExpertErrorMessage("");
+    setGroupChatErrorMessage("");
     dispatchGroupChat({ type: "reset" });
     try {
       const apiResponse = await fetch("/api/facilitator/group-chat/start", {
@@ -1027,7 +1020,7 @@ export function App() {
         );
       }
     } catch (error) {
-      setExpertErrorMessage(
+      setGroupChatErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
       );
     } finally {
@@ -1166,7 +1159,7 @@ export function App() {
       );
       dispatchGroupChat({ type: "set_other_answer", value: "" });
     } catch (error) {
-      setExpertErrorMessage(
+      setGroupChatErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
       );
     } finally {
@@ -1188,7 +1181,7 @@ export function App() {
       participantId: `expert-${index + 1}`,
     }));
     setIsStartingGroupChat(true);
-    setExpertErrorMessage("");
+    setGroupChatErrorMessage("");
     try {
       await requestGroupChatExpertReply(
         groupChatTurn,
@@ -1199,7 +1192,7 @@ export function App() {
         groupChatContextSummary || groupChatTurn.message,
       );
     } catch (error) {
-      setExpertErrorMessage(
+      setGroupChatErrorMessage(
         error instanceof Error ? error.message : "通信に失敗しました。",
       );
     } finally {
@@ -1223,82 +1216,6 @@ export function App() {
           }
         : current;
     });
-  }
-
-  async function generateFinalMarkdown() {
-    if (isUpdatingInterruptionMemo) return;
-
-    setFinalMarkdownErrorMessage("");
-
-    const requiredQuestionMessage = getPendingRequiredQuestionMessage();
-    if (requiredQuestionMessage) {
-      setFinalMarkdownErrorMessage(requiredQuestionMessage);
-      return;
-    }
-
-    if (!memo) {
-      setFinalMarkdownErrorMessage(
-        "終了メモを作るためのセッションメモがまだありません。",
-      );
-      return;
-    }
-
-    if (!isFinalSessionMemo(memo)) {
-      setFinalMarkdownErrorMessage(
-        "終了メモ生成前に、方向性整理または次アクション確認まで進めてください。",
-      );
-      return;
-    }
-
-    const request: FinalMarkdownRequest = {
-      consultation: sessionConsultation,
-      memo,
-      expertComments: expertComments.length > 0 ? expertComments : undefined,
-    };
-
-    setIsGeneratingFinalMarkdown(true);
-
-    try {
-      const apiResponse = await fetch("/api/final-markdown/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(request),
-      });
-      const body = await apiResponse.json();
-
-      if (!apiResponse.ok) {
-        setFinalMarkdownErrorMessage(body.message ?? invalidGenerationMessage);
-        return;
-      }
-
-      const generated = body as FinalMarkdown;
-      setFinalMarkdown(generated.markdown);
-      moveResponseToPhase("final_memo");
-    } catch (error) {
-      setFinalMarkdownErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "終了メモの生成に失敗しました。",
-      );
-    } finally {
-      setIsGeneratingFinalMarkdown(false);
-    }
-  }
-
-  function downloadFinalMarkdown() {
-    if (!finalMarkdown) return;
-
-    const blob = new Blob([finalMarkdown], {
-      type: "text/markdown;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "choice-council-memo.md";
-    link.click();
-    URL.revokeObjectURL(url);
   }
 
   function requestPause() {
@@ -1592,7 +1509,7 @@ export function App() {
                       messages={groupChatMessages}
                       otherAnswer={groupChatOtherAnswer}
                       isLoading={isStartingGroupChat}
-                      errorMessage={expertErrorMessage}
+                      errorMessage={groupChatErrorMessage}
                       onOtherAnswerChange={(value) =>
                         dispatchGroupChat({ type: "set_other_answer", value })
                       }
@@ -1766,8 +1683,17 @@ export function App() {
                 isGenerating={isGeneratingFinalMarkdown}
                 finalMarkdown={finalMarkdown}
                 errorMessage={finalMarkdownErrorMessage}
-                onGenerate={() => void generateFinalMarkdown()}
-                onDownload={downloadFinalMarkdown}
+                onGenerate={() =>
+                  void finalMemoPhase.generate({
+                    consultation: sessionConsultation,
+                    memo,
+                    expertComments,
+                    requiredQuestionMessage:
+                      getPendingRequiredQuestionMessage(),
+                    onComplete: () => moveResponseToPhase("final_memo"),
+                  })
+                }
+                onDownload={finalMemoPhase.download}
               />
             </div>
             {memoNotice && <p className="notice">{memoNotice}</p>}
@@ -1822,10 +1748,6 @@ function getLatestMemoBeforePhase(
   }
 
   return null;
-}
-
-function isFinalSessionMemo(memo: SessionMemo): memo is FinalSessionMemo {
-  return memo.status !== "in_progress";
 }
 
 function MemoView({ memo }: { memo: SessionMemo }) {

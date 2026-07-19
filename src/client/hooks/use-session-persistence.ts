@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * 日本語名: フェーズ横断のセッション保存・復元を一元化する Hook。
@@ -18,24 +18,40 @@ export function useSessionPersistence<Session>({
   hasSessionContent: () => boolean;
   dependencies: readonly unknown[];
 }) {
+  const restoreRef = useRef(restore);
+  const createSessionRef = useRef(createSession);
+  const hasSessionContentRef = useRef(hasSessionContent);
+  const [hasRestoredSession, setHasRestoredSession] = useState(false);
+
+  restoreRef.current = restore;
+  createSessionRef.current = createSession;
+  hasSessionContentRef.current = hasSessionContent;
+
   useEffect(() => {
     const stored = window.localStorage.getItem(storageKey);
 
     try {
-      restore(stored ? (JSON.parse(stored) as Session) : null);
+      restoreRef.current(stored ? (JSON.parse(stored) as Session) : null);
     } catch {
       window.localStorage.removeItem(storageKey);
-      restore(null);
+      restoreRef.current(null);
+    } finally {
+      setHasRestoredSession(true);
     }
-  }, [restore, storageKey]);
+  }, [storageKey]);
 
   useEffect(() => {
-    if (!hasSessionContent()) {
+    if (!hasRestoredSession || !hasSessionContentRef.current()) {
       window.localStorage.removeItem(storageKey);
       return;
     }
 
-    window.localStorage.setItem(storageKey, JSON.stringify(createSession()));
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify(createSessionRef.current()),
+    );
     // 呼び出し元がフェーズ横断状態だけを明示的に列挙する。
-  }, dependencies);
+  }, [hasRestoredSession, storageKey, ...dependencies]);
+
+  return { hasRestoredSession };
 }
