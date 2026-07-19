@@ -134,6 +134,7 @@ export function App() {
     failedRequest: failedFacilitatorRequest,
     setFailedRequest: setFailedFacilitatorRequest,
     post: postFacilitatorRequest,
+    retry: retryFacilitatorRequest,
   } = useFacilitatorRequest();
   const [pauseRequested, setPauseRequested] = useState(false);
   const pauseRequestedRef = useRef(false);
@@ -151,6 +152,7 @@ export function App() {
     setSelectedQuestionOption,
     otherQuestionAnswer,
     setOtherQuestionAnswer,
+    getAnswer: getPremiseAnswer,
   } = usePremisePhase();
   const {
     expertDrafts,
@@ -456,7 +458,7 @@ export function App() {
     setErrorMessage("");
 
     const question = response?.user_question;
-    const answer = getResponseQuestionAnswer();
+    const answer = getPremiseAnswer(response);
     const currentMemo = response?.memo_updates;
     if (!question || !currentMemo || currentPhase !== "premise") return;
 
@@ -563,19 +565,6 @@ export function App() {
    *
    * 仕様対応: `docs/tasks/milestone-2.md#API エラー表示`。
    */
-  async function retryFailedFacilitatorRequest() {
-    if (!failedFacilitatorRequest || isLoading || isUpdatingInterruptionMemo)
-      return;
-
-    setErrorMessage("");
-    if (failedFacilitatorRequest.endpoint === "start") {
-      await sendStartRequest(failedFacilitatorRequest.request);
-      return;
-    }
-
-    await sendQuestionResponseRequest(failedFacilitatorRequest.request);
-  }
-
   /**
    * 相談開始 API に送る初回入力を作成する。
    *
@@ -614,18 +603,7 @@ export function App() {
       return selectedInterruptionOption;
     }
 
-    return getResponseQuestionAnswer();
-  }
-
-  function getResponseQuestionAnswer() {
-    if (response?.user_question) {
-      if (!selectedQuestionOption) return undefined;
-      if (selectedQuestionOption === "その他")
-        return emptyToUndefined(otherQuestionAnswer);
-      return selectedQuestionOption;
-    }
-
-    return undefined;
+    return getPremiseAnswer(response);
   }
 
   function getActiveUserQuestion() {
@@ -1293,7 +1271,7 @@ export function App() {
     const request = {
       ...buildRequest(),
       userQuestion: response?.user_question ?? undefined,
-      userQuestionAnswer: getResponseQuestionAnswer(),
+      userQuestionAnswer: getPremiseAnswer(response),
     };
     const hasInterruptionState =
       isInterruptionReady ||
@@ -1401,7 +1379,12 @@ export function App() {
             onExpectedOutcomeChange={setExpectedOutcome}
             onStart={() => void startSession()}
             onRequestPause={requestPause}
-            onRetry={() => void retryFailedFacilitatorRequest()}
+            onRetry={() =>
+              void retryFacilitatorRequest({
+                onStart: sendStartRequest,
+                onRespond: sendQuestionResponseRequest,
+              })
+            }
           />
 
           <PhaseContent

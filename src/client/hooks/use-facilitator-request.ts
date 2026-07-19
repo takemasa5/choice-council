@@ -18,6 +18,33 @@ export function useFacilitatorRequest() {
     return { ok: response.ok, body: await response.json() };
   }
 
+  /** 日本語名: 保持済みリクエストを同一内容で再送する操作。 */
+  async function retry({
+    onStart,
+    onRespond,
+  }: {
+    onStart: (
+      request: Extract<
+        FailedFacilitatorRequest,
+        { endpoint: "start" }
+      >["request"],
+    ) => Promise<void>;
+    onRespond: (
+      request: Exclude<
+        FailedFacilitatorRequest,
+        { endpoint: "start" }
+      >["request"],
+    ) => Promise<void>;
+  }) {
+    if (!failedRequest || isLoading) return;
+    setErrorMessage("");
+    if (failedRequest.endpoint === "start") {
+      await onStart(failedRequest.request);
+      return;
+    }
+    await onRespond(failedRequest.request);
+  }
+
   return {
     isLoading,
     setIsLoading,
@@ -26,5 +53,6 @@ export function useFacilitatorRequest() {
     failedRequest,
     setFailedRequest,
     post,
+    retry,
   };
 }
