@@ -133,6 +133,7 @@ export function App() {
     setErrorMessage,
     failedRequest: failedFacilitatorRequest,
     setFailedRequest: setFailedFacilitatorRequest,
+    post: postFacilitatorRequest,
   } = useFacilitatorRequest();
   const [pauseRequested, setPauseRequested] = useState(false);
   const pauseRequestedRef = useRef(false);
@@ -170,6 +171,7 @@ export function App() {
     addDraft,
     removeDraft,
     replaceDraft,
+    requestComment,
   } = useExpertSelectionPhase();
   const {
     state: groupChat,
@@ -178,6 +180,9 @@ export function App() {
     setIsLoading: setIsStartingGroupChat,
     errorMessage: groupChatErrorMessage,
     setErrorMessage: setGroupChatErrorMessage,
+    createFacilitatorMessage,
+    createUserMessage,
+    postJson: postGroupChatJson,
   } = useGroupChatPhase();
   const {
     messages: groupChatMessages,
@@ -364,17 +369,12 @@ export function App() {
     setFinalMarkdownErrorMessage("");
 
     try {
-      const apiResponse = await fetch("/api/facilitator/start", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(request),
-      });
+      const { ok, body } = await postFacilitatorRequest(
+        "/api/facilitator/start",
+        request,
+      );
 
-      const body = await apiResponse.json();
-
-      if (!apiResponse.ok) {
+      if (!ok) {
         setErrorMessage(body.message ?? invalidGenerationMessage);
         setFailedFacilitatorRequest(
           createFailedFacilitatorRequest({
@@ -492,16 +492,12 @@ export function App() {
     setIsLoading(true);
 
     try {
-      const apiResponse = await fetch("/api/facilitator/respond", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(request),
-      });
-      const body = await apiResponse.json();
+      const { ok, body } = await postFacilitatorRequest(
+        "/api/facilitator/respond",
+        request,
+      );
 
-      if (!apiResponse.ok) {
+      if (!ok) {
         setErrorMessage(body.message ?? invalidGenerationMessage);
         setFailedFacilitatorRequest(
           createFailedFacilitatorRequest({
@@ -915,20 +911,7 @@ export function App() {
             memo: memo ?? undefined,
             expert,
           };
-          const apiResponse = await fetch("/api/expert/comment", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(request),
-          });
-          const body = await apiResponse.json();
-
-          if (!apiResponse.ok) {
-            throw new Error(body.message ?? invalidGenerationMessage);
-          }
-
-          return body as ExpertComment;
+          return (await requestComment(request)) as ExpertComment;
         }),
       );
 
@@ -972,31 +955,22 @@ export function App() {
     setGroupChatErrorMessage("");
     dispatchGroupChat({ type: "reset" });
     try {
-      const apiResponse = await fetch("/api/facilitator/group-chat/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const body = await postGroupChatJson(
+        "/api/facilitator/group-chat/start",
+        {
           consultation: sessionConsultation,
           currentPhase: "group_chat",
           memo,
           confirmedExperts: experts,
           initialExpertComments: expertComments,
-        }),
-      });
-      const body: unknown = await apiResponse.json();
+        },
+      );
       const parsedTurn = FacilitatorTurnSchema.safeParse(body);
-      if (!apiResponse.ok || !parsedTurn.success) {
+      if (!parsedTurn.success) {
         throw new Error("意見交換の開始に失敗しました。再試行してください。");
       }
 
-      const message: GroupChatMessage = {
-        id: `facilitator-${Date.now()}`,
-        speakerType: "facilitator",
-        speakerName: "ファシリテーター",
-        participantId: "facilitator",
-        content: parsedTurn.data.message,
-        createdAt: new Date().toISOString(),
-      };
+      const message = createFacilitatorMessage(parsedTurn.data);
       moveResponseToPhase("group_chat");
       const nextMemo = parsedTurn.data.memoUpdate ?? memo;
       const nextContextSummary =
@@ -1044,22 +1018,17 @@ export function App() {
     );
     if (!expert) throw new Error("指名された専門家を確認できませんでした。");
 
-    const apiResponse = await fetch("/api/expert/group-chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        consultation: sessionConsultation,
-        currentPhase: "group_chat",
-        memo: currentMemo,
-        contextSummary,
-        recentMessages: messages,
-        expert,
-        facilitatorQuestion: turn.question,
-      }),
+    const body = await postGroupChatJson("/api/expert/group-chat", {
+      consultation: sessionConsultation,
+      currentPhase: "group_chat",
+      memo: currentMemo,
+      contextSummary,
+      recentMessages: messages,
+      expert,
+      facilitatorQuestion: turn.question,
     });
-    const body: unknown = await apiResponse.json();
     const parsedMessage = GroupChatMessageSchema.safeParse(body);
-    if (!apiResponse.ok || !parsedMessage.success) {
+    if (!parsedMessage.success) {
       throw new Error("専門家の回答生成に失敗しました。再試行してください。");
     }
     await requestNextGroupChatTurn(
@@ -1079,32 +1048,20 @@ export function App() {
     currentMemo: SessionMemo,
     contextSummary: string,
   ) {
-    const apiResponse = await fetch("/api/facilitator/group-chat/next", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        consultation: sessionConsultation,
-        currentPhase: "group_chat",
-        memo: currentMemo,
-        contextSummary,
-        recentMessages: messages,
-        confirmedExperts: experts,
-        expertRepliesSinceUser,
-      }),
+    const body = await postGroupChatJson("/api/facilitator/group-chat/next", {
+      consultation: sessionConsultation,
+      currentPhase: "group_chat",
+      memo: currentMemo,
+      contextSummary,
+      recentMessages: messages,
+      confirmedExperts: experts,
+      expertRepliesSinceUser,
     });
-    const body: unknown = await apiResponse.json();
     const parsedTurn = FacilitatorTurnSchema.safeParse(body);
-    if (!apiResponse.ok || !parsedTurn.success) {
+    if (!parsedTurn.success) {
       throw new Error("次の意見交換の進行に失敗しました。再試行してください。");
     }
-    const facilitatorMessage: GroupChatMessage = {
-      id: `facilitator-${Date.now()}`,
-      speakerType: "facilitator",
-      speakerName: "ファシリテーター",
-      participantId: "facilitator",
-      content: parsedTurn.data.message,
-      createdAt: new Date().toISOString(),
-    };
+    const facilitatorMessage = createFacilitatorMessage(parsedTurn.data);
     const nextMessages = [...messages, facilitatorMessage];
     const nextMemo = parsedTurn.data.memoUpdate ?? currentMemo;
     const nextContextSummary =
@@ -1142,14 +1099,7 @@ export function App() {
     }));
     setIsStartingGroupChat(true);
     try {
-      const message: GroupChatMessage = {
-        id: `user-${Date.now()}`,
-        speakerType: "user",
-        speakerName: "あなた",
-        participantId: "user",
-        content: answer.trim(),
-        createdAt: new Date().toISOString(),
-      };
+      const message = createUserMessage(answer);
       await requestNextGroupChatTurn(
         [...groupChatMessages, message],
         experts,

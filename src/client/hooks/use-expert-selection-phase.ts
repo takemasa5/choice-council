@@ -68,6 +68,28 @@ export function useExpertSelectionPhase() {
     );
   }
 
+  /** 日本語名: 専門家コメントAPIへJSONを送信し、JSON応答を返す通信操作。 */
+  async function requestComment(request: unknown): Promise<unknown> {
+    const response = await fetch("/api/expert/comment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    const body: unknown = await response.json();
+    if (!response.ok) {
+      const message =
+        typeof body === "object" && body !== null && "message" in body
+          ? body.message
+          : undefined;
+      throw new Error(
+        typeof message === "string"
+          ? message
+          : "この発言の生成に失敗しました。再生成できます。",
+      );
+    }
+    return body;
+  }
+
   return {
     expertDrafts,
     setExpertDrafts,
@@ -87,5 +109,6 @@ export function useExpertSelectionPhase() {
     addDraft,
     removeDraft,
     replaceDraft,
+    requestComment,
   };
 }

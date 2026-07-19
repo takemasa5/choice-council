@@ -8,6 +8,16 @@ export function useFacilitatorRequest() {
   const [failedRequest, setFailedRequest] =
     useState<FailedFacilitatorRequest | null>(null);
 
+  /** 日本語名: ファシリテーターAPIへJSONを送信し、HTTP結果とJSON応答を返す通信操作。 */
+  async function post(path: string, request: unknown) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    return { ok: response.ok, body: await response.json() };
+  }
+
   return {
     isLoading,
     setIsLoading,
@@ -15,5 +25,6 @@ export function useFacilitatorRequest() {
     setErrorMessage,
     failedRequest,
     setFailedRequest,
+    post,
   };
 }
