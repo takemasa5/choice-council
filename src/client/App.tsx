@@ -169,11 +169,11 @@ export function App() {
     setErrorMessage: setExpertErrorMessage,
     confirmedRequestKeyRef: confirmedExpertRequestKeyRef,
     createDraft: createExpertDraft,
-    updateDraft,
-    addDraft,
-    removeDraft,
-    replaceDraft,
     requestComment,
+    updateExpertDraft: updateExpertDraftOperation,
+    addExpertDraft: addExpertDraftOperation,
+    removeExpertDraft: removeExpertDraftOperation,
+    replaceExpertDraft: replaceExpertDraftOperation,
   } = useExpertSelectionPhase();
   const {
     state: groupChat,
@@ -767,47 +767,6 @@ export function App() {
       premise: current.premise ?? response,
       expert_selection: nextResponse,
     }));
-  }
-
-  function updateExpertDraft(
-    index: number,
-    field: keyof ExpertRequest,
-    value: string,
-  ) {
-    if (isExpertInteractionDisabled) return;
-
-    resetConfirmedExperts();
-    updateDraft(index, field, value);
-  }
-
-  function addExpertDraft() {
-    if (isExpertInteractionDisabled) return;
-
-    resetConfirmedExperts();
-    addDraft();
-  }
-
-  function removeExpertDraft(index: number) {
-    if (isExpertInteractionDisabled) return;
-
-    resetConfirmedExperts();
-    removeDraft(index);
-  }
-
-  function replaceExpertDraft(index: number) {
-    if (isExpertInteractionDisabled) return;
-
-    resetConfirmedExperts();
-    replaceDraft(index);
-  }
-
-  function resetConfirmedExperts() {
-    if (isExpertInteractionDisabled) return;
-
-    setFailedFacilitatorRequest(null);
-    setConfirmedExperts([]);
-    setExpertComments([]);
-    setExpertErrorMessage("");
   }
 
   function confirmExpertDrafts() {
@@ -1419,10 +1378,10 @@ export function App() {
                         isDisabled={isExpertInteractionDisabled}
                         isGenerating={isGeneratingExperts}
                         errorMessage={expertErrorMessage}
-                        onUpdate={updateExpertDraft}
-                        onAdd={addExpertDraft}
-                        onRemove={removeExpertDraft}
-                        onReplace={replaceExpertDraft}
+                        onUpdate={updateExpertDraftOperation}
+                        onAdd={addExpertDraftOperation}
+                        onRemove={removeExpertDraftOperation}
+                        onReplace={replaceExpertDraftOperation}
                         onConfirmInitial={confirmInitialExpertDrafts}
                         onConfirm={confirmExpertDrafts}
                         onGenerate={() => void generateExpertComments()}

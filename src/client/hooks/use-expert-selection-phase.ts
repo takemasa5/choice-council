@@ -68,6 +68,41 @@ export function useExpertSelectionPhase() {
     );
   }
 
+  /** 日本語名: 候補変更時に、候補に依存する確定・生成結果を破棄する。 */
+  function resetSelection() {
+    setConfirmedExperts([]);
+    setExpertComments([]);
+    setErrorMessage("");
+  }
+
+  /** 日本語名: 候補の編集と依存状態の破棄をまとめて行う操作。 */
+  function updateExpertDraft(
+    index: number,
+    field: keyof ExpertRequest,
+    value: string,
+  ) {
+    resetSelection();
+    updateDraft(index, field, value);
+  }
+
+  /** 日本語名: 候補追加と依存状態の破棄をまとめて行う操作。 */
+  function addExpertDraft() {
+    resetSelection();
+    addDraft();
+  }
+
+  /** 日本語名: 候補削除と依存状態の破棄をまとめて行う操作。 */
+  function removeExpertDraft(index: number) {
+    resetSelection();
+    removeDraft(index);
+  }
+
+  /** 日本語名: 候補入替と依存状態の破棄をまとめて行う操作。 */
+  function replaceExpertDraft(index: number) {
+    resetSelection();
+    replaceDraft(index);
+  }
+
   /** 日本語名: 専門家コメントAPIへJSONを送信し、JSON応答を返す通信操作。 */
   async function requestComment(request: unknown): Promise<unknown> {
     const response = await fetch("/api/expert/comment", {
@@ -110,5 +145,9 @@ export function useExpertSelectionPhase() {
     removeDraft,
     replaceDraft,
     requestComment,
+    updateExpertDraft,
+    addExpertDraft,
+    removeExpertDraft,
+    replaceExpertDraft,
   };
 }
