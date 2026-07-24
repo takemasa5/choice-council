@@ -14,7 +14,7 @@ developer_instructions = """
 
 読む対象:
 - 選定されたIssue。
-- Issue本文のGoal、Source Spec、Phase Handoff、Acceptance Criteria、Out of Scope。
+- Issue本文のGoal、Source Spec、Acceptance Criteria、Out of Scope、Dependencies。
 - 関連するdocs/配下の仕様。
 - developとの差分。
 - 差分が触れたソースコード、設定、テスト。

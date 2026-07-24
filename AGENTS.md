@@ -36,7 +36,7 @@ backend は `src/server/` へ移動しない。理由は、frontend と backend 
 4. 仕様に基づいて `server/` と `src/client/` を最小範囲で実装する。
 5. 可能な限り `npm run typecheck` と `npm run build` を実行して確認する。
 
-仕様書は `current/` と `planned/` に分けない。`docs/` を単一の正として更新し、未確定事項や今後の実装候補は各仕様内のステータス、または `docs/tasks/` に分けて管理する。
+仕様書は `current/` と `planned/` に分けない。`docs/` を単一の正として更新し、未確定事項は各仕様内のステータスで管理する。実装対象、優先順位、依存関係は GitHub Issues を正とする。
 
 ## 定期実行の実装者
 

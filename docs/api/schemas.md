@@ -75,7 +75,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 
 状態: `決定`
 
-M2 では初回開始と前提整理での回答を別 endpoint として扱う。後続マイルストーンで他フェーズの継続入力を追加する場合は、M2 の request schema を拡張せず、対象フェーズに対応する schema を追加する。
+初回開始と前提整理での回答は別 endpoint として扱う。ほかのフェーズに継続入力を追加する場合も、この request schema を拡張せず、対象フェーズに対応する schema を追加する。
 
 ### `POST /api/facilitator/start`
 
@@ -89,9 +89,11 @@ M2 では初回開始と前提整理での回答を別 endpoint として扱う�
 | concerns        | 任意 | ユーザーの不安なこと         |
 | expectedOutcome | 任意 | 期待する結果                 |
 
+`/start` の応答は、`premise` に表示する必須質問を必ず1件含める。`user_question.required` は `true`、`next_action` は `wait_user`、`expert_requests` は空配列とする。相談内容が十分に具体的でも、ユーザーが前提を確認・補足できる質問を返す。
+
 ### `POST /api/facilitator/respond`
 
-`FacilitatorResponseRequest` は、M2 の前提整理で必須質問に回答するための strict schema とする。
+`FacilitatorResponseRequest` は、前提整理で必須質問に回答するための strict schema とする。
 
 | フィールド         | 必須 | 内容                                                               |
 | ------------------ | ---: | ------------------------------------------------------------------ |
@@ -103,7 +105,7 @@ M2 では初回開始と前提整理での回答を別 endpoint として扱う�
 
 `/respond` のファシリテーターは、質問と回答を前提整理へ反映し、初回の前提整理からやり直さない。追加質問は返さず、専門家選定へ進むための候補を返す。
 
-M2 の前提整理で返せる必須質問は、`/start` の応答で最大1件とする。`/respond` の応答で必須質問を返してはならない。
+前提整理で返せる必須質問は、`/start` の応答で最大1件とする。`/respond` の応答で必須質問を返してはならない。
 
 ```json
 {
@@ -143,7 +145,7 @@ M2 の前提整理で返せる必須質問は、`/start` の応答で最大1件�
 | phase_goal          | 必須 | 現在フェーズで達成すること                                                                                    |
 | facilitator_message | 必須 | ユーザーに表示する進行コメント                                                                                |
 | expert_requests     | 必須 | 専門家コメント生成が必要な場合の依頼。各要素は `role_name`, `viewpoint`, `request` を含む。不要な場合は空配列 |
-| user_question       | 必須 | ユーザー回答が必要な場合の質問。不要な場合は `null`                                                           |
+| user_question       | 必須 | `/start` では必須質問1件、`/respond` では `null`                                                              |
 | memo_updates        | 必須 | この応答時点のセッションメモ案                                                                                |
 | next_action         | 必須 | アプリへの候補行動                                                                                            |
 
@@ -155,13 +157,13 @@ M2 の前提整理で返せる必須質問は、`/start` の応答で最大1件�
 
 `current_phase` と `next_action` はアプリ側が検証する。状態機械で許可されない遷移を示す出力は失敗として扱う。
 
-### M3 の専門家コメント生成
+### 初回専門家コメント生成
 
 状態: `決定`
 
-M3 で受け入れるファシリテーターの `expert_requests` は、システム設定の上限以内（初期値5件）とする。上限を超える候補を含む応答は不正として扱い、共通のバリデーション規則に従って再生成する。
+ファシリテーターの `expert_requests` は、システム設定の上限以内（初期値5件）とする。上限を超える候補を含む応答は不正として扱い、共通のバリデーション規則に従って再生成する。
 
-M3 では、ユーザーが確定した専門家ロールごとに `POST /api/expert/comment` を1回呼び出す。各リクエストは `ExpertCommentRequest` に従い、`currentPhase` は `deliberation` とする。確定済み専門家ロールは1〜5件とし、同じ `role_name` と `viewpoint` の組み合わせを複数含めることを許容する。
+ユーザーが確定した専門家ロールごとに `POST /api/expert/comment` を1回呼び出す。各リクエストは `ExpertCommentRequest` に従い、`currentPhase` は `deliberation` とする。確定済み専門家ロールは1〜5件とし、同じ `role_name` と `viewpoint` の組み合わせを複数含めることを許容する。
 
 フロントエンドは全リクエストを並列で開始し、すべてが成功した場合のみ専門家コメント一覧と「意見交換をはじめる」操作を表示する。1件でも失敗した場合は、すべてのリクエストが完了してから成功分を破棄し、専門家コメントを表示・保存しない。画面には `専門家コメントの生成に失敗しました。もう一度お試しください。` を表示する。ユーザーが再試行した場合は、確定済みの全専門家ロールに対して同じリクエストを再送する。
 
@@ -171,7 +173,7 @@ M3 では、ユーザーが確定した専門家ロールごとに `POST /api/ex
 
 状態: `決定`
 
-全初回専門家コメントを表示した後、ユーザーの「意見交換をはじめる」操作で `group_chat` に遷移する。M4 の実装では、`src/shared/schemas` の `PhaseSchema`、`server/app.ts` の route 登録、`src/client/` のフローをこの契約へ同期してから、従来の `POST /api/facilitator/deliberation` と `direction` フェーズを削除する。同期完了前の既存実装は旧フローのままとし、旧フローとグループチャットを混在させてはならない。
+全初回専門家コメントを表示した後、ユーザーの「意見交換をはじめる」操作で `group_chat` に遷移する。`src/shared/schemas` の `PhaseSchema`、`server/app.ts` の route 登録、`src/client/` のフローはこの契約へ同期する。旧 `POST /api/facilitator/deliberation` と `direction` フェーズは使用しない。
 
 #### 共通データ
 
@@ -220,15 +222,15 @@ M3 では、ユーザーが確定した専門家ロールごとに `POST /api/ex
 
 `GroupChatExpertReplyRequest` は、指名された専門家の1回の回答を生成する strict schema とする。
 
-| フィールド          | 必須 | 内容                                                |
-| ------------------- | ---: | --------------------------------------------------- |
-| consultation        | 必須 | 初回に入力した相談内容                              |
-| currentPhase        | 必須 | 固定値 `group_chat`                                 |
-| memo                | 必須 | 最新の `SessionMemo`                                |
-| contextSummary      | 必須 | 過去発言の累積要約                                  |
-| recentMessages      | 必須 | 文脈として必要な直近の `GroupChatMessage` 配列      |
-| expert              | 必須 | `FacilitatorTurn.requestedSpeaker` と一致する専門家 |
-| facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問            |
+| フィールド          | 必須 | 内容                                                      |
+| ------------------- | ---: | --------------------------------------------------------- |
+| consultation        | 必須 | 初回に入力した相談内容                                    |
+| currentPhase        | 必須 | 固定値 `group_chat`                                       |
+| memo                | 必須 | 最新の `SessionMemo`                                      |
+| contextSummary      | 必須 | 過去発言の累積要約                                        |
+| recentMessages      | 必須 | 文脈として必要な末尾から最大8件の `GroupChatMessage` 配列 |
+| expert              | 必須 | `FacilitatorTurn.requestedSpeaker` と一致する専門家       |
+| facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問                  |
 
 応答は、指定専門家の `GroupChatMessage` 1件とする。専門家の回答後、クライアントは次のファシリテーターターンを要求する。
 
@@ -242,7 +244,7 @@ M3 では、ユーザーが確定した専門家ロールごとに `POST /api/ex
 | currentPhase           | 必須 | 固定値 `group_chat`                                    |
 | memo                   | 必須 | 最新の `SessionMemo`                                   |
 | contextSummary         | 必須 | 過去発言の累積要約                                     |
-| recentMessages         | 必須 | 直近の `GroupChatMessage` 配列                         |
+| recentMessages         | 必須 | 末尾から最大8件の `GroupChatMessage` 配列              |
 | confirmedExperts       | 必須 | 一意な `participantId` を含む確定済み専門家            |
 | expertRepliesSinceUser | 必須 | 前回のユーザー意思表示以降の連続した専門家回答数。0〜2 |
 
@@ -250,15 +252,16 @@ M3 では、ユーザーが確定した専門家ロールごとに `POST /api/ex
 
 発言生成または構造化出力の検証が失敗した場合、アプリは会話履歴、セッションメモ、`expertRepliesSinceUser` を更新してはならない。対象の発言だけをユーザー操作で再生成できる状態にする。
 
-### M2 route の追加検証
+`recentMessages` の上限は、shared 定数 `recentGroupChatMessageLimit` の値 `8` を正とする。グループチャットと終了メモ生成はこの同じ上限を使い、会話履歴全件をリクエストへ渡さない。
+
+### 初回・前提整理 route の追加検証
 
 `/api/facilitator/start` と `/api/facilitator/respond` は、共通の `FacilitatorResponse` schema に加えて、次を検証する。
 
 - `current_phase` は `premise` である。
-- `/start` では、`user_question` が存在する場合、`required` は `true`、`next_action` は `wait_user`、`expert_requests` は空配列である。
-- `/start` で `user_question` が `null` の場合、`next_action` は `request_experts` であり、`expert_requests` は 1 件以上である。
+- `/start` では、`user_question` が必ず存在し、`required` は `true`、`next_action` は `wait_user`、`expert_requests` は空配列である。
 - `/respond` では、`user_question` は `null`、`next_action` は `request_experts`、`expert_requests` は 1 件以上である。
-- `update_memo`、`move_phase`、`finish`、`required: false` の質問は M2 の route では受け入れない。
+- `update_memo`、`move_phase`、`finish`、`required: false` の質問はこの route では受け入れない。
 
 ## セッションメモ
 
@@ -315,13 +318,23 @@ M3 では、ユーザーが確定した専門家ロールごとに `POST /api/ex
 | pending_family_discussion | 家族・関係者相談待ち |
 | action_plan               | 実行計画             |
 
-`in_progress` はセッション途中の表示状態であり、終了状態ではない。`finalMarkdown` 呼び出し時に `SessionMemo.status` が `in_progress` の場合、アプリ側は終了メモ生成へ進まない。`group_chat` の終了確認でユーザーが選んだ終了状態を `SessionMemo.status` へ設定してから呼び出す。
+`in_progress` はセッション途中の表示状態であり、終了状態ではない。`finalMarkdown` 呼び出し時に `SessionMemo.status` が `in_progress` の場合、アプリ側は終了メモ生成へ進まない。`group_chat` の終了確認でユーザーが選んだ終了状態をクライアント側で `SessionMemo.status` へ設定してから呼び出す。この状態設定のための LLM またはセッションメモ更新 API 呼び出しは行わない。
 
 ## Markdown 終了メモ
 
 状態: `決定`
 
 `finalMarkdown` は、セッション終了時に Markdown 文字列を生成する呼び出しである。
+
+終了メモ生成リクエストは次の入力を持つ。
+
+| フィールド     | 必須 | 内容                                      |
+| -------------- | ---: | ----------------------------------------- |
+| consultation   | 必須 | 初回に入力した相談内容                    |
+| memo           | 必須 | 終了状態が設定された最新の `SessionMemo`  |
+| expertComments | 任意 | 初回専門家コメント                        |
+| contextSummary | 必須 | グループチャットの累積要約                |
+| recentMessages | 必須 | 末尾から最大8件の `GroupChatMessage` 配列 |
 
 ```json
 {

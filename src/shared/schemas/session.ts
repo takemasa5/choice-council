@@ -3,9 +3,9 @@ import { z } from "zod";
 const nonEmptyString = z.string().trim().min(1);
 const nonEmptyStringArray = z.array(nonEmptyString);
 /**
- * M3 で選択・確定できる専門家ロール数の上限。
+ * 選択・確定できる専門家ロール数の上限。
  *
- * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
  */
 export const maximumExpertRequestCount = 5;
 const finalMarkdownRequiredHeadings = [

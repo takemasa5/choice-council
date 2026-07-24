@@ -51,6 +51,6 @@ export function createGroupChatExpertReplyHandler(
   };
 }
 
-/** グループチャット専門家回答用プロンプト。仕様対応: `docs/tasks/milestone-4.md#会話制御`。 */
+/** グループチャット専門家回答用プロンプト。仕様対応: `docs/api/schemas.md#グループチャット`。 */
 const groupChatExpertPrompt =
   "あなたは指定された専門家です。指定schemaに従い、日本語で質問へ回答してください。";

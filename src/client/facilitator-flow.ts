@@ -13,7 +13,7 @@ import { maximumExpertRequestCount } from "../shared/schemas/session";
 /**
  * 専門家コメント生成が一部でも失敗した場合に表示する共通メッセージ。
  *
- * 仕様対応: `docs/api/schemas.md#M3 の専門家コメント生成`。
+ * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
  */
 export const expertCommentGenerationErrorMessage =
   "専門家コメントの生成に失敗しました。もう一度お試しください。";
@@ -90,7 +90,7 @@ export function buildConsultationStartRequest(
 /**
  * 前提整理の必須質問回答 API に送る入力を作成する。
  *
- * 仕様対応: `docs/tasks/milestone-2.md#前提整理での確認回答`。
+ * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/respond`。
  */
 export function buildFacilitatorResponseRequest(
   input: FacilitatorResponseInput,
@@ -114,10 +114,10 @@ export function buildFacilitatorResponseRequest(
 }
 
 /**
- * 割り込み時に選択した調整方針をセッションメモ API へ送る入力を作成する。
+ * 割り込み機能で使っていたセッションメモ API 入力を作成する。
  *
  * 仕様対応: `docs/api/schemas.md#セッションメモ`、
- * `docs/design/state-machine.md#割り込み`。
+ * `docs/design/client-ui-refactor-implementation-plan.md#実装順序`。
  */
 export function buildInterruptionMemoUpdateRequest(
   input: InterruptionMemoUpdateInput,
@@ -138,7 +138,7 @@ export function buildInterruptionMemoUpdateRequest(
 /**
  * 明示的リトライで同一内容を再送するため、失敗した API 入力を保持する。
  *
- * 仕様対応: `docs/tasks/milestone-2.md#API エラー表示`。
+ * 仕様対応: `docs/api/schemas.md#初回・前提整理 route の追加検証`。
  */
 export function createFailedFacilitatorRequest(
   failedRequest: FailedFacilitatorRequest,
@@ -172,7 +172,7 @@ export function replaceMemoInFailedFacilitatorRequest(
 /**
  * 専門家コメント生成または整理API送信中に候補編集を無効化する。
  *
- * 仕様対応: `docs/tasks/milestone-3.md#ファシリテーター整理と方向性整理への遷移`。
+ * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
  */
 export function isExpertDraftEditingDisabled(isGeneratingExperts: boolean) {
   return isGeneratingExperts;
@@ -181,7 +181,7 @@ export function isExpertDraftEditingDisabled(isGeneratingExperts: boolean) {
 /**
  * 並列開始済みの専門家コメント生成をすべて待ち、全件成功時だけ入力順の結果を返す。
  *
- * 仕様対応: `docs/tasks/milestone-3.md#専門家コメントの並列生成`。
+ * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
  */
 export async function collectExpertCommentGenerationResults(
   generateComments: Array<() => Promise<ExpertComment>>,
@@ -231,7 +231,7 @@ export function canProceedToExpertSelection(
 /**
  * 上限未満のときだけ、末尾に編集中の空の専門家候補行を追加する。
  *
- * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
  */
 export function addExpertDraft(drafts: ExpertRequest[]): ExpertRequest[] {
   if (drafts.length >= maximumExpertRequestCount) return drafts;
@@ -249,7 +249,7 @@ export function addExpertDraft(drafts: ExpertRequest[]): ExpertRequest[] {
 /**
  * 指定した候補を、3項目すべて未入力の編集可能な候補行に戻す。
  *
- * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
  */
 export function replaceExpertDraft(
   drafts: ExpertRequest[],
@@ -269,7 +269,7 @@ export function replaceExpertDraft(
 /**
  * 専門家候補をtrimして確定可否を判定し、空行を確定対象から除外する。
  *
- * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
  */
 export function confirmExpertDrafts(
   drafts: ExpertRequest[],
@@ -320,7 +320,7 @@ export function confirmExpertDrafts(
 /**
  * 保存形式に初期候補がない旧セッションでは、専門家選定中の応答候補を初期候補として復元する。
  *
- * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+ * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
  */
 export function getInitialExpertRequests(
   storedInitialExpertRequests: ExpertRequest[] | undefined,

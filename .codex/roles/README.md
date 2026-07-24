@@ -8,6 +8,7 @@
 
 - 仕様を固めるときは `spec-owner.md` を参照する。
 - 実装するときは `implementer.md` を参照する。
+- 実装時のモジュール境界とファイル肥大化防止は `docs/design/implementation-rules.md` を正とする。
 - 変更確認やレビューでは `reviewer.md` を参照する。
 - スケジュールタスクで実装者として動くときは `.codex/skills/scheduled-implementer/SKILL.md` を参照する。
 - PR 作成前の軽量レビューでは `.codex/agents/pr-pre-reviewer.toml` を参照する。
