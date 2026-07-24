@@ -96,6 +96,6 @@ function isAcceptedGroupChatTurn(
   );
 }
 
-/** グループチャット進行用プロンプト。仕様対応: `docs/tasks/milestone-4.md#会話制御`。 */
+/** グループチャット進行用プロンプト。仕様対応: `docs/api/schemas.md#グループチャット`。 */
 const groupChatFacilitatorPrompt =
   "あなたはChoice Councilのファシリテーターです。指定schemaに従い、専門家またはユーザーを1人だけ指名してください。";

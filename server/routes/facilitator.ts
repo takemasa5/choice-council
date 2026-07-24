@@ -18,7 +18,7 @@ import type { AppDependencies } from "./types";
  * ファシリテーター初回応答を生成する API ハンドラを作成する。
  *
  * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/start` と
- * `docs/api/schemas.md#M2 route の追加検証`。
+ * `docs/api/schemas.md#初回・前提整理 route の追加検証`。
  */
 export function createFacilitatorStartHandler(
   dependencies: AppDependencies,
@@ -34,7 +34,7 @@ export function createFacilitatorStartHandler(
  * ファシリテーター確認回答を生成する API ハンドラを作成する。
  *
  * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/respond` と
- * `docs/api/schemas.md#M2 route の追加検証`。
+ * `docs/api/schemas.md#初回・前提整理 route の追加検証`。
  */
 export function createFacilitatorRespondHandler(
   dependencies: AppDependencies,
@@ -47,9 +47,9 @@ export function createFacilitatorRespondHandler(
 }
 
 /**
- * M2 のファシリテーター API で共通の入力検証と応答生成を行う。
+ * 初回・前提整理のファシリテーター API で共通の入力検証と応答生成を行う。
  *
- * 仕様対応: `docs/api/schemas.md#M2 route の追加検証`。
+ * 仕様対応: `docs/api/schemas.md#初回・前提整理 route の追加検証`。
  */
 function createM2FacilitatorHandler(
   dependencies: AppDependencies,
@@ -91,9 +91,9 @@ function createM2FacilitatorHandler(
 }
 
 /**
- * モデル応答が M2 の前提整理専用制約を満たすか判定する。
+ * モデル応答が前提整理専用制約を満たすか判定する。
  *
- * 仕様対応: `docs/api/schemas.md#M2 route の追加検証`。
+ * 仕様対応: `docs/api/schemas.md#初回・前提整理 route の追加検証`。
  */
 function isAcceptedM2StartResponse(modelResponse: FacilitatorResponse) {
   const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);
@@ -119,7 +119,7 @@ function isAcceptedM2StartResponse(modelResponse: FacilitatorResponse) {
 /**
  * 確認回答後のモデル応答が専門家選定へ進む制約を満たすか判定する。
  *
- * 仕様対応: `docs/api/schemas.md#M2 route の追加検証`。
+ * 仕様対応: `docs/api/schemas.md#初回・前提整理 route の追加検証`。
  */
 function isAcceptedM2RespondResponse(modelResponse: FacilitatorResponse) {
   const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);

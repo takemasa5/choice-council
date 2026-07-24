@@ -1,7 +1,7 @@
 /**
  * 日本語名: 相談内容の入力と相談開始を担当するフェーズUI。
  *
- * 仕様対応: `docs/tasks/main-ui-component-refactor-plan.md#コンポーネント責務`。
+ * 仕様対応: `docs/design/client-ui-refactor-implementation-plan.md#完成イメージ`。
  */
 export function ConsultationInputPhase({
   consultation,

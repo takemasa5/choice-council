@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 /**
  * 日本語名: フェーズ横断のセッション保存・復元を一元化する Hook。
  *
- * 仕様対応: `docs/tasks/main-ui-component-refactor-plan.md#状態と副作用の境界`。
+ * 仕様対応: `docs/design/client-ui-refactor-implementation-plan.md#横断状態と保存の整理`。
  */
 export function useSessionPersistence<Session>({
   storageKey,

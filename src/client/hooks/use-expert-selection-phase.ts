@@ -10,7 +10,7 @@ export type ExpertDraft = ExpertRequest & { draftId: string };
 /**
  * 日本語名: 専門家候補の編集・確定・コメント生成で使うフェーズ状態を管理するHook。
  *
- * 仕様対応: `docs/tasks/main-ui-component-refactor-plan.md#状態と副作用の境界`。
+ * 仕様対応: `docs/design/client-ui-refactor-implementation-plan.md#前提整理・専門家選定の分離`。
  */
 export function useExpertSelectionPhase() {
   const [expertDrafts, setExpertDrafts] = useState<ExpertDraft[]>([]);

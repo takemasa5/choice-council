@@ -8,7 +8,7 @@ import { groupChatReducer, initialGroupChatState } from "../group-chat-state";
 /**
  * 日本語名: 意見交換フェーズだけで使うreducer状態を管理するHook。
  *
- * 仕様対応: `docs/tasks/main-ui-component-refactor-plan.md#状態と副作用の境界`。
+ * 仕様対応: `docs/design/client-ui-refactor-implementation-plan.md#グループチャットと終了フローの分離`。
  */
 export function useGroupChatPhase() {
   const [state, dispatch] = useReducer(groupChatReducer, initialGroupChatState);

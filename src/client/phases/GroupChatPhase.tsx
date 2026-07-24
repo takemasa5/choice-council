@@ -6,7 +6,7 @@ import type {
 /**
  * 日本語名: 意見交換のタイムライン、回答送信、再生成を表示するフェーズUI。
  *
- * 仕様対応: `docs/tasks/main-ui-component-refactor-plan.md#コンポーネント責務`。
+ * 仕様対応: `docs/design/client-ui-refactor-implementation-plan.md#完成イメージ`。
  */
 export function GroupChatPhase({
   turn,

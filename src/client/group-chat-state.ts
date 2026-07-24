@@ -3,7 +3,7 @@ import type {
   GroupChatMessage,
 } from "../shared/schemas/session";
 
-/** 日本語名: グループチャットの画面状態。仕様対応: `docs/tasks/milestone-4.md#前提と遷移`。 */
+/** 日本語名: グループチャットの画面状態。仕様対応: `docs/api/schemas.md#グループチャット`。 */
 export type GroupChatState = {
   messages: GroupChatMessage[];
   turn: FacilitatorTurn | null;

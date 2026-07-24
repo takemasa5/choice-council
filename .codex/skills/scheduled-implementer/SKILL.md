@@ -70,9 +70,9 @@ Issue を選定したら:
 2. 次の Issue sections を読む。
    - `Goal`
    - `Source Spec`
-   - `Phase Handoff`
    - `Acceptance Criteria`
    - `Out of Scope`
+   - `Dependencies`
 3. 必須 section が欠けている、または安全に実装するには不足している場合は、`question` label を付けて停止する。
 
 ## Branch 作成
@@ -95,7 +95,8 @@ codex/issue-<issue-number>-<short-slug>
 2. `Out of Scope` を守る。
 3. 振る舞いや仕様を変更する Issue では、実装前に docs を更新する。
 4. 新しい振る舞いの追加または bug fix では、必要に応じて test を追加または更新する。
-5. Pull Request の作成または更新前に、関連 checks を実行する。
+5. `docs/design/implementation-rules.md` に従い、追加する責務の配置先と既存ファイルの分割要否を確認する。
+6. Pull Request の作成または更新前に、関連 checks を実行する。
 
 標準 checks:
 
@@ -112,6 +113,7 @@ Pull Request 作成前に:
 2. `Out of Scope` の作業が含まれていないことを確認する。
 3. `.env*` と `DO_NOT_READ/` に触れていないことを確認する。
 4. 必要のない生成物が含まれていないことを確認する。
+5. 新しい責務を肥大化した既存ファイルへ追加していないことを確認する。例外がある場合は、Issue または PR に理由とレビュー承認を記録する。
 
 変更が次のいずれかを含む場合は、Pull Request 作成前に `pr-pre-reviewer` subagent を使う。
 

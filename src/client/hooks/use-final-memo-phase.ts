@@ -10,7 +10,7 @@ import type {
 /**
  * 日本語名: 終了メモの生成結果・進行中・エラー状態を管理するHook。
  *
- * 仕様対応: `docs/tasks/main-ui-component-refactor-plan.md#状態と副作用の境界`。
+ * 仕様対応: `docs/design/client-ui-refactor-implementation-plan.md#グループチャットと終了フローの分離`。
  */
 export function useFinalMemoPhase() {
   const [finalMarkdown, setFinalMarkdown] = useState("");

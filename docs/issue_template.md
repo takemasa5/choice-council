@@ -9,15 +9,6 @@
 - Source spec: `docs/<area>/<file>.md#<section>`
 - ファイル名だけでなく、対象セクション名または見出しまで指定する。
 
-## Phase Handoff
-
-- Applicable: Yes / No
-- Source:
-  - 申し送り事項に関連するIssueの場合は `docs/tasks/open-questions.md#<section>` のように参照を書く
-- Summary:
-  - `Applicable: Yes` の場合は、申し送り事項を要約して記載する。
-  - `Applicable: No` の場合は「申し送り事項に関連しない」と記載する。
-
 ## Acceptance Criteria
 
 Acceptance Criteria は EARS（Easy Approach to Requirements Syntax）形式で記述する。`<システム>` には対象となる画面、API、または処理を記載する。
@@ -33,7 +24,7 @@ Acceptance Criteria は EARS（Easy Approach to Requirements Syntax）形式で�
 
 ## Out of Scope
 
-- 同じマイルストーン内でも、このIssueのAcceptance Criteriaに含まれない項目
+- このIssueの Acceptance Criteria に含まれない項目
 - 後続Issueで扱う仕様
 
 ## Dependencies

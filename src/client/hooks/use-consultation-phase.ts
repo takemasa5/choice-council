@@ -3,7 +3,7 @@ import { useState } from "react";
 /**
  * 日本語名: 相談入力フェーズだけで使う表示状態を管理する Hook。
  *
- * 仕様対応: `docs/tasks/main-ui-component-refactor-plan.md#状態と副作用の境界`。
+ * 仕様対応: `docs/design/client-ui-refactor-implementation-plan.md#前提整理・専門家選定の分離`。
  */
 export function useConsultationPhase() {
   const [consultation, setConsultation] = useState("");

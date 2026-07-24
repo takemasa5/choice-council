@@ -352,8 +352,7 @@ export function App() {
   /**
    * 相談開始 API の送信と失敗リクエスト保持を行う。
    *
-   * 仕様対応: `docs/tasks/milestone-2.md#初期遷移` と
-   * `docs/tasks/milestone-2.md#API エラー表示`。
+   * 仕様対応: `docs/api/schemas.md#初回・前提整理 route の追加検証`。
    */
   async function sendStartRequest(request: ConsultationStartRequest) {
     setIsLoading(true);
@@ -450,7 +449,7 @@ export function App() {
   /**
    * 前提整理の必須質問への回答を送信する。
    *
-   * 仕様対応: `docs/tasks/milestone-2.md#前提整理での確認回答`。
+   * 仕様対応: `docs/api/schemas.md#POST /api/facilitator/respond`。
    */
   async function respondToQuestion() {
     if (isUpdatingInterruptionMemo) return;
@@ -485,8 +484,7 @@ export function App() {
   /**
    * 前提整理の確認回答 API 送信と失敗リクエスト保持を行う。
    *
-   * 仕様対応: `docs/tasks/milestone-2.md#前提整理での確認回答` と
-   * `docs/tasks/milestone-2.md#API エラー表示`。
+   * 仕様対応: `docs/api/schemas.md#初回・前提整理 route の追加検証`。
    */
   async function sendQuestionResponseRequest(
     request: FacilitatorResponseRequest,
@@ -563,7 +561,7 @@ export function App() {
   /**
    * ユーザーの明示操作で、失敗した API リクエストと同一内容を再送する。
    *
-   * 仕様対応: `docs/tasks/milestone-2.md#API エラー表示`。
+   * 仕様対応: `docs/api/schemas.md#初回・前提整理 route の追加検証`。
    */
   /**
    * 相談開始 API に送る初回入力を作成する。
@@ -793,7 +791,7 @@ export function App() {
   /**
    * ファシリテーターが最初に提示した候補だけを、編集内容なしで確定する。
    *
-   * 仕様対応: `docs/tasks/milestone-3.md#専門家候補の表示と編集`。
+   * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
    */
   function confirmInitialExpertDrafts() {
     if (isExpertInteractionDisabled) return;
@@ -1604,9 +1602,9 @@ export function App() {
 }
 
 /**
- * M2 のファシリテーター応答制約をクライアント側でも検証する。
+ * 初回・前提整理のファシリテーター応答制約をクライアント側でも検証する。
  *
- * 仕様対応: `docs/api/schemas.md#M2 route の追加検証`。
+ * 仕様対応: `docs/api/schemas.md#初回・前提整理 route の追加検証`。
  */
 function isAcceptedM2Response(response: FacilitatorResponse) {
   if (response.current_phase !== "premise") return false;
