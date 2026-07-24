@@ -26,7 +26,7 @@ backend 実装は `server/` に置き、`src/server/` へは移動しない。
 | パス            | 用途                                                        |
 | --------------- | ----------------------------------------------------------- |
 | `docs/product/` | ユーザー体験、スコープ、用語、プロダクト仕様                |
-| `docs/design/`  | 状態遷移、画面構成、開発方針、実装ルール、実装計画           |
+| `docs/design/`  | 状態遷移、画面構成、開発方針、実装ルール、実装計画          |
 | `docs/api/`     | API 契約、JSON schema 方針                                  |
 | `docs/prompts/` | LLM 呼び出し単位のプロンプト                                |
 | `server/`       | Express backend、LLM プロバイダー呼び出し、backend services |

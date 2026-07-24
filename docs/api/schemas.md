@@ -222,15 +222,15 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 
 `GroupChatExpertReplyRequest` は、指名された専門家の1回の回答を生成する strict schema とする。
 
-| フィールド          | 必須 | 内容                                                |
-| ------------------- | ---: | --------------------------------------------------- |
-| consultation        | 必須 | 初回に入力した相談内容                              |
-| currentPhase        | 必須 | 固定値 `group_chat`                                 |
-| memo                | 必須 | 最新の `SessionMemo`                                |
-| contextSummary      | 必須 | 過去発言の累積要約                                  |
+| フィールド          | 必須 | 内容                                                      |
+| ------------------- | ---: | --------------------------------------------------------- |
+| consultation        | 必須 | 初回に入力した相談内容                                    |
+| currentPhase        | 必須 | 固定値 `group_chat`                                       |
+| memo                | 必須 | 最新の `SessionMemo`                                      |
+| contextSummary      | 必須 | 過去発言の累積要約                                        |
 | recentMessages      | 必須 | 文脈として必要な末尾から最大8件の `GroupChatMessage` 配列 |
-| expert              | 必須 | `FacilitatorTurn.requestedSpeaker` と一致する専門家 |
-| facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問            |
+| expert              | 必須 | `FacilitatorTurn.requestedSpeaker` と一致する専門家       |
+| facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問                  |
 
 応答は、指定専門家の `GroupChatMessage` 1件とする。専門家の回答後、クライアントは次のファシリテーターターンを要求する。
 
@@ -244,7 +244,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 | currentPhase           | 必須 | 固定値 `group_chat`                                    |
 | memo                   | 必須 | 最新の `SessionMemo`                                   |
 | contextSummary         | 必須 | 過去発言の累積要約                                     |
-| recentMessages         | 必須 | 末尾から最大8件の `GroupChatMessage` 配列               |
+| recentMessages         | 必須 | 末尾から最大8件の `GroupChatMessage` 配列              |
 | confirmedExperts       | 必須 | 一意な `participantId` を含む確定済み専門家            |
 | expertRepliesSinceUser | 必須 | 前回のユーザー意思表示以降の連続した専門家回答数。0〜2 |
 
@@ -328,13 +328,13 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 
 終了メモ生成リクエストは次の入力を持つ。
 
-| フィールド      | 必須 | 内容 |
-| --------------- | ---: | ---- |
-| consultation    | 必須 | 初回に入力した相談内容 |
-| memo            | 必須 | 終了状態が設定された最新の `SessionMemo` |
-| expertComments  | 任意 | 初回専門家コメント |
-| contextSummary  | 必須 | グループチャットの累積要約 |
-| recentMessages  | 必須 | 末尾から最大8件の `GroupChatMessage` 配列 |
+| フィールド     | 必須 | 内容                                      |
+| -------------- | ---: | ----------------------------------------- |
+| consultation   | 必須 | 初回に入力した相談内容                    |
+| memo           | 必須 | 終了状態が設定された最新の `SessionMemo`  |
+| expertComments | 任意 | 初回専門家コメント                        |
+| contextSummary | 必須 | グループチャットの累積要約                |
+| recentMessages | 必須 | 末尾から最大8件の `GroupChatMessage` 配列 |
 
 ```json
 {
