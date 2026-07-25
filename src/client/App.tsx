@@ -8,6 +8,7 @@ import type {
   FacilitatorTurn,
   FacilitatorResponse,
   FacilitatorResponseRequest,
+  GroupChatStartRequest,
   Phase,
   SessionMemo,
   SessionMemoRequest,
@@ -18,6 +19,7 @@ import {
   GroupChatMessageSchema,
   SessionMemoSchema,
 } from "../shared/schemas/session";
+import { requestGroupChatStart } from "./group-chat-start";
 import {
   buildConsultationStartRequest,
   buildFacilitatorResponseRequest,
@@ -182,6 +184,9 @@ export function App() {
     setIsLoading: setIsStartingGroupChat,
     errorMessage: groupChatErrorMessage,
     setErrorMessage: setGroupChatErrorMessage,
+    failedStartRequest,
+    saveFailedStartRequest,
+    clearFailedStartRequest,
     createFacilitatorMessage,
     createUserMessage,
     postJson: postGroupChatJson,
@@ -365,6 +370,8 @@ export function App() {
     setCurrentPhase("consultation_input");
     setExpertComments([]);
     dispatchGroupChat({ type: "reset" });
+    setGroupChatErrorMessage("");
+    clearFailedStartRequest();
     setInitialExpertRequests([]);
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
@@ -689,6 +696,8 @@ export function App() {
     setExpertComments([]);
     dispatchGroupChat({ type: "reset" });
     setExpertErrorMessage("");
+    setGroupChatErrorMessage("");
+    clearFailedStartRequest();
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
   }
@@ -739,6 +748,8 @@ export function App() {
       dispatchGroupChat({ type: "reset" });
     }
     setExpertErrorMessage("");
+    setGroupChatErrorMessage("");
+    clearFailedStartRequest();
     setFinalMarkdown("");
     setFinalMarkdownErrorMessage("");
   }
@@ -869,9 +880,71 @@ export function App() {
   }
 
   /** 初回専門家コメントからグループチャットを開始する。 */
-  async function startGroupChat() {
+  async function startGroupChat(retryRequest?: GroupChatStartRequest) {
+    if (isStartingGroupChat) return;
+
+    const request = retryRequest ?? createGroupChatStartRequest();
+    if (!request) return;
+
+    const experts = request.confirmedExperts;
+    setIsStartingGroupChat(true);
+    setGroupChatErrorMessage("");
+    dispatchGroupChat({ type: "reset" });
+    try {
+      const result = await requestGroupChatStart(postGroupChatJson, request);
+      if (result.kind === "failed") {
+        setCurrentPhase(result.currentPhase);
+        dispatchGroupChat({ type: "reset" });
+        setGroupChatErrorMessage(result.errorMessage);
+        saveFailedStartRequest(result.retryRequest);
+        return;
+      }
+
+      clearFailedStartRequest();
+      const message = createFacilitatorMessage(result.turn);
+      moveResponseToPhase("group_chat");
+      const nextMemo = result.turn.memoUpdate ?? request.memo;
+      const nextContextSummary =
+        result.turn.contextSummaryUpdate ?? result.turn.message;
+      applyGroupChatTurnUpdate(result.turn);
+      dispatchGroupChat({
+        type: "set_turn",
+        messages: [message],
+        turn: result.turn,
+        contextSummary: nextContextSummary,
+        expertRepliesSinceUser: 0,
+      });
+      try {
+        if (result.turn.requestedSpeaker.speakerType === "expert") {
+          await requestGroupChatExpertReply(
+            result.turn,
+            experts,
+            [message],
+            0,
+            nextMemo,
+            nextContextSummary,
+          );
+        }
+      } catch (error) {
+        setGroupChatErrorMessage(
+          error instanceof Error ? error.message : "通信に失敗しました。",
+        );
+      }
+    } finally {
+      setIsStartingGroupChat(false);
+      showInterruptionOptionsIfPaused();
+    }
+  }
+
+  /** 失敗した意見交換開始リクエストを同じ内容で再送する。 */
+  function retryGroupChatStart() {
+    if (!failedStartRequest) return;
+    void startGroupChat(failedStartRequest);
+  }
+
+  /** 意見交換開始に必要な確定済み入力を API 契約の形へ整える。 */
+  function createGroupChatStartRequest(): GroupChatStartRequest | null {
     if (
-      isStartingGroupChat ||
       !memo ||
       confirmedExperts.length === 0 ||
       confirmedExperts.length !== expertComments.length
@@ -879,63 +952,19 @@ export function App() {
       setExpertErrorMessage(
         "意見交換を始めるための専門家コメントを確認してください。",
       );
-      return;
+      return null;
     }
 
-    const experts = confirmedExperts.map((expert, index) => ({
-      ...expert,
-      participantId: `expert-${index + 1}`,
-    }));
-    setIsStartingGroupChat(true);
-    setGroupChatErrorMessage("");
-    dispatchGroupChat({ type: "reset" });
-    try {
-      const body = await postGroupChatJson(
-        "/api/facilitator/group-chat/start",
-        {
-          consultation: sessionConsultation,
-          currentPhase: "group_chat",
-          memo,
-          confirmedExperts: experts,
-          initialExpertComments: expertComments,
-        },
-      );
-      const parsedTurn = FacilitatorTurnSchema.safeParse(body);
-      if (!parsedTurn.success) {
-        throw new Error("意見交換の開始に失敗しました。再試行してください。");
-      }
-
-      const message = createFacilitatorMessage(parsedTurn.data);
-      moveResponseToPhase("group_chat");
-      const nextMemo = parsedTurn.data.memoUpdate ?? memo;
-      const nextContextSummary =
-        parsedTurn.data.contextSummaryUpdate ?? parsedTurn.data.message;
-      applyGroupChatTurnUpdate(parsedTurn.data);
-      dispatchGroupChat({
-        type: "set_turn",
-        messages: [message],
-        turn: parsedTurn.data,
-        contextSummary: nextContextSummary,
-        expertRepliesSinceUser: 0,
-      });
-      if (parsedTurn.data.requestedSpeaker.speakerType === "expert") {
-        await requestGroupChatExpertReply(
-          parsedTurn.data,
-          experts,
-          [message],
-          0,
-          nextMemo,
-          nextContextSummary,
-        );
-      }
-    } catch (error) {
-      setGroupChatErrorMessage(
-        error instanceof Error ? error.message : "通信に失敗しました。",
-      );
-    } finally {
-      setIsStartingGroupChat(false);
-      showInterruptionOptionsIfPaused();
-    }
+    return {
+      consultation: sessionConsultation,
+      currentPhase: "group_chat",
+      memo,
+      confirmedExperts: confirmedExperts.map((expert, index) => ({
+        ...expert,
+        participantId: `expert-${index + 1}`,
+      })),
+      initialExpertComments: expertComments,
+    };
   }
 
   /** 指名専門家の発言を生成し、次の進行ターンを要求する。 */
@@ -1390,7 +1419,9 @@ export function App() {
                       expertComments={expertComments}
                       isStarting={isStartingGroupChat}
                       errorMessage={expertErrorMessage}
+                      startErrorMessage={groupChatErrorMessage}
                       onStart={() => void startGroupChat()}
+                      onRetryStart={retryGroupChatStart}
                     />
                   )}
                   {currentPhase === "group_chat" && (
