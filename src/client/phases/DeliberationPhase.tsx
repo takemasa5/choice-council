@@ -5,12 +5,16 @@ export function DeliberationPhase({
   expertComments,
   isStarting,
   errorMessage,
+  startErrorMessage,
   onStart,
+  onRetryStart,
 }: {
   expertComments: ExpertComment[];
   isStarting: boolean;
   errorMessage: string;
+  startErrorMessage: string;
   onStart: () => void;
+  onRetryStart: () => void;
 }) {
   if (expertComments.length === 0) return null;
 
@@ -59,6 +63,19 @@ export function DeliberationPhase({
         {isStarting ? "意見交換を開始中..." : "意見交換をはじめる"}
       </button>
       {errorMessage && <p className="error">{errorMessage}</p>}
+      {startErrorMessage && (
+        <>
+          <p className="error">{startErrorMessage}</p>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={onRetryStart}
+            disabled={isStarting}
+          >
+            意見交換の開始を再試行する
+          </button>
+        </>
+      )}
     </section>
   );
 }

@@ -2,6 +2,7 @@ import { useReducer, useState } from "react";
 import type {
   FacilitatorTurn,
   GroupChatMessage,
+  GroupChatStartRequest,
 } from "../../shared/schemas/session";
 import { groupChatReducer, initialGroupChatState } from "../group-chat-state";
 
@@ -14,6 +15,18 @@ export function useGroupChatPhase() {
   const [state, dispatch] = useReducer(groupChatReducer, initialGroupChatState);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [failedStartRequest, setFailedStartRequest] =
+    useState<GroupChatStartRequest | null>(null);
+
+  /** 日本語名: 意見交換開始に失敗した再送用リクエストを保持する。 */
+  function saveFailedStartRequest(request: GroupChatStartRequest) {
+    setFailedStartRequest(request);
+  }
+
+  /** 日本語名: 意見交換開始が成功した後の再送用リクエストを破棄する。 */
+  function clearFailedStartRequest() {
+    setFailedStartRequest(null);
+  }
 
   /** 日本語名: ファシリテーター発言を会話タイムライン用メッセージへ変換する。 */
   function createFacilitatorMessage(turn: FacilitatorTurn): GroupChatMessage {
@@ -66,6 +79,9 @@ export function useGroupChatPhase() {
     setIsLoading,
     errorMessage,
     setErrorMessage,
+    failedStartRequest,
+    saveFailedStartRequest,
+    clearFailedStartRequest,
     createFacilitatorMessage,
     createUserMessage,
     postJson,
