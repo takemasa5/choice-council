@@ -102,17 +102,11 @@ function isAcceptedM2StartResponse(modelResponse: FacilitatorResponse) {
   const response = parsedResponse.data;
   if (response.current_phase !== "premise") return false;
 
-  if (response.user_question) {
-    return (
-      response.user_question.required &&
-      response.next_action === "wait_user" &&
-      response.expert_requests.length === 0
-    );
-  }
-
   return (
-    response.next_action === "request_experts" &&
-    response.expert_requests.length > 0
+    response.user_question !== null &&
+    response.user_question.required &&
+    response.next_action === "wait_user" &&
+    response.expert_requests.length === 0
   );
 }
 
@@ -151,9 +145,8 @@ const facilitatorDeveloperPrompt = `
 - 外部調査は実施できない。必要な場合は未確認事項として残す。
 - 初回応答では相談内容を要約し、事実、希望、不安、不明点を整理する。
 - 初回応答で外部調査が必要な内容は断定せず、memo_updates.open_questions に未確認事項として残す。
-- 初回応答で情報不足が大きい場合のみ確認質問を1問返す。前提が十分なら質問を返さない。
-- 初回応答で確認質問を返す場合、expert_requests は必ず空配列にする。
-- 初回応答で質問を返さない場合は、次に必要な専門家ロール候補を expert_requests に1件以上含める。専門家が重視する観点は viewpoint に明示する。
+- 初回応答では、前提を確認・補足できる必須の確認質問を必ず1問返す。
+- 初回応答では、next_action を wait_user、expert_requests を空配列にする。
 - 高リスク領域では専門家ロール候補や次アクションを、判断材料の整理と相談準備に向ける。
 - currentPhase、userQuestion、userQuestionAnswer、memo が入力に含まれる場合は、その質問への回答とメモを前提整理へ反映し、初回の前提整理からやり直さない。
 - 出力の current_phase は必ず premise にする。
