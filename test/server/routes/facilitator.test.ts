@@ -15,17 +15,57 @@ const expertResponse = {
   next_action: "request_experts",
 } as const;
 
-test("POST /api/facilitator/start は有効な前提整理を返す", async () => {
+const initialQuestionResponse = {
+  current_phase: "premise",
+  current_phase_label: "前提整理",
+  phase_goal: "前提を整理する",
+  facilitator_message: "相談内容を確認します。",
+  expert_requests: [],
+  user_question: {
+    question: "最も重視する点はどれですか？",
+    options: ["費用", "その他"],
+    required: true,
+  },
+  memo_updates: memo,
+  next_action: "wait_user",
+} as const;
+
+test("POST /api/facilitator/start は必須確認質問を返す", async () => {
+  const response = await requestJson(
+    createTestApp(initialQuestionResponse),
+    "/api/facilitator/start",
+    { consultation: "相談内容" },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, initialQuestionResponse);
+});
+
+test("POST /api/facilitator/start は確認質問なしの応答を拒否する", async () => {
   const response = await requestJson(
     createTestApp(expertResponse),
     "/api/facilitator/start",
     { consultation: "相談内容" },
   );
-  assert.equal(response.status, 200);
-  assert.equal(
-    (response.body as { current_phase: string }).current_phase,
-    "premise",
+  assert.equal(response.status, 502);
+  assert.deepEqual(response.body, {
+    error: "invalid_model_response",
+    message: "この発言の生成に失敗しました。再生成できます。",
+  });
+});
+
+test("POST /api/facilitator/respond は追加の確認質問を拒否する", async () => {
+  const response = await requestJson(
+    createTestApp(initialQuestionResponse),
+    "/api/facilitator/respond",
+    {
+      consultation: "相談内容",
+      currentPhase: "premise",
+      userQuestion: initialQuestionResponse.user_question,
+      userQuestionAnswer: "費用",
+      memo,
+    },
   );
+  assert.equal(response.status, 502);
 });
 
 test("POST /api/facilitator/respond は不正な必須質問を拒否する", async () => {
