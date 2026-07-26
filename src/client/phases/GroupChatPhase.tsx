@@ -1,7 +1,10 @@
 import type {
+  FinalMemoStatus,
   FacilitatorTurn,
   GroupChatMessage,
 } from "../../shared/schemas/session";
+import { finalMemoStatusOptions } from "../final-memo-flow";
+import { useState } from "react";
 
 /**
  * 日本語名: 意見交換のタイムライン、回答送信、再生成を表示するフェーズUI。
@@ -17,6 +20,8 @@ export function GroupChatPhase({
   onOtherAnswerChange,
   onUserAnswer,
   onRetryExpertReply,
+  finishErrorMessage,
+  onFinish,
 }: {
   turn: FacilitatorTurn | null;
   messages: GroupChatMessage[];
@@ -26,7 +31,13 @@ export function GroupChatPhase({
   onOtherAnswerChange: (value: string) => void;
   onUserAnswer: (answer: string) => void;
   onRetryExpertReply: () => void;
+  finishErrorMessage: string;
+  onFinish: (status: FinalMemoStatus) => void;
 }) {
+  const [isFinishDialogOpen, setIsFinishDialogOpen] = useState(false);
+  const [selectedFinishStatus, setSelectedFinishStatus] =
+    useState<FinalMemoStatus | null>(null);
+
   if (!turn) return null;
 
   return (
@@ -89,6 +100,70 @@ export function GroupChatPhase({
             </button>
           )}
         </>
+      )}
+      {finishErrorMessage && <p className="error">{finishErrorMessage}</p>}
+      <button
+        className="secondary-button"
+        type="button"
+        onClick={() => setIsFinishDialogOpen(true)}
+        disabled={isLoading}
+      >
+        検討を終える
+      </button>
+      {isFinishDialogOpen && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setIsFinishDialogOpen(false)}
+        >
+          <section
+            className="modal-dialog"
+            aria-labelledby="finish-dialog-title"
+            aria-modal="true"
+            role="dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h4 id="finish-dialog-title">終了状態を選択</h4>
+            <p>意見交換をどの状態で終えるか選んでください。</p>
+            <div className="option-list">
+              {finalMemoStatusOptions.map((option) => (
+                <button
+                  type="button"
+                  className={
+                    selectedFinishStatus === option.status
+                      ? "selected"
+                      : undefined
+                  }
+                  key={option.status}
+                  onClick={() => setSelectedFinishStatus(option.status)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="action-row">
+              <button
+                className="primary-button"
+                type="button"
+                disabled={!selectedFinishStatus}
+                onClick={() => {
+                  if (!selectedFinishStatus) return;
+                  setIsFinishDialogOpen(false);
+                  onFinish(selectedFinishStatus);
+                }}
+              >
+                終了状態を確定する
+              </button>
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => setIsFinishDialogOpen(false)}
+              >
+                キャンセル
+              </button>
+            </div>
+          </section>
+        </div>
       )}
     </section>
   );
