@@ -5,6 +5,7 @@ import type {
   FinalMarkdownRequest,
   FinalMemoStatus,
   FinalSessionMemo,
+  GroupChatMessage,
   SessionMemo,
 } from "../../shared/schemas/session";
 import { resetFinalMemoStatus, setFinalMemoStatus } from "../final-memo-flow";
@@ -25,6 +26,8 @@ export function useFinalMemoPhase() {
     memo,
     status,
     expertComments,
+    contextSummary,
+    recentMessages,
     onStatusConfirmed,
     onGenerationFailed,
     onComplete,
@@ -33,6 +36,8 @@ export function useFinalMemoPhase() {
     memo: SessionMemo | null;
     status: FinalMemoStatus;
     expertComments: ExpertComment[];
+    contextSummary: string;
+    recentMessages: GroupChatMessage[];
     onStatusConfirmed: (memo: FinalSessionMemo) => void;
     onGenerationFailed: (memo: SessionMemo) => void;
     onComplete: () => void;
@@ -50,6 +55,8 @@ export function useFinalMemoPhase() {
       consultation,
       memo: finalMemo,
       expertComments: expertComments.length > 0 ? expertComments : undefined,
+      contextSummary,
+      recentMessages,
     };
     setIsGenerating(true);
     try {

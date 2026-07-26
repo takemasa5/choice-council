@@ -465,6 +465,10 @@ export const FinalMarkdownRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   memo: FinalSessionMemoSchema,
   expertComments: z.array(ExpertCommentSchema).optional(),
+  contextSummary: nonEmptyString,
+  recentMessages: z
+    .array(GroupChatMessageSchema)
+    .max(recentGroupChatMessageLimit),
 });
 
 export type FinalMarkdownRequest = z.infer<typeof FinalMarkdownRequestSchema>;

@@ -1158,6 +1158,8 @@ export function App() {
       memo,
       status,
       expertComments,
+      contextSummary: groupChatContextSummary,
+      recentMessages: getRecentGroupChatMessages(groupChatMessages),
       onStatusConfirmed: (finalMemo) => {
         updateGroupChatMemo(finalMemo);
         moveResponseToPhase("final_memo");
