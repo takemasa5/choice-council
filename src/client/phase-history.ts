@@ -1,5 +1,6 @@
 import type {
   ExpertComment,
+  ExpertRequest,
   FacilitatorResponse,
   Phase,
 } from "../shared/schemas/session";
@@ -70,6 +71,18 @@ export function getExpertCommentsForReturn(
   expertComments: ExpertComment[],
 ) {
   return targetPhase === "deliberation" ? expertComments : [];
+}
+
+/** 専門家選定以降へ戻る場合だけ、確定済み専門家を維持する。 */
+export function getConfirmedExpertsForReturn(
+  targetPhase: Phase,
+  confirmedExperts: ExpertRequest[],
+) {
+  return targetPhase === "expert_selection" ||
+    targetPhase === "deliberation" ||
+    targetPhase === "group_chat"
+    ? confirmedExperts
+    : [];
 }
 
 /** 指定フェーズ用の応答を作り、専門家ロールの編集内容も保持する。 */

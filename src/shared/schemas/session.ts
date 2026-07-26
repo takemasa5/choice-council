@@ -8,6 +8,12 @@ const nonEmptyStringArray = z.array(nonEmptyString);
  * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
  */
 export const maximumExpertRequestCount = 5;
+/**
+ * LLM に送信するグループチャット直近発言数の上限。
+ *
+ * 仕様対応: `docs/api/schemas.md#グループチャット`。
+ */
+export const recentGroupChatMessageLimit = 8;
 const finalMarkdownRequiredHeadings = [
   "# 意思決定メモ",
   "## 相談テーマ",
@@ -331,7 +337,9 @@ export const GroupChatExpertReplyRequestSchema = z.strictObject({
   currentPhase: z.literal("group_chat"),
   memo: SessionMemoSchema,
   contextSummary: nonEmptyString,
-  recentMessages: z.array(GroupChatMessageSchema),
+  recentMessages: z
+    .array(GroupChatMessageSchema)
+    .max(recentGroupChatMessageLimit),
   expert: GroupChatExpertSchema,
   facilitatorQuestion: nonEmptyString,
 });
@@ -347,7 +355,9 @@ export const GroupChatNextRequestSchema = z
     currentPhase: z.literal("group_chat"),
     memo: SessionMemoSchema,
     contextSummary: nonEmptyString,
-    recentMessages: z.array(GroupChatMessageSchema),
+    recentMessages: z
+      .array(GroupChatMessageSchema)
+      .max(recentGroupChatMessageLimit),
     confirmedExperts: z
       .array(GroupChatExpertSchema)
       .min(1)

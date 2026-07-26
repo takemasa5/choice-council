@@ -61,3 +61,19 @@ test("グループチャットのリセットはすべての会話状態を初�
 
   assert.deepEqual(state, initialGroupChatState);
 });
+
+test("グループチャットの復元は累積要約と連続専門家回答数を保持する", () => {
+  const state = groupChatReducer(initialGroupChatState, {
+    type: "restore",
+    state: {
+      messages: [message],
+      turn,
+      contextSummary: "保存済みの論点",
+      expertRepliesSinceUser: 2,
+    },
+  });
+
+  assert.deepEqual(state.messages, [message]);
+  assert.equal(state.contextSummary, "保存済みの論点");
+  assert.equal(state.expertRepliesSinceUser, 2);
+});
