@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../../../server/app";
-import type {
-  ApiLogger,
-  ApiRequestLogEvent,
-  LlmRequestFailureLogEvent,
+import {
+  getSafeApiRoute,
+  type ApiLogger,
+  type ApiRequestLogEvent,
+  type LlmRequestFailureLogEvent,
 } from "../../../server/observability/api-request-logger";
 import { memo, requestJson } from "../../../test-support/server";
 
@@ -22,6 +23,12 @@ const facilitatorStartResponse = {
   memo_updates: memo,
   next_action: "wait_user",
 } as const;
+
+test("末尾スラッシュ付きの既知APIだけを正規routeとして記録する", () => {
+  assert.equal(getSafeApiRoute("/api/health/"), "/api/health");
+  assert.equal(getSafeApiRoute("/api/health/?token=secret"), "/api/unknown");
+  assert.equal(getSafeApiRoute("/api/health/private/"), "/api/unknown");
+});
 
 test("LLM APIの成功時に開始・完了の安全な構造化ログを記録する", async () => {
   const events: Array<ApiRequestLogEvent | LlmRequestFailureLogEvent> = [];

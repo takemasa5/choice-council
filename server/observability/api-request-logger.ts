@@ -91,7 +91,8 @@ export function getRequestObservabilityContext(response: {
 
 /** route として安全に記録できる固定値を返す。 */
 export function getSafeApiRoute(path: string) {
-  return knownApiRoutes.has(path) ? path : "/api/unknown";
+  const normalizedPath = path.endsWith("/") ? path.slice(0, -1) : path;
+  return knownApiRoutes.has(normalizedPath) ? normalizedPath : "/api/unknown";
 }
 
 /** 指定開始時刻からの経過時間をミリ秒で返す。 */
