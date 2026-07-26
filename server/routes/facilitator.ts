@@ -4,6 +4,7 @@ import {
   ConsultationStartRequestSchema,
   FacilitatorResponseRequestSchema,
   FacilitatorResponseSchema,
+  FacilitatorRespondResponseSchema,
   type FacilitatorResponse,
 } from "../../src/shared/schemas/session";
 import {
@@ -26,6 +27,8 @@ export function createFacilitatorStartHandler(
   return createM2FacilitatorHandler(
     dependencies,
     ConsultationStartRequestSchema,
+    FacilitatorResponseSchema,
+    "facilitator_response",
     isAcceptedM2StartResponse,
   );
 }
@@ -42,6 +45,8 @@ export function createFacilitatorRespondHandler(
   return createM2FacilitatorHandler(
     dependencies,
     FacilitatorResponseRequestSchema,
+    FacilitatorRespondResponseSchema,
+    "facilitator_respond_response",
     isAcceptedM2RespondResponse,
   );
 }
@@ -51,10 +56,12 @@ export function createFacilitatorRespondHandler(
  *
  * 仕様対応: `docs/api/schemas.md#初回・前提整理 route の追加検証`。
  */
-function createM2FacilitatorHandler(
+function createM2FacilitatorHandler<Response extends FacilitatorResponse>(
   dependencies: AppDependencies,
   requestSchema: z.ZodType,
-  isAcceptedResponse: (response: FacilitatorResponse) => boolean,
+  responseSchema: z.ZodType<Response>,
+  schemaName: string,
+  isAcceptedResponse: (response: Response) => boolean,
 ): RequestHandler {
   return async (request, response) => {
     const parsedRequest = requestSchema.safeParse(request.body);
@@ -66,17 +73,16 @@ function createM2FacilitatorHandler(
 
     try {
       const provider = dependencies.createLlmProvider();
-      const output =
-        await parseStructuredOutputOnceWithRetry<FacilitatorResponse>(
-          () =>
-            provider.generateStructuredOutput({
-              systemPrompt: facilitatorDeveloperPrompt,
-              userInput: parsedRequest.data,
-              schema: FacilitatorResponseSchema,
-              schemaName: "facilitator_response",
-            }),
-          isAcceptedResponse,
-        );
+      const output = await parseStructuredOutputOnceWithRetry<Response>(
+        () =>
+          provider.generateStructuredOutput({
+            systemPrompt: facilitatorDeveloperPrompt,
+            userInput: parsedRequest.data,
+            schema: responseSchema,
+            schemaName,
+          }),
+        isAcceptedResponse,
+      );
 
       if (!output) {
         sendInvalidModelResponse(request, response);
@@ -151,6 +157,7 @@ const facilitatorDeveloperPrompt = `
 - currentPhase、userQuestion、userQuestionAnswer、memo が入力に含まれる場合は、その質問への回答とメモを前提整理へ反映し、初回の前提整理からやり直さない。
 - 出力の current_phase は必ず premise にする。
 - userQuestion と userQuestionAnswer が入力に含まれる場合は、その質問へのユーザー回答として扱い、memo_updates と次アクションに反映する。追加質問をしてはならない。user_question は null、next_action は request_experts、expert_requests は1件以上にする。
+- userQuestion と userQuestionAnswer が入力に含まれる場合は、user_question と expert_requests を同時に返してはならない。必ず user_question: null、next_action: request_experts、expert_requests: 1件以上を返す。
 - user_question を返す場合、options は2件以上にし、必ず「その他」を含める。
 - 出力は指定 schema に厳密に従う。
 `;

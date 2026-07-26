@@ -281,6 +281,29 @@ export const FacilitatorTurnSchema = z
 /** 日本語名: ファシリテーターのグループチャット進行ターン。 */
 export type FacilitatorTurn = z.infer<typeof FacilitatorTurnSchema>;
 
+/**
+ * グループチャット開始時のファシリテーターターン。
+ *
+ * 開始時は初回専門家コメントを踏まえ、確定済み専門家の1人へ最初の発言を
+ * 依頼する。Gemini に渡す JSON Schema でもユーザー向け選択肢を禁止する。
+ */
+export const GroupChatStartTurnSchema = z.strictObject({
+  message: nonEmptyString,
+  requestedSpeaker: z.strictObject({
+    speakerType: z.literal("expert"),
+    speakerName: nonEmptyString,
+    participantId: nonEmptyString,
+  }),
+  requestReason: nonEmptyString,
+  question: nonEmptyString,
+  userOptions: z.null(),
+  memoUpdate: SessionMemoSchema.nullable(),
+  contextSummaryUpdate: nonEmptyString.nullable(),
+});
+
+/** 日本語名: グループチャット開始時のファシリテーターターン。 */
+export type GroupChatStartTurn = z.infer<typeof GroupChatStartTurnSchema>;
+
 export const GroupChatStartRequestSchema = z
   .strictObject({
     consultation: nonEmptyString,
@@ -432,6 +455,30 @@ export const FacilitatorResponseSchema = z
   });
 
 export type FacilitatorResponse = z.infer<typeof FacilitatorResponseSchema>;
+
+/**
+ * 必須質問への回答後に専門家候補を返すファシリテーター応答。
+ *
+ * Gemini へ渡す JSON Schema でも追加質問との共存を禁止するため、
+ * 共通応答 schema とは別に endpoint 固有のリテラル制約を定義する。
+ */
+export const FacilitatorRespondResponseSchema = z.strictObject({
+  current_phase: z.literal("premise"),
+  current_phase_label: nonEmptyString,
+  phase_goal: nonEmptyString,
+  facilitator_message: nonEmptyString,
+  expert_requests: z
+    .array(ExpertRequestSchema)
+    .min(1)
+    .max(maximumExpertRequestCount),
+  user_question: z.null(),
+  memo_updates: SessionMemoSchema,
+  next_action: z.literal("request_experts"),
+});
+
+export type FacilitatorRespondResponse = z.infer<
+  typeof FacilitatorRespondResponseSchema
+>;
 
 export const FinalMarkdownSchema = z
   .strictObject({

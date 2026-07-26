@@ -216,7 +216,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 | confirmedExperts      | 必須 | 1〜5件の確定済み専門家。各要素に一意な `participantId` を持つ      |
 | initialExpertComments | 必須 | 全件生成に成功した初回専門家コメント。確定済み専門家と同数・同順序 |
 
-応答は `FacilitatorTurn` とする。ファシリテーターは、初回コメントの単純な再要約をせず、会話の論点を示して次の1人を指名する。
+応答は `FacilitatorTurn` のうち開始専用の strict schema とする。ファシリテーターは、初回コメントの単純な再要約をせず、会話の論点を示して、`confirmedExperts` に含まれる専門家を次の1人として指名する。`requestedSpeaker.participantId` は選んだ専門家の値と完全一致させ、`speakerType` は `expert`、`userOptions` は `null` とする。
 
 #### `POST /api/expert/group-chat`
 

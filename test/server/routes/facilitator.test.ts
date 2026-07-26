@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { FacilitatorRespondResponseSchema } from "../../../src/shared/schemas/session";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
 
 const expertResponse = {
@@ -66,6 +67,40 @@ test("POST /api/facilitator/respond は追加の確認質問を拒否する", as
     },
   );
   assert.equal(response.status, 502);
+});
+
+test("POST /api/facilitator/respond は追加質問を禁止する専用schemaをLLMへ渡す", async () => {
+  let structuredRequest: unknown;
+  const response = await requestJson(
+    createTestApp(expertResponse, "test-api-key", (request) => {
+      structuredRequest = request;
+    }),
+    "/api/facilitator/respond",
+    {
+      consultation: "相談内容",
+      currentPhase: "premise",
+      userQuestion: initialQuestionResponse.user_question,
+      userQuestionAnswer: "費用",
+      memo,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    (structuredRequest as { schemaName: string }).schemaName,
+    "facilitator_respond_response",
+  );
+  assert.equal(
+    FacilitatorRespondResponseSchema.safeParse(expertResponse).success,
+    true,
+  );
+  assert.equal(
+    FacilitatorRespondResponseSchema.safeParse({
+      ...expertResponse,
+      user_question: initialQuestionResponse.user_question,
+    }).success,
+    false,
+  );
 });
 
 test("POST /api/facilitator/respond は不正な必須質問を拒否する", async () => {
