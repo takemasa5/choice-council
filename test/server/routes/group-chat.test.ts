@@ -89,6 +89,32 @@ test("POST /api/facilitator/group-chat/next は専門家の連続3回目を拒�
   assert.equal(response.status, 502);
 });
 
+test("POST /api/facilitator/group-chat/next は直近発言の上限を超える入力を拒否する", async () => {
+  const recentMessages = Array.from({ length: 9 }, (_, index) => ({
+    id: `message-${index + 1}`,
+    speakerType: "user" as const,
+    speakerName: "あなた",
+    participantId: "user",
+    content: `発言 ${index + 1}`,
+    createdAt: "2026-07-26T00:00:00.000Z",
+  }));
+  const response = await requestJson(
+    createTestApp(turn),
+    "/api/facilitator/group-chat/next",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages,
+      confirmedExperts: [expert],
+      expertRepliesSinceUser: 1,
+    },
+  );
+
+  assert.equal(response.status, 400);
+});
+
 test("POST /api/facilitator/group-chat/start は未確定専門家の指名を拒否する", async () => {
   const invalidTurn = {
     ...turn,

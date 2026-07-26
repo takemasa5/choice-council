@@ -19,6 +19,7 @@ import {
   GroupChatMessageSchema,
   SessionMemoSchema,
 } from "../shared/schemas/session";
+import { getRecentGroupChatMessages } from "./group-chat-context";
 import { requestGroupChatStart } from "./group-chat-start";
 import {
   buildConsultationStartRequest,
@@ -38,6 +39,7 @@ import {
   clearResponseHistory,
   createResponseForPhase,
   createResponseHistoryForNewConsultation,
+  getConfirmedExpertsForReturn,
   getExpertCommentsForReturn,
   getReturnablePhases,
   keepResponsesThroughPhase,
@@ -101,6 +103,7 @@ type StoredSession = {
   groupChatMessages?: GroupChatMessage[];
   groupChatTurn?: FacilitatorTurn;
   groupChatContextSummary?: string;
+  groupChatExpertRepliesSinceUser?: number;
   finalMarkdown?: string;
   interruption?: {
     isReady: boolean;
@@ -246,6 +249,7 @@ export function App() {
       groupChatMessages,
       groupChatTurn,
       groupChatContextSummary,
+      expertRepliesSinceUser,
       initialExpertRequests,
       finalMarkdown,
       selectedQuestionOption,
@@ -288,6 +292,7 @@ export function App() {
         messages: parsed.groupChatMessages ?? [],
         turn: parsed.groupChatTurn ?? null,
         contextSummary: parsed.groupChatContextSummary ?? "",
+        expertRepliesSinceUser: parsed.groupChatExpertRepliesSinceUser ?? 0,
       },
     });
     const restoredPhase =
@@ -740,11 +745,11 @@ export function App() {
     if (targetPhase !== "expert_selection") {
       setInitialExpertRequests([]);
     }
-    if (!(currentPhase === "group_chat" && targetPhase === "deliberation")) {
-      setConfirmedExperts([]);
-    }
+    setConfirmedExperts(
+      getConfirmedExpertsForReturn(targetPhase, confirmedExperts),
+    );
     setExpertComments(getExpertCommentsForReturn(targetPhase, expertComments));
-    if (currentPhase === "group_chat" && targetPhase === "deliberation") {
+    if (targetPhase !== "group_chat") {
       dispatchGroupChat({ type: "reset" });
     }
     setExpertErrorMessage("");
@@ -987,7 +992,7 @@ export function App() {
       currentPhase: "group_chat",
       memo: currentMemo,
       contextSummary,
-      recentMessages: messages,
+      recentMessages: getRecentGroupChatMessages(messages),
       expert,
       facilitatorQuestion: turn.question,
     });
@@ -1017,7 +1022,7 @@ export function App() {
       currentPhase: "group_chat",
       memo: currentMemo,
       contextSummary,
-      recentMessages: messages,
+      recentMessages: getRecentGroupChatMessages(messages),
       confirmedExperts: experts,
       expertRepliesSinceUser,
     });
@@ -1275,6 +1280,7 @@ export function App() {
       groupChatMessages,
       groupChatTurn: groupChatTurn ?? undefined,
       groupChatContextSummary: groupChatContextSummary || undefined,
+      groupChatExpertRepliesSinceUser: expertRepliesSinceUser,
       initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
       interruption: hasInterruptionState
