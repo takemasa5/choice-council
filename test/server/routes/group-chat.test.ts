@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { GroupChatStartTurnSchema } from "../../../src/shared/schemas/session";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
 
 const expert = {
@@ -33,8 +34,11 @@ const turn = {
 } as const;
 
 test("POST /api/facilitator/group-chat/start は厳密なターンを返す", async () => {
+  let structuredRequest: unknown;
   const response = await requestJson(
-    createTestApp(turn),
+    createTestApp(turn, "test-api-key", (request) => {
+      structuredRequest = request;
+    }),
     "/api/facilitator/group-chat/start",
     {
       consultation: "相談内容",
@@ -48,6 +52,23 @@ test("POST /api/facilitator/group-chat/start は厳密なターンを返す", as
   assert.equal(
     (response.body as typeof turn).requestedSpeaker.speakerType,
     "expert",
+  );
+  assert.equal(
+    (structuredRequest as { schemaName: string }).schemaName,
+    "group_chat_start_turn",
+  );
+  assert.equal(GroupChatStartTurnSchema.safeParse(turn).success, true);
+  assert.equal(
+    GroupChatStartTurnSchema.safeParse({
+      ...turn,
+      requestedSpeaker: {
+        speakerType: "user",
+        speakerName: "あなた",
+        participantId: "user",
+      },
+      userOptions: ["その他", "そのまま意見交換を続けて"],
+    }).success,
+    false,
   );
 });
 
