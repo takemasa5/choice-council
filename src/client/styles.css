@@ -228,6 +228,30 @@ button:disabled {
   justify-self: start;
 }
 
+.modal-backdrop {
+  align-items: center;
+  background: rgb(37 55 49 / 48%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 10;
+}
+
+.modal-dialog {
+  background: #fffdf8;
+  border-radius: 10px;
+  box-shadow: 0 16px 44px rgb(25 36 32 / 28%);
+  max-width: 520px;
+  padding: 24px;
+  width: 100%;
+}
+
+.modal-dialog h4 {
+  margin-top: 0;
+}
+
 .message-label {
   color: #587069;
   font-size: 0.82rem;

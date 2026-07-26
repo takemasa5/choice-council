@@ -8,6 +8,7 @@ import type {
   FacilitatorTurn,
   FacilitatorResponse,
   FacilitatorResponseRequest,
+  FinalMemoStatus,
   GroupChatStartRequest,
   Phase,
   SessionMemo,
@@ -53,6 +54,7 @@ import { useFinalMemoPhase } from "./hooks/use-final-memo-phase";
 import { useFacilitatorRequest } from "./hooks/use-facilitator-request";
 import { useExpertSelectionPhase } from "./hooks/use-expert-selection-phase";
 import { useSessionPersistence } from "./hooks/use-session-persistence";
+import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
 import { ConsultationInputPhase } from "./phases/ConsultationInputPhase";
 import { DeliberationPhase } from "./phases/DeliberationPhase";
 import { ExpertSelectionPhase } from "./phases/ExpertSelectionPhase";
@@ -263,6 +265,18 @@ export function App() {
   function restoreSession(parsed: StoredSession | null) {
     if (!parsed) return;
 
+    const restoredPhase =
+      parsed.currentPhase ??
+      parsed.response?.current_phase ??
+      "consultation_input";
+    const restoredSession = recoverInterruptedFinalMemo({
+      currentPhase: restoredPhase,
+      response: parsed.response,
+      responseHistory:
+        parsed.responseHistory ?? responseToHistory(parsed.response),
+      finalMarkdown: parsed.finalMarkdown ?? "",
+    });
+
     setConsultation(parsed.request.consultation);
     setStartedConsultation(
       parsed.startedConsultation ??
@@ -272,15 +286,9 @@ export function App() {
     setValues(parsed.request.values ?? "");
     setConcerns(parsed.request.concerns ?? "");
     setExpectedOutcome(parsed.request.expectedOutcome ?? "");
-    setResponse(parsed.response);
-    setResponseHistory(
-      parsed.responseHistory ?? responseToHistory(parsed.response),
-    );
-    setCurrentPhase(
-      parsed.currentPhase ??
-        parsed.response?.current_phase ??
-        "consultation_input",
-    );
+    setResponse(restoredSession.response);
+    setResponseHistory(restoredSession.responseHistory);
+    setCurrentPhase(restoredSession.currentPhase);
     setExpertComments(parsed.expertComments ?? []);
     const restoredExperts =
       parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
@@ -295,15 +303,11 @@ export function App() {
         expertRepliesSinceUser: parsed.groupChatExpertRepliesSinceUser ?? 0,
       },
     });
-    const restoredPhase =
-      parsed.currentPhase ??
-      parsed.response?.current_phase ??
-      "consultation_input";
     setInitialExpertRequests(
       getInitialExpertRequests(
         parsed.initialExpertRequests,
-        restoredPhase,
-        parsed.response,
+        restoredSession.currentPhase,
+        restoredSession.response,
       ),
     );
     setFinalMarkdown(parsed.finalMarkdown ?? "");
@@ -327,14 +331,6 @@ export function App() {
       getLatestMemoBeforePhase(responseHistory, currentPhase)
     );
   }, [response, responseHistory, currentPhase]);
-  const canGenerateFinalMarkdown =
-    Boolean(memo) &&
-    (currentPhase === "group_chat" || currentPhase === "final_memo") &&
-    !getPendingRequiredQuestionMessage() &&
-    !isLoading &&
-    !isGeneratingExperts &&
-    !isGeneratingFinalMarkdown &&
-    !isUpdatingInterruptionMemo;
   const sessionConsultation = getSessionConsultation(
     startedConsultation,
     consultation,
@@ -1137,6 +1133,43 @@ export function App() {
     });
   }
 
+  /** 日本語名: 終了メモ生成に伴うグループチャットのメモ状態を反映する。 */
+  function updateGroupChatMemo(nextMemo: SessionMemo) {
+    setResponse((currentResponse) =>
+      currentResponse
+        ? { ...currentResponse, memo_updates: nextMemo }
+        : currentResponse,
+    );
+    setResponseHistory((current) => {
+      const groupChatResponse = current.group_chat;
+      return groupChatResponse
+        ? {
+            ...current,
+            group_chat: { ...groupChatResponse, memo_updates: nextMemo },
+          }
+        : current;
+    });
+  }
+
+  /** 日本語名: 選択した終了状態で終了メモ生成へ遷移する。 */
+  function finishGroupChat(status: FinalMemoStatus) {
+    void finalMemoPhase.finish({
+      consultation: sessionConsultation,
+      memo,
+      status,
+      expertComments,
+      onStatusConfirmed: (finalMemo) => {
+        updateGroupChatMemo(finalMemo);
+        moveResponseToPhase("final_memo");
+      },
+      onGenerationFailed: (inProgressMemo) => {
+        updateGroupChatMemo(inProgressMemo);
+        moveResponseToPhase("group_chat");
+      },
+      onComplete: () => undefined,
+    });
+  }
+
   function requestPause() {
     if (!canRequestPause) return;
 
@@ -1435,7 +1468,9 @@ export function App() {
                       turn={groupChatTurn}
                       messages={groupChatMessages}
                       otherAnswer={groupChatOtherAnswer}
-                      isLoading={isStartingGroupChat}
+                      isLoading={
+                        isStartingGroupChat || isUpdatingInterruptionMemo
+                      }
                       errorMessage={groupChatErrorMessage}
                       onOtherAnswerChange={(value) =>
                         dispatchGroupChat({ type: "set_other_answer", value })
@@ -1446,6 +1481,8 @@ export function App() {
                       onRetryExpertReply={() =>
                         void retryGroupChatExpertReply()
                       }
+                      finishErrorMessage={finalMarkdownErrorMessage}
+                      onFinish={finishGroupChat}
                     />
                   )}
                   {response.user_question && (
@@ -1605,23 +1642,13 @@ export function App() {
               >
                 一時保存
               </button>
-              <FinalMemoPhase
-                canGenerate={canGenerateFinalMarkdown}
-                isGenerating={isGeneratingFinalMarkdown}
-                finalMarkdown={finalMarkdown}
-                errorMessage={finalMarkdownErrorMessage}
-                onGenerate={() =>
-                  void finalMemoPhase.generate({
-                    consultation: sessionConsultation,
-                    memo,
-                    expertComments,
-                    requiredQuestionMessage:
-                      getPendingRequiredQuestionMessage(),
-                    onComplete: () => moveResponseToPhase("final_memo"),
-                  })
-                }
-                onDownload={finalMemoPhase.download}
-              />
+              {currentPhase === "final_memo" && (
+                <FinalMemoPhase
+                  isGenerating={isGeneratingFinalMarkdown}
+                  finalMarkdown={finalMarkdown}
+                  onDownload={finalMemoPhase.download}
+                />
+              )}
             </div>
             {memoNotice && <p className="notice">{memoNotice}</p>}
             {memo ? (

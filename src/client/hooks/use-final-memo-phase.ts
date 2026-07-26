@@ -3,9 +3,11 @@ import type {
   ExpertComment,
   FinalMarkdown,
   FinalMarkdownRequest,
+  FinalMemoStatus,
   FinalSessionMemo,
   SessionMemo,
 } from "../../shared/schemas/session";
+import { resetFinalMemoStatus, setFinalMemoStatus } from "../final-memo-flow";
 
 /**
  * 日本語名: 終了メモの生成結果・進行中・エラー状態を管理するHook。
@@ -17,35 +19,36 @@ export function useFinalMemoPhase() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  /** 日本語名: 終了メモ生成APIを呼び出し、結果をフェーズ状態へ反映する操作。 */
-  async function generate({
+  /** 日本語名: 終了状態を確定し、終了メモ生成APIを自動で呼び出す操作。 */
+  async function finish({
     consultation,
     memo,
+    status,
     expertComments,
-    requiredQuestionMessage,
+    onStatusConfirmed,
+    onGenerationFailed,
     onComplete,
   }: {
     consultation: string;
     memo: SessionMemo | null;
+    status: FinalMemoStatus;
     expertComments: ExpertComment[];
-    requiredQuestionMessage: string;
+    onStatusConfirmed: (memo: FinalSessionMemo) => void;
+    onGenerationFailed: (memo: SessionMemo) => void;
     onComplete: () => void;
   }) {
     setErrorMessage("");
-    if (requiredQuestionMessage)
-      return setErrorMessage(requiredQuestionMessage);
     if (!memo)
       return setErrorMessage(
         "終了メモを作るためのセッションメモがまだありません。",
       );
-    if (memo.status === "in_progress")
-      return setErrorMessage(
-        "終了メモ生成前に、方向性整理または次アクション確認まで進めてください。",
-      );
+
+    const finalMemo = setFinalMemoStatus(memo, status);
+    onStatusConfirmed(finalMemo);
 
     const request: FinalMarkdownRequest = {
       consultation,
-      memo: memo as FinalSessionMemo,
+      memo: finalMemo,
       expertComments: expertComments.length > 0 ? expertComments : undefined,
     };
     setIsGenerating(true);
@@ -56,10 +59,11 @@ export function useFinalMemoPhase() {
         body: JSON.stringify(request),
       });
       const body = await response.json();
-      if (!response.ok)
-        return setErrorMessage(
-          body.message ?? "この発言の生成に失敗しました。再生成できます。",
+      if (!response.ok) {
+        throw new Error(
+          body.message ?? "終了メモの生成に失敗しました。再試行してください。",
         );
+      }
       setFinalMarkdown((body as FinalMarkdown).markdown);
       onComplete();
     } catch (error) {
@@ -68,6 +72,7 @@ export function useFinalMemoPhase() {
           ? error.message
           : "終了メモの生成に失敗しました。",
       );
+      onGenerationFailed(resetFinalMemoStatus(finalMemo));
     } finally {
       setIsGenerating(false);
     }
@@ -93,7 +98,7 @@ export function useFinalMemoPhase() {
     setIsGenerating,
     errorMessage,
     setErrorMessage,
-    generate,
+    finish,
     download,
   };
 }
