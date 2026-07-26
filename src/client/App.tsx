@@ -54,6 +54,7 @@ import { useFinalMemoPhase } from "./hooks/use-final-memo-phase";
 import { useFacilitatorRequest } from "./hooks/use-facilitator-request";
 import { useExpertSelectionPhase } from "./hooks/use-expert-selection-phase";
 import { useSessionPersistence } from "./hooks/use-session-persistence";
+import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
 import { ConsultationInputPhase } from "./phases/ConsultationInputPhase";
 import { DeliberationPhase } from "./phases/DeliberationPhase";
 import { ExpertSelectionPhase } from "./phases/ExpertSelectionPhase";
@@ -264,6 +265,18 @@ export function App() {
   function restoreSession(parsed: StoredSession | null) {
     if (!parsed) return;
 
+    const restoredPhase =
+      parsed.currentPhase ??
+      parsed.response?.current_phase ??
+      "consultation_input";
+    const restoredSession = recoverInterruptedFinalMemo({
+      currentPhase: restoredPhase,
+      response: parsed.response,
+      responseHistory:
+        parsed.responseHistory ?? responseToHistory(parsed.response),
+      finalMarkdown: parsed.finalMarkdown ?? "",
+    });
+
     setConsultation(parsed.request.consultation);
     setStartedConsultation(
       parsed.startedConsultation ??
@@ -273,15 +286,9 @@ export function App() {
     setValues(parsed.request.values ?? "");
     setConcerns(parsed.request.concerns ?? "");
     setExpectedOutcome(parsed.request.expectedOutcome ?? "");
-    setResponse(parsed.response);
-    setResponseHistory(
-      parsed.responseHistory ?? responseToHistory(parsed.response),
-    );
-    setCurrentPhase(
-      parsed.currentPhase ??
-        parsed.response?.current_phase ??
-        "consultation_input",
-    );
+    setResponse(restoredSession.response);
+    setResponseHistory(restoredSession.responseHistory);
+    setCurrentPhase(restoredSession.currentPhase);
     setExpertComments(parsed.expertComments ?? []);
     const restoredExperts =
       parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
@@ -296,15 +303,11 @@ export function App() {
         expertRepliesSinceUser: parsed.groupChatExpertRepliesSinceUser ?? 0,
       },
     });
-    const restoredPhase =
-      parsed.currentPhase ??
-      parsed.response?.current_phase ??
-      "consultation_input";
     setInitialExpertRequests(
       getInitialExpertRequests(
         parsed.initialExpertRequests,
-        restoredPhase,
-        parsed.response,
+        restoredSession.currentPhase,
+        restoredSession.response,
       ),
     );
     setFinalMarkdown(parsed.finalMarkdown ?? "");
