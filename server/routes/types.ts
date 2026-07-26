@@ -1,4 +1,5 @@
 import type { LlmProvider } from "../llm/types";
+import type { ApiLogger } from "../observability/api-request-logger";
 
 /**
  * APIハンドラが利用する外部依存の集合。
@@ -9,4 +10,6 @@ import type { LlmProvider } from "../llm/types";
 export interface AppDependencies {
   /** 環境設定に対応する LLM プロバイダーを生成する関数。 */
   createLlmProvider: () => LlmProvider;
+  /** API の構造化ログを書き込むロガー。 */
+  logger: ApiLogger;
 }

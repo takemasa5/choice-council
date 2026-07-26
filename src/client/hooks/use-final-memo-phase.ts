@@ -15,7 +15,13 @@ import { resetFinalMemoStatus, setFinalMemoStatus } from "../final-memo-flow";
  *
  * 仕様対応: `docs/design/client-ui-refactor-implementation-plan.md#グループチャットと終了フローの分離`。
  */
-export function useFinalMemoPhase() {
+export function useFinalMemoPhase({
+  onStatusConfirmed,
+  onGenerationFailed,
+}: {
+  onStatusConfirmed: (memo: FinalSessionMemo) => void;
+  onGenerationFailed: (memo: SessionMemo) => void;
+}) {
   const [finalMarkdown, setFinalMarkdown] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -28,9 +34,6 @@ export function useFinalMemoPhase() {
     expertComments,
     contextSummary,
     recentMessages,
-    onStatusConfirmed,
-    onGenerationFailed,
-    onComplete,
   }: {
     consultation: string;
     memo: SessionMemo | null;
@@ -38,9 +41,6 @@ export function useFinalMemoPhase() {
     expertComments: ExpertComment[];
     contextSummary: string;
     recentMessages: GroupChatMessage[];
-    onStatusConfirmed: (memo: FinalSessionMemo) => void;
-    onGenerationFailed: (memo: SessionMemo) => void;
-    onComplete: () => void;
   }) {
     setErrorMessage("");
     if (!memo)
@@ -72,7 +72,6 @@ export function useFinalMemoPhase() {
         );
       }
       setFinalMarkdown((body as FinalMarkdown).markdown);
-      onComplete();
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -83,6 +82,18 @@ export function useFinalMemoPhase() {
     } finally {
       setIsGenerating(false);
     }
+  }
+
+  /** 日本語名: 保存済みの終了メモを画面へ復元する。 */
+  function restore(markdown: string) {
+    setFinalMarkdown(markdown);
+    setErrorMessage("");
+  }
+
+  /** 日本語名: 終了メモの表示・エラー状態を破棄する。 */
+  function clear() {
+    setFinalMarkdown("");
+    setErrorMessage("");
   }
 
   /** 日本語名: 生成済みMarkdownをローカルファイルとして保存する操作。 */
@@ -100,12 +111,11 @@ export function useFinalMemoPhase() {
 
   return {
     finalMarkdown,
-    setFinalMarkdown,
     isGenerating,
-    setIsGenerating,
     errorMessage,
-    setErrorMessage,
     finish,
+    restore,
+    clear,
     download,
   };
 }

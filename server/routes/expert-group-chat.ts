@@ -36,7 +36,7 @@ export function createGroupChatExpertReplyHandler(
         (message) => GroupChatMessageSchema.safeParse(message).success,
       );
       if (!output) {
-        sendInvalidModelResponse(response);
+        sendInvalidModelResponse(request, response);
         return;
       }
       response.json({
@@ -46,7 +46,7 @@ export function createGroupChatExpertReplyHandler(
         participantId: parsedRequest.data.expert.participantId,
       });
     } catch (error) {
-      sendLlmRequestFailed(response, error);
+      sendLlmRequestFailed(request, response, error);
     }
   };
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { requestGroupChatStart } from "../../src/client/group-chat-start";
+import { createGroupChatStartRequest } from "../../src/client/hooks/use-deliberation-phase-flow";
 import { DeliberationPhase } from "../../src/client/phases/DeliberationPhase";
 import type {
   ExpertComment,
@@ -112,4 +113,35 @@ test("意見交換開始の失敗は検討フェーズと空の会話履歴を�
 
   await requestGroupChatStart(postJson, failed.retryRequest);
   assert.deepEqual(sentRequests, [request, request]);
+});
+
+test("意見交換開始リクエストは検討フローで参加者IDを付与して組み立てる", () => {
+  const request = createGroupChatStartRequest({
+    consultation: "相談内容",
+    memo: {
+      theme: "相談内容",
+      status: "in_progress",
+      facts: [],
+      values: [],
+      concerns: [],
+      options: [],
+      decision_axes: [],
+      expert_summaries: [],
+      conflicts: [],
+      open_questions: [],
+      next_actions: [],
+    },
+    confirmedExperts: [
+      {
+        role_name: expertComment.role_name,
+        viewpoint: expertComment.viewpoint,
+        request: "費用を検討してください。",
+      },
+    ],
+    expertComments: [expertComment],
+  });
+
+  assert.ok(request);
+  assert.equal(request.confirmedExperts[0]?.participantId, "expert-1");
+  assert.deepEqual(request.initialExpertComments, [expertComment]);
 });

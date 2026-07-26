@@ -15,15 +15,15 @@ export function useConsultationPhase() {
 
   return {
     consultation,
-    setConsultation,
+    changeConsultation: setConsultation,
     facts,
-    setFacts,
+    changeFacts: setFacts,
     values,
-    setValues,
+    changeValues: setValues,
     concerns,
-    setConcerns,
+    changeConcerns: setConcerns,
     expectedOutcome,
-    setExpectedOutcome,
+    changeExpectedOutcome: setExpectedOutcome,
     showOptionalFields,
     toggleOptionalFields: () => setShowOptionalFields((current) => !current),
   };
