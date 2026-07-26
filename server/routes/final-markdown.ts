@@ -63,13 +63,13 @@ export function createFinalMarkdownHandler(
       );
 
       if (!output) {
-        sendInvalidModelResponse(response);
+        sendInvalidModelResponse(request, response);
         return;
       }
 
       response.json(output);
     } catch (error) {
-      sendLlmRequestFailed(response, error);
+      sendLlmRequestFailed(request, response, error);
     }
   };
 }

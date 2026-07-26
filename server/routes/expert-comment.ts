@@ -41,7 +41,7 @@ export function createExpertCommentHandler(
       );
 
       if (!output) {
-        sendInvalidModelResponse(response);
+        sendInvalidModelResponse(request, response);
         return;
       }
 
@@ -51,7 +51,7 @@ export function createExpertCommentHandler(
         viewpoint: parsedRequest.data.expert.viewpoint,
       });
     } catch (error) {
-      sendLlmRequestFailed(response, error);
+      sendLlmRequestFailed(request, response, error);
     }
   };
 }

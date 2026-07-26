@@ -1,5 +1,9 @@
 import express from "express";
 import { createLlmProviderFromEnvironment } from "./llm/create-provider";
+import {
+  consoleApiLogger,
+  createApiRequestLogger,
+} from "./observability/api-request-logger";
 import { createExpertCommentHandler } from "./routes/expert-comment";
 import { createGroupChatExpertReplyHandler } from "./routes/expert-group-chat";
 import {
@@ -25,11 +29,13 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   /** APIハンドラへ渡す外部依存の実装。 */
   const dependencies: AppDependencies = {
     createLlmProvider: () => createLlmProviderFromEnvironment(),
+    logger: consoleApiLogger,
     ...overrides,
   };
   /** HTTPリクエストを処理するExpressアプリケーション。 */
   const app = express();
 
+  app.use(createApiRequestLogger(dependencies.logger));
   app.use(express.json({ limit: "1mb" }));
   // 仕様対応: `docs/api/schemas.md#呼び出し単位` の公開エンドポイント。
   app.get("/api/health", healthHandler);

@@ -4,19 +4,18 @@ import type { Phase } from "../../shared/schemas/session";
 /** 日本語名: フェーズUIを選択する唯一の分岐点。 */
 export function PhaseContent({
   currentPhase,
-  render,
+  content,
+  renderResponse,
 }: {
   currentPhase: Phase;
-  render: (phase: Phase) => ReactNode;
+  content: Record<Phase, ReactNode>;
+  renderResponse: (phaseContent: ReactNode) => ReactNode;
 }) {
-  return selectPhaseContent(currentPhase, {
-    consultation_input: () => render("consultation_input"),
-    premise: () => render("premise"),
-    expert_selection: () => render("expert_selection"),
-    deliberation: () => render("deliberation"),
-    group_chat: () => render("group_chat"),
-    final_memo: () => render("final_memo"),
-  })();
+  const selectedContent = selectPhaseContent(currentPhase, content);
+
+  return currentPhase === "consultation_input"
+    ? selectedContent
+    : renderResponse(selectedContent);
 }
 
 /** 日本語名: 現在フェーズに対応するUIを選ぶ純粋関数。 */

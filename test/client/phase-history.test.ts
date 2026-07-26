@@ -63,3 +63,12 @@ test("グループチャットからは検討フェーズへ戻れる", () => {
     ["consultation_input", "deliberation"],
   );
 });
+
+test("終了メモからは検討フェーズへ戻れる", () => {
+  assert.deepEqual(
+    getReturnablePhases("final_memo", {
+      deliberation: { current_phase: "deliberation" } as never,
+    }),
+    ["consultation_input", "deliberation"],
+  );
+});
