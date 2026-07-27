@@ -153,16 +153,18 @@ export function GroupChatPhase({
         <div className="group-chat-answer-controls">
           {turn.userOptions && (
             <div className="group-chat-option-grid">
-              {turn.userOptions.map((option) => (
-                <button
-                  type="button"
-                  key={option}
-                  onClick={() => onUserAnswer(option)}
-                  disabled={isLoading}
-                >
-                  {option}
-                </button>
-              ))}
+              {turn.userOptions
+                .filter((option) => option !== "その他")
+                .map((option) => (
+                  <button
+                    type="button"
+                    key={option}
+                    onClick={() => onUserAnswer(option)}
+                    disabled={isLoading}
+                  >
+                    {option}
+                  </button>
+                ))}
             </div>
           )}
           <div className="group-chat-free-response">

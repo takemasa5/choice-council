@@ -205,3 +205,38 @@ test("意見交換は発言者の役割に応じたカードと現在のファ�
   assert.doesNotMatch(markup, /<strong>進行役<\/strong>/);
   assert.doesNotMatch(markup, /<strong>専門家<\/strong>/);
 });
+
+test("旧保存データのその他選択肢は表示せず自由入力を維持する", () => {
+  const legacyTurn: FacilitatorTurn = {
+    message: "回答を選んでください。",
+    requestedSpeaker: {
+      speakerType: "user",
+      participantId: "user",
+      speakerName: "あなた",
+    },
+    requestReason: "判断を確認するためです。",
+    question: "どちらを優先しますか？",
+    userOptions: ["費用を優先して進めたい", "その他"],
+    memoUpdate: null,
+    contextSummaryUpdate: null,
+  };
+
+  const markup = renderToStaticMarkup(
+    createElement(GroupChatPhase, {
+      turn: legacyTurn,
+      messages: [],
+      otherAnswer: "",
+      isLoading: false,
+      errorMessage: "",
+      onOtherAnswerChange: () => undefined,
+      onUserAnswer: () => undefined,
+      onRetryExpertReply: () => undefined,
+      finishErrorMessage: "",
+      onFinish: () => undefined,
+    }),
+  );
+
+  assert.match(markup, />費用を優先して進めたい<\/button>/);
+  assert.doesNotMatch(markup, />その他<\/button>/);
+  assert.match(markup, /<textarea rows="3"><\/textarea>/);
+});
