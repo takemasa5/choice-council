@@ -192,15 +192,15 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 
 `FacilitatorTurn` は、ファシリテーターの進行発言と次の発言者の指定を表す strict schema とする。
 
-| フィールド           |     必須 | 内容                                                                                                       |
-| -------------------- | -------: | ---------------------------------------------------------------------------------------------------------- |
-| message              |     必須 | 指名理由と質問を含む、表示用のファシリテーター発言                                                         |
-| requestedSpeaker     |     必須 | `speakerType` が `expert` または `user` であり、`speakerName`、`participantId` を持つ、次に回答する1人     |
-| requestReason        |     必須 | その参加者を指名した理由                                                                                   |
-| question             |     必須 | 指名相手に回答してほしい内容                                                                               |
+| フィールド           |     必須 | 内容                                                                                                                                       |
+| -------------------- | -------: | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| message              |     必須 | 指名理由と質問を含む、表示用のファシリテーター発言                                                                                         |
+| requestedSpeaker     |     必須 | `speakerType` が `expert` または `user` であり、`speakerName`、`participantId` を持つ、次に回答する1人                                     |
+| requestReason        |     必須 | その参加者を指名した理由                                                                                                                   |
+| question             |     必須 | 指名相手に回答してほしい内容                                                                                                               |
 | userOptions          | 条件付き | 指名先が `user` の場合は2件以上の重複しない選択肢配列。必ず「そのまま意見交換を続けて」を含み、「その他」は含めない。専門家の場合は `null` |
-| memoUpdate           |     必須 | 重要な整理がある場合の完全な `SessionMemo`、ない場合は `null`                                              |
-| contextSummaryUpdate |     必須 | 古い発言を圧縮した会話要約の更新、不要な場合は `null`                                                      |
+| memoUpdate           |     必須 | 重要な整理がある場合の完全な `SessionMemo`、ない場合は `null`                                                                              |
+| contextSummaryUpdate |     必須 | 古い発言を圧縮した会話要約の更新、不要な場合は `null`                                                                                      |
 
 アプリ側は `requestedSpeaker` が常に1人だけであり、`speakerType` が `expert` または `user` であることを検証する。`facilitator` は次の回答者として指定してはならない。確定済み専門家と同名・同観点の専門家が複数いる場合、`participantId` で対象を照合する。
 
