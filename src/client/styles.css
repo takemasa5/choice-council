@@ -424,20 +424,21 @@ button:disabled {
   position: relative;
 }
 
-.expert-avatar-number {
+.expert-avatar-identifier {
   align-items: center;
   background: #fff;
   border: 1px solid currentColor;
   border-radius: 50%;
   display: inline-flex;
-  font-size: 0.6rem;
+  font-size: 0.45rem;
   height: 13px;
   justify-content: center;
   line-height: 1;
+  min-width: 13px;
+  padding: 0 1px;
   position: absolute;
   right: 1px;
   top: 1px;
-  width: 13px;
 }
 
 .group-chat-avatar--facilitator {

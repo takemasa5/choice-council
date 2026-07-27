@@ -10,6 +10,16 @@ function getExpertAvatarText(roleName: string) {
   return Array.from(roleName.trim()).slice(0, 2).join("") || "専";
 }
 
+function getExpertAvatarIdentifier(participantId: string) {
+  let hash = 2166136261;
+
+  for (const character of participantId) {
+    hash = Math.imul(hash ^ (character.codePointAt(0) ?? 0), 16777619);
+  }
+
+  return (hash >>> 0).toString(36).slice(-3).padStart(3, "0").toUpperCase();
+}
+
 function getExpertAvatarStyle(participantId: string): CSSProperties {
   const hue = Array.from(participantId).reduce(
     (total, character) => (total * 31 + character.charCodeAt(0)) % 360,
@@ -50,19 +60,6 @@ export function GroupChatPhase({
   const [isFinishDialogOpen, setIsFinishDialogOpen] = useState(false);
   const [selectedFinishStatus, setSelectedFinishStatus] =
     useState<FinalMemoStatus | null>(null);
-  const expertParticipantNumbers = new Map<string, number>();
-
-  for (const message of messages) {
-    if (
-      message.speakerType === "expert" &&
-      !expertParticipantNumbers.has(message.participantId)
-    ) {
-      expertParticipantNumbers.set(
-        message.participantId,
-        expertParticipantNumbers.size + 1,
-      );
-    }
-  }
 
   if (!turn) return null;
 
@@ -76,9 +73,9 @@ export function GroupChatPhase({
         aria-live="polite"
       >
         {messages.map((message) => {
-          const expertNumber =
+          const expertIdentifier =
             message.speakerType === "expert"
-              ? expertParticipantNumbers.get(message.participantId)
+              ? getExpertAvatarIdentifier(message.participantId)
               : null;
 
           return (
@@ -97,15 +94,15 @@ export function GroupChatPhase({
               {message.speakerType === "expert" && (
                 <span
                   className="expert-avatar"
-                  aria-label={`${message.speakerName}、専門家${expertNumber}番`}
+                  aria-label={`${message.speakerName}、専門家識別子${expertIdentifier}`}
                   role="img"
                   style={getExpertAvatarStyle(message.participantId)}
                 >
                   <span aria-hidden="true">
                     {getExpertAvatarText(message.speakerName)}
                   </span>
-                  <span className="expert-avatar-number" aria-hidden="true">
-                    {expertNumber}
+                  <span className="expert-avatar-identifier" aria-hidden="true">
+                    {expertIdentifier}
                   </span>
                 </span>
               )}

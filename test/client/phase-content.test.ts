@@ -63,10 +63,7 @@ test("意見交換は発言者の役割に応じたカードと現在のファ�
     },
     requestReason: "判断基準を明確にするためです。",
     question: "何を優先しますか？",
-    userOptions: [
-      "費用を優先して進めたい",
-      "そのまま意見交換を続けて",
-    ],
+    userOptions: ["費用を優先して進めたい", "そのまま意見交換を続けて"],
     memoUpdate: null,
     contextSummaryUpdate: null,
   };
@@ -113,20 +110,33 @@ test("意見交換は発言者の役割に応じたカードと現在のファ�
     },
   ];
 
-  const markup = renderToStaticMarkup(
-    createElement(GroupChatPhase, {
-      turn,
-      messages,
-      otherAnswer: "",
-      isLoading: false,
-      errorMessage: "",
-      onOtherAnswerChange: () => undefined,
-      onUserAnswer: () => undefined,
-      onRetryExpertReply: () => undefined,
-      finishErrorMessage: "",
-      onFinish: () => undefined,
-    }),
-  );
+  const renderGroupChat = (groupChatMessages: GroupChatMessage[]) =>
+    renderToStaticMarkup(
+      createElement(GroupChatPhase, {
+        turn,
+        messages: groupChatMessages,
+        otherAnswer: "",
+        isLoading: false,
+        errorMessage: "",
+        onOtherAnswerChange: () => undefined,
+        onUserAnswer: () => undefined,
+        onRetryExpertReply: () => undefined,
+        finishErrorMessage: "",
+        onFinish: () => undefined,
+      }),
+    );
+  const getExpertAvatarIdentifiers = (groupChatMarkup: string) =>
+    [
+      ...groupChatMarkup.matchAll(
+        /<span class="expert-avatar" aria-label="家計アドバイザー、専門家識別子([A-Z0-9]{3})" role="img" style="--expert-avatar-hue:(\d+)"><span aria-hidden="true">家計<\/span><span class="expert-avatar-identifier" aria-hidden="true">([A-Z0-9]{3})<\/span><\/span>/g,
+      ),
+    ].map((match) => ({
+      ariaLabelIdentifier: match[1],
+      hue: match[2],
+      displayedIdentifier: match[3],
+    }));
+
+  const markup = renderGroupChat(messages);
 
   assert.match(
     markup,
@@ -136,25 +146,40 @@ test("意見交換は発言者の役割に応じたカードと現在のファ�
     markup,
     /class="group-chat-message group-chat-message--facilitator"[\s\S]*?<strong>ファシリテーター<\/strong>/,
   );
-  const expertAvatars = [
-    ...markup.matchAll(
-      /<span class="expert-avatar" aria-label="([^"]+)" role="img" style="--expert-avatar-hue:(\d+)"><span aria-hidden="true">家計<\/span><span class="expert-avatar-number" aria-hidden="true">(\d+)<\/span><\/span>/g,
-    ),
-  ];
+  const expertAvatars = getExpertAvatarIdentifiers(markup);
   assert.equal(expertAvatars.length, 3);
   assert.deepEqual(
-    expertAvatars.map((match) => match[1]),
+    expertAvatars.map((avatar) => avatar.ariaLabelIdentifier),
+    expertAvatars.map((avatar) => avatar.displayedIdentifier),
+  );
+  assert.equal(
+    expertAvatars[0].displayedIdentifier,
+    expertAvatars[2].displayedIdentifier,
+  );
+  assert.equal(expertAvatars[0].hue, expertAvatars[2].hue);
+  assert.notEqual(
+    expertAvatars[0].displayedIdentifier,
+    expertAvatars[1].displayedIdentifier,
+  );
+
+  const reorderedMarkup = renderGroupChat([messages[2], messages[1]]);
+  assert.deepEqual(
+    getExpertAvatarIdentifiers(reorderedMarkup).map(
+      (avatar) => avatar.displayedIdentifier,
+    ),
     [
-      "家計アドバイザー、専門家1番",
-      "家計アドバイザー、専門家2番",
-      "家計アドバイザー、専門家1番",
+      expertAvatars[1].displayedIdentifier,
+      expertAvatars[0].displayedIdentifier,
     ],
   );
+
+  const isolatedMarkup = renderGroupChat([messages[1]]);
   assert.deepEqual(
-    expertAvatars.map((match) => match[3]),
-    ["1", "2", "1"],
+    getExpertAvatarIdentifiers(isolatedMarkup).map(
+      (avatar) => avatar.displayedIdentifier,
+    ),
+    [expertAvatars[0].displayedIdentifier],
   );
-  assert.equal(expertAvatars[0][2], expertAvatars[2][2]);
   assert.match(
     markup,
     /class="group-chat-message group-chat-message--expert"[\s\S]*?<strong>家計アドバイザー<\/strong>/,
