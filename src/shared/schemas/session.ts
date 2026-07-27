@@ -267,6 +267,13 @@ export const FacilitatorTurnSchema = z
           path: ["userOptions"],
         });
       }
+      if (new Set(turn.userOptions).size !== turn.userOptions.length) {
+        context.addIssue({
+          code: "custom",
+          message: "userOptions must not contain duplicates",
+          path: ["userOptions"],
+        });
+      }
       if (turn.userOptions.includes("その他")) {
         context.addIssue({
           code: "custom",

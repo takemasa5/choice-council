@@ -83,7 +83,7 @@ test("意見交換は発言者の役割に応じたカードと現在のファ�
       id: "expert-1",
       speakerType: "expert",
       speakerName: "家計アドバイザー",
-      participantId: "expert-1",
+      participantId: "expert-household-a",
       content: "予算を確認しましょう。",
       createdAt: "2026-07-27T00:01:00.000Z",
     },
@@ -91,9 +91,17 @@ test("意見交換は発言者の役割に応じたカードと現在のファ�
       id: "expert-2",
       speakerType: "expert",
       speakerName: "家計アドバイザー",
-      participantId: "expert-1",
-      content: "支出の上限も確認しましょう。",
+      participantId: "expert-household-b",
+      content: "固定費も確認しましょう。",
       createdAt: "2026-07-27T00:01:30.000Z",
+    },
+    {
+      id: "expert-3",
+      speakerType: "expert",
+      speakerName: "家計アドバイザー",
+      participantId: "expert-household-a",
+      content: "支出の上限も確認しましょう。",
+      createdAt: "2026-07-27T00:01:45.000Z",
     },
     {
       id: "user-1",
@@ -128,17 +136,25 @@ test("意見交換は発言者の役割に応じたカードと現在のファ�
     markup,
     /class="group-chat-message group-chat-message--facilitator"[\s\S]*?<strong>ファシリテーター<\/strong>/,
   );
-  assert.match(
-    markup,
-    /class="expert-avatar" aria-hidden="true" style="--expert-avatar-hue:\d+"[^>]*>家計<\/span>/,
-  );
-  const expertAvatarHues = [
+  const expertAvatars = [
     ...markup.matchAll(
-      /class="expert-avatar" aria-hidden="true" style="--expert-avatar-hue:(\d+)"/g,
+      /<span class="expert-avatar" aria-label="([^"]+)" role="img" style="--expert-avatar-hue:(\d+)"><span aria-hidden="true">家計<\/span><span class="expert-avatar-number" aria-hidden="true">(\d+)<\/span><\/span>/g,
     ),
-  ].map((match) => match[1]);
-  assert.equal(expertAvatarHues.length, 2);
-  assert.equal(expertAvatarHues[0], expertAvatarHues[1]);
+  ];
+  assert.equal(expertAvatars.length, 3);
+  assert.deepEqual(
+    expertAvatars.map((match) => match[1]),
+    [
+      "家計アドバイザー、専門家1番",
+      "家計アドバイザー、専門家2番",
+      "家計アドバイザー、専門家1番",
+    ],
+  );
+  assert.deepEqual(
+    expertAvatars.map((match) => match[3]),
+    ["1", "2", "1"],
+  );
+  assert.equal(expertAvatars[0][2], expertAvatars[2][2]);
   assert.match(
     markup,
     /class="group-chat-message group-chat-message--expert"[\s\S]*?<strong>家計アドバイザー<\/strong>/,
@@ -161,5 +177,6 @@ test("意見交換は発言者の役割に応じたカードと現在のファ�
     /<button class="primary-button" type="button" disabled="">回答を送る<\/button>/,
   );
   assert.doesNotMatch(markup, /その他/);
-  assert.doesNotMatch(markup, /進行役|専門家/);
+  assert.doesNotMatch(markup, /<strong>進行役<\/strong>/);
+  assert.doesNotMatch(markup, /<strong>専門家<\/strong>/);
 });

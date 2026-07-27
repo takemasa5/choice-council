@@ -169,6 +169,29 @@ test("POST /api/facilitator/group-chat/next はその他を含むユーザータ
   assert.equal(FacilitatorTurnSchema.safeParse(invalidUserTurn).success, false);
 });
 
+test("POST /api/facilitator/group-chat/next は重複するユーザー選択肢を再試行後に拒否する", async () => {
+  const invalidUserTurn = {
+    ...userTurn,
+    userOptions: ["そのまま意見交換を続けて", "そのまま意見交換を続けて"],
+  };
+  const response = await requestJson(
+    createTestApp([invalidUserTurn, invalidUserTurn]),
+    "/api/facilitator/group-chat/next",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages: [],
+      confirmedExperts: [expert],
+      expertRepliesSinceUser: 2,
+    },
+  );
+
+  assert.equal(response.status, 502);
+  assert.equal(FacilitatorTurnSchema.safeParse(invalidUserTurn).success, false);
+});
+
 test("POST /api/facilitator/group-chat/next は直近発言の上限を超える入力を拒否する", async () => {
   const recentMessages = Array.from({ length: 9 }, (_, index) => ({
     id: `message-${index + 1}`,

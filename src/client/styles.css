@@ -421,6 +421,23 @@ button:disabled {
   background: hsl(var(--expert-avatar-hue) 62% 78%);
   border: 1px solid hsl(var(--expert-avatar-hue) 58% 48%);
   color: #253731;
+  position: relative;
+}
+
+.expert-avatar-number {
+  align-items: center;
+  background: #fff;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  display: inline-flex;
+  font-size: 0.6rem;
+  height: 13px;
+  justify-content: center;
+  line-height: 1;
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  width: 13px;
 }
 
 .group-chat-avatar--facilitator {

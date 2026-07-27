@@ -50,6 +50,19 @@ export function GroupChatPhase({
   const [isFinishDialogOpen, setIsFinishDialogOpen] = useState(false);
   const [selectedFinishStatus, setSelectedFinishStatus] =
     useState<FinalMemoStatus | null>(null);
+  const expertParticipantNumbers = new Map<string, number>();
+
+  for (const message of messages) {
+    if (
+      message.speakerType === "expert" &&
+      !expertParticipantNumbers.has(message.participantId)
+    ) {
+      expertParticipantNumbers.set(
+        message.participantId,
+        expertParticipantNumbers.size + 1,
+      );
+    }
+  }
 
   if (!turn) return null;
 
@@ -62,52 +75,65 @@ export function GroupChatPhase({
         aria-label="意見交換の発言履歴"
         aria-live="polite"
       >
-        {messages.map((message) => (
-          <article
-            className={`group-chat-message group-chat-message--${message.speakerType}`}
-            key={message.id}
-          >
-            {message.speakerType === "facilitator" && (
-              <span
-                className="group-chat-avatar group-chat-avatar--facilitator"
-                aria-hidden="true"
-              >
-                司
-              </span>
-            )}
-            {message.speakerType === "expert" && (
-              <span
-                className="expert-avatar"
-                aria-hidden="true"
-                style={getExpertAvatarStyle(message.participantId)}
-              >
-                {getExpertAvatarText(message.speakerName)}
-              </span>
-            )}
-            <div className="group-chat-message-body">
-              <header className="group-chat-message-header">
-                {message.speakerType === "user" ? (
-                  <span className="group-chat-message-label">あなた</span>
-                ) : (
-                  <strong>
-                    {message.speakerType === "facilitator"
-                      ? "ファシリテーター"
-                      : message.speakerName}
-                  </strong>
-                )}
-              </header>
-              <p>{message.content}</p>
-            </div>
-            {message.speakerType === "user" && (
-              <span
-                className="group-chat-avatar group-chat-avatar--user"
-                aria-hidden="true"
-              >
-                あ
-              </span>
-            )}
-          </article>
-        ))}
+        {messages.map((message) => {
+          const expertNumber =
+            message.speakerType === "expert"
+              ? expertParticipantNumbers.get(message.participantId)
+              : null;
+
+          return (
+            <article
+              className={`group-chat-message group-chat-message--${message.speakerType}`}
+              key={message.id}
+            >
+              {message.speakerType === "facilitator" && (
+                <span
+                  className="group-chat-avatar group-chat-avatar--facilitator"
+                  aria-hidden="true"
+                >
+                  司
+                </span>
+              )}
+              {message.speakerType === "expert" && (
+                <span
+                  className="expert-avatar"
+                  aria-label={`${message.speakerName}、専門家${expertNumber}番`}
+                  role="img"
+                  style={getExpertAvatarStyle(message.participantId)}
+                >
+                  <span aria-hidden="true">
+                    {getExpertAvatarText(message.speakerName)}
+                  </span>
+                  <span className="expert-avatar-number" aria-hidden="true">
+                    {expertNumber}
+                  </span>
+                </span>
+              )}
+              <div className="group-chat-message-body">
+                <header className="group-chat-message-header">
+                  {message.speakerType === "user" ? (
+                    <span className="group-chat-message-label">あなた</span>
+                  ) : (
+                    <strong>
+                      {message.speakerType === "facilitator"
+                        ? "ファシリテーター"
+                        : message.speakerName}
+                    </strong>
+                  )}
+                </header>
+                <p>{message.content}</p>
+              </div>
+              {message.speakerType === "user" && (
+                <span
+                  className="group-chat-avatar group-chat-avatar--user"
+                  aria-hidden="true"
+                >
+                  あ
+                </span>
+              )}
+            </article>
+          );
+        })}
         <article className="group-chat-message group-chat-message--facilitator group-chat-question">
           <span
             className="group-chat-avatar group-chat-avatar--facilitator"
