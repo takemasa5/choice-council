@@ -260,14 +260,19 @@ export const FacilitatorTurnSchema = z
         });
         return;
       }
-      for (const requiredOption of ["その他", "そのまま意見交換を続けて"]) {
-        if (!turn.userOptions.includes(requiredOption)) {
-          context.addIssue({
-            code: "custom",
-            message: `userOptions must include ${requiredOption}`,
-            path: ["userOptions"],
-          });
-        }
+      if (!turn.userOptions.includes("そのまま意見交換を続けて")) {
+        context.addIssue({
+          code: "custom",
+          message: "userOptions must include そのまま意見交換を続けて",
+          path: ["userOptions"],
+        });
+      }
+      if (turn.userOptions.includes("その他")) {
+        context.addIssue({
+          code: "custom",
+          message: "userOptions must not include その他",
+          path: ["userOptions"],
+        });
       }
     } else if (turn.userOptions !== null) {
       context.addIssue({

@@ -198,7 +198,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 | requestedSpeaker     |     必須 | `speakerType` が `expert` または `user` であり、`speakerName`、`participantId` を持つ、次に回答する1人     |
 | requestReason        |     必須 | その参加者を指名した理由                                                                                   |
 | question             |     必須 | 指名相手に回答してほしい内容                                                                               |
-| userOptions          | 条件付き | 指名先が `user` の場合は2件以上。必ず「その他」と「そのまま意見交換を続けて」を含む。専門家の場合は `null` |
+| userOptions          | 条件付き | 指名先が `user` の場合は2件以上。必ず「そのまま意見交換を続けて」を含み、「その他」は含めない。専門家の場合は `null` |
 | memoUpdate           |     必須 | 重要な整理がある場合の完全な `SessionMemo`、ない場合は `null`                                              |
 | contextSummaryUpdate |     必須 | 古い発言を圧縮した会話要約の更新、不要な場合は `null`                                                      |
 
@@ -248,7 +248,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 | confirmedExperts       | 必須 | 一意な `participantId` を含む確定済み専門家            |
 | expertRepliesSinceUser | 必須 | 前回のユーザー意思表示以降の連続した専門家回答数。0〜2 |
 
-応答は `FacilitatorTurn` とする。アプリ側は、`expertRepliesSinceUser` が2の場合に専門家を指名する応答を不正として扱う。値が1の場合、ファシリテーターは専門家またはユーザーを指名できる。ユーザーの自由入力、選択肢回答、「そのまま意見交換を続けて」のいずれもユーザー意思表示としてカウンタを0へ戻す。
+応答は `FacilitatorTurn` とする。アプリ側は、`expertRepliesSinceUser` が2の場合に専門家を指名する応答を不正として扱う。値が1の場合、ファシリテーターは専門家またはユーザーを指名できる。ユーザーを指名した場合、アプリは選択肢と自由入力 textarea を常時同時に表示する。選択肢を選ぶと、その文言をユーザー回答として直ちに送信する。ユーザーの自由入力、選択肢回答、「そのまま意見交換を続けて」のいずれもユーザー意思表示としてカウンタを0へ戻す。
 
 発言生成または構造化出力の検証が失敗した場合、アプリは会話履歴、セッションメモ、`expertRepliesSinceUser` を更新してはならない。対象の発言だけをユーザー操作で再生成できる状態にする。
 

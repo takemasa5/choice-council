@@ -131,7 +131,7 @@ const groupChatNextFacilitatorPrompt = `
 
 守ること:
 - 専門家を指名する場合、input.confirmedExperts にある専門家を選び、participantId を完全一致させる。
-- ユーザーを指名する場合、userOptions に「その他」と「そのまま意見交換を続けて」を必ず含める。
+- ユーザーを指名する場合、userOptions は2件以上にし、「そのまま意見交換を続けて」を必ず含める。「その他」は含めない。
 - 専門家を指名する場合、userOptions は null にする。
 - input.expertRepliesSinceUser が2の場合、必ずユーザーを指名する。
 - 出力は指定 schema に厳密に従う。

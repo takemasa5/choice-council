@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GroupChatStartTurnSchema } from "../../../src/shared/schemas/session";
+import {
+  FacilitatorTurnSchema,
+  GroupChatStartTurnSchema,
+} from "../../../src/shared/schemas/session";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
 
 const expert = {
@@ -31,6 +34,16 @@ const turn = {
   userOptions: null,
   memoUpdate: null,
   contextSummaryUpdate: "費用を検討中です。",
+} as const;
+
+const userTurn = {
+  ...turn,
+  requestedSpeaker: {
+    speakerType: "user",
+    speakerName: "あなた",
+    participantId: "user",
+  },
+  userOptions: ["費用を優先して検討したい", "そのまま意見交換を続けて"],
 } as const;
 
 test("POST /api/facilitator/group-chat/start は厳密なターンを返す", async () => {
@@ -108,6 +121,52 @@ test("POST /api/facilitator/group-chat/next は専門家の連続3回目を拒�
     },
   );
   assert.equal(response.status, 502);
+});
+
+test("POST /api/facilitator/group-chat/next は条件を満たすユーザーターンを返す", async () => {
+  const response = await requestJson(
+    createTestApp(userTurn),
+    "/api/facilitator/group-chat/next",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages: [],
+      confirmedExperts: [expert],
+      expertRepliesSinceUser: 2,
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    (response.body as typeof userTurn).userOptions,
+    userTurn.userOptions,
+  );
+  assert.equal(FacilitatorTurnSchema.safeParse(userTurn).success, true);
+});
+
+test("POST /api/facilitator/group-chat/next はその他を含むユーザーターンを再試行後に拒否する", async () => {
+  const invalidUserTurn = {
+    ...userTurn,
+    userOptions: ["その他", "そのまま意見交換を続けて"],
+  };
+  const response = await requestJson(
+    createTestApp([invalidUserTurn, invalidUserTurn]),
+    "/api/facilitator/group-chat/next",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages: [],
+      confirmedExperts: [expert],
+      expertRepliesSinceUser: 2,
+    },
+  );
+
+  assert.equal(response.status, 502);
+  assert.equal(FacilitatorTurnSchema.safeParse(invalidUserTurn).success, false);
 });
 
 test("POST /api/facilitator/group-chat/next は直近発言の上限を超える入力を拒否する", async () => {

@@ -4,7 +4,20 @@ import type {
   GroupChatMessage,
 } from "../../shared/schemas/session";
 import { finalMemoStatusOptions } from "../final-memo-flow";
-import { useState } from "react";
+import { type CSSProperties, useState } from "react";
+
+function getExpertAvatarText(roleName: string) {
+  return Array.from(roleName.trim()).slice(0, 2).join("") || "専";
+}
+
+function getExpertAvatarStyle(participantId: string): CSSProperties {
+  const hue = Array.from(participantId).reduce(
+    (total, character) => (total * 31 + character.charCodeAt(0)) % 360,
+    0,
+  );
+
+  return { "--expert-avatar-hue": hue } as CSSProperties;
+}
 
 /**
  * 日本語名: 意見交換のタイムライン、回答送信、再生成を表示するフェーズUI。
@@ -43,47 +56,110 @@ export function GroupChatPhase({
   return (
     <section className="expert-comment-box" aria-label="意見交換">
       <h3>意見交換</h3>
-      {messages.map((message) => (
-        <article className="expert-comment-item" key={message.id}>
-          <strong>{message.speakerName}</strong>
-          <p>{message.content}</p>
+      <div
+        className="group-chat-timeline"
+        role="log"
+        aria-label="意見交換の発言履歴"
+        aria-live="polite"
+      >
+        {messages.map((message) => (
+          <article
+            className={`group-chat-message group-chat-message--${message.speakerType}`}
+            key={message.id}
+          >
+            {message.speakerType === "facilitator" && (
+              <span
+                className="group-chat-avatar group-chat-avatar--facilitator"
+                aria-hidden="true"
+              >
+                司
+              </span>
+            )}
+            {message.speakerType === "expert" && (
+              <span
+                className="expert-avatar"
+                aria-hidden="true"
+                style={getExpertAvatarStyle(message.participantId)}
+              >
+                {getExpertAvatarText(message.speakerName)}
+              </span>
+            )}
+            <div className="group-chat-message-body">
+              <header className="group-chat-message-header">
+                {message.speakerType === "user" ? (
+                  <span className="group-chat-message-label">あなた</span>
+                ) : (
+                  <strong>
+                    {message.speakerType === "facilitator"
+                      ? "ファシリテーター"
+                      : message.speakerName}
+                  </strong>
+                )}
+              </header>
+              <p>{message.content}</p>
+            </div>
+            {message.speakerType === "user" && (
+              <span
+                className="group-chat-avatar group-chat-avatar--user"
+                aria-hidden="true"
+              >
+                あ
+              </span>
+            )}
+          </article>
+        ))}
+        <article className="group-chat-message group-chat-message--facilitator group-chat-question">
+          <span
+            className="group-chat-avatar group-chat-avatar--facilitator"
+            aria-hidden="true"
+          >
+            司
+          </span>
+          <div className="group-chat-message-body">
+            <header className="group-chat-message-header">
+              <strong>ファシリテーター</strong>
+            </header>
+            <p>
+              <span className="group-chat-question-label">質問</span>
+              {turn.question}
+            </p>
+          </div>
         </article>
-      ))}
-      <p>{turn.question}</p>
-      {turn.requestedSpeaker.speakerType === "user" && turn.userOptions && (
-        <div className="option-list">
-          {turn.userOptions.map((option) => (
-            <button
-              type="button"
-              key={option}
-              onClick={() =>
-                option === "その他"
-                  ? onOtherAnswerChange(" ")
-                  : onUserAnswer(option)
-              }
-              disabled={isLoading}
-            >
-              {option}
-            </button>
-          ))}
-          {otherAnswer && (
-            <label className="field inline-field">
+      </div>
+      {turn.requestedSpeaker.speakerType === "user" && (
+        <div className="group-chat-answer-controls">
+          {turn.userOptions && (
+            <div className="group-chat-option-grid">
+              {turn.userOptions.map((option) => (
+                <button
+                  type="button"
+                  key={option}
+                  onClick={() => onUserAnswer(option)}
+                  disabled={isLoading}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="group-chat-free-response">
+            <label className="field">
               <span>自由入力</span>
               <textarea
-                value={otherAnswer.trim()}
+                value={otherAnswer}
                 onChange={(event) => onOtherAnswerChange(event.target.value)}
                 rows={3}
               />
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => onUserAnswer(otherAnswer)}
-                disabled={isLoading}
-              >
-                回答を送る
-              </button>
             </label>
-          )}
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => onUserAnswer(otherAnswer.trim())}
+              disabled={isLoading || !otherAnswer.trim()}
+            >
+              回答を送る
+            </button>
+          </div>
         </div>
       )}
       {errorMessage && (
