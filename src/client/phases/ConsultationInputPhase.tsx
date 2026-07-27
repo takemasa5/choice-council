@@ -54,7 +54,7 @@ export function ConsultationInputPhase({
         <textarea
           value={consultation}
           onChange={(event) => onConsultationChange(event.target.value)}
-          placeholder="例: 小5の娘の中学受験をするか迷っています。本人の負担と将来の選択肢のどちらを重視すべきか整理したいです。"
+          placeholder="例: 夏休みの家族旅行で、予算を抑えながら子どもも楽しめる行き先を家族で決めたいです。"
           rows={7}
         />
       </label>
