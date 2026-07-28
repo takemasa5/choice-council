@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { restoreSessionPhase } from "../../src/client/session-phase-restoration";
 
-test("初回専門家コメントの旧directionフェーズから意見交換開始を再開する", () => {
+test("旧構造のdirectionフェーズは安全にconsultation_inputへフォールバックする", () => {
   assert.equal(
     restoreSessionPhase("direction", "deliberation"),
-    "deliberation",
+    "consultation_input",
   );
 });
 

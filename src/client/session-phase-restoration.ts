@@ -7,8 +7,6 @@ export function restoreSessionPhase(
 ): Phase {
   const storedPhase = currentPhase ?? responsePhase;
 
-  if (storedPhase === "direction") return "deliberation";
-
   const parsedPhase = PhaseSchema.safeParse(storedPhase);
   return parsedPhase.success ? parsedPhase.data : "consultation_input";
 }
