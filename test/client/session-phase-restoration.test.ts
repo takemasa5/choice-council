@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { restoreSessionPhase } from "../../src/client/session-phase-restoration";
 
-test("旧directionフェーズをgroup_chatへ移行する", () => {
-  assert.equal(restoreSessionPhase("direction", "deliberation"), "group_chat");
+test("初回専門家コメントの旧directionフェーズから意見交換開始を再開する", () => {
+  assert.equal(
+    restoreSessionPhase("direction", "deliberation"),
+    "deliberation",
+  );
 });
 
 test("保存済みフェーズがない場合はresponse側の有効フェーズを使う", () => {
