@@ -41,6 +41,7 @@ import { useExpertSelectionPhase } from "./hooks/use-expert-selection-phase";
 import { useSessionPersistence } from "./hooks/use-session-persistence";
 import { useDeliberationPhaseFlow } from "./hooks/use-deliberation-phase-flow";
 import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
+import { restoreSessionPhase } from "./session-phase-restoration";
 import { ConsultationInputPhase } from "./phases/ConsultationInputPhase";
 import { DeliberationPhase } from "./phases/DeliberationPhase";
 import { ExpertSelectionPhase } from "./phases/ExpertSelectionPhase";
@@ -82,7 +83,7 @@ type StoredSession = {
   startedConsultation?: string;
   response: FacilitatorResponse | null;
   responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
-  currentPhase: Phase;
+  currentPhase?: unknown;
   expertComments?: ExpertComment[];
   initialExpertRequests?: ExpertRequest[];
   confirmedExperts?: ExpertRequest[];
@@ -270,10 +271,10 @@ export function App() {
   function restoreSession(parsed: StoredSession | null) {
     if (!parsed) return;
 
-    const restoredPhase =
-      parsed.currentPhase ??
-      parsed.response?.current_phase ??
-      "consultation_input";
+    const restoredPhase = restoreSessionPhase(
+      parsed.currentPhase,
+      parsed.response?.current_phase,
+    );
     const restoredSession = recoverInterruptedFinalMemo({
       currentPhase: restoredPhase,
       response: parsed.response,
