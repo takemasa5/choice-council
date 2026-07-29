@@ -110,6 +110,7 @@ export function App() {
   const [response, setResponse] = useState<FacilitatorResponse | null>(null);
   const [responseHistory, setResponseHistory] = useState<ResponseHistory>({});
   const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
+  const [isMobileMemoOpen, setIsMobileMemoOpen] = useState(false);
   const facilitatorFlow = useFacilitatorPhaseFlow();
   const {
     isLoading,
@@ -797,6 +798,16 @@ export function App() {
             }
           />
 
+          <button
+            className="mobile-memo-toggle secondary-button"
+            type="button"
+            aria-controls="session-memo-drawer"
+            aria-expanded={isMobileMemoOpen}
+            onClick={() => setIsMobileMemoOpen((current) => !current)}
+          >
+            セッションメモ
+          </button>
+
           {availableReturnPhases.length > 0 && (
             <section className="panel">
               <h2>前フェーズへ戻る</h2>
@@ -822,7 +833,11 @@ export function App() {
           )}
         </section>
 
-        <aside className="side-panel" aria-label="セッションメモ">
+        <aside
+          id="session-memo-drawer"
+          className={`side-panel${isMobileMemoOpen ? " side-panel--mobile-open" : ""}`}
+          aria-label="セッションメモ"
+        >
           <div className="panel">
             <div className="side-header">
               <h2>セッションメモ</h2>
