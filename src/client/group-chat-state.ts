@@ -10,6 +10,7 @@ export type GroupChatState = {
   contextSummary: string;
   otherAnswer: string;
   expertRepliesSinceUser: number;
+  isNextTurnRetryPending?: boolean;
 };
 
 /** 日本語名: グループチャット状態の初期値。 */
@@ -19,6 +20,7 @@ export const initialGroupChatState: GroupChatState = {
   contextSummary: "",
   otherAnswer: "",
   expertRepliesSinceUser: 0,
+  isNextTurnRetryPending: false,
 };
 
 /** 日本語名: グループチャット状態を更新する操作。 */
@@ -29,6 +31,12 @@ export type GroupChatAction =
       type: "set_turn";
       messages: GroupChatMessage[];
       turn: FacilitatorTurn;
+      contextSummary: string;
+      expertRepliesSinceUser: number;
+    }
+  | {
+      type: "set_pending_next_turn";
+      messages: GroupChatMessage[];
       contextSummary: string;
       expertRepliesSinceUser: number;
     }
@@ -51,6 +59,15 @@ export function groupChatReducer(
         turn: action.turn,
         contextSummary: action.contextSummary,
         expertRepliesSinceUser: action.expertRepliesSinceUser,
+        isNextTurnRetryPending: false,
+      };
+    case "set_pending_next_turn":
+      return {
+        ...state,
+        messages: action.messages,
+        contextSummary: action.contextSummary,
+        expertRepliesSinceUser: action.expertRepliesSinceUser,
+        isNextTurnRetryPending: true,
       };
     case "set_other_answer":
       return { ...state, otherAnswer: action.value };

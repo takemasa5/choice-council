@@ -85,6 +85,7 @@ type StoredSession = {
   groupChatTurn?: FacilitatorTurn;
   groupChatContextSummary?: string;
   groupChatExpertRepliesSinceUser?: number;
+  groupChatNextTurnRetryPending?: boolean;
   finalMarkdown?: string;
 };
 
@@ -187,6 +188,7 @@ export function App() {
     contextSummary: groupChatContextSummary,
     otherAnswer: groupChatOtherAnswer,
     expertRepliesSinceUser,
+    isNextTurnRetryPending: groupChatNextTurnRetryPending,
   } = groupChat;
   const {
     finalMarkdown,
@@ -236,6 +238,7 @@ export function App() {
       groupChatTurn,
       groupChatContextSummary,
       expertRepliesSinceUser,
+      groupChatNextTurnRetryPending,
       initialExpertRequests,
       finalMarkdown,
       selectedQuestionOption,
@@ -295,6 +298,7 @@ export function App() {
       turn: parsed.groupChatTurn ?? null,
       contextSummary: parsed.groupChatContextSummary ?? "",
       expertRepliesSinceUser: parsed.groupChatExpertRepliesSinceUser ?? 0,
+      isNextTurnRetryPending: parsed.groupChatNextTurnRetryPending ?? false,
     });
     finalMemoPhase.restore(parsed.finalMarkdown ?? "");
     restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
@@ -612,6 +616,7 @@ export function App() {
       groupChatTurn: groupChatTurn ?? undefined,
       groupChatContextSummary: groupChatContextSummary || undefined,
       groupChatExpertRepliesSinceUser: expertRepliesSinceUser,
+      groupChatNextTurnRetryPending: groupChatNextTurnRetryPending || undefined,
       initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
     };
@@ -745,6 +750,7 @@ export function App() {
         messages={groupChatMessages}
         otherAnswer={groupChatOtherAnswer}
         isLoading={isGroupChatBusy}
+        isNextTurnRetryPending={groupChatNextTurnRetryPending}
         errorMessage={groupChatErrorMessage}
         onOtherAnswerChange={groupChatPhase.changeOtherAnswer}
         onUserAnswer={(answer) =>
@@ -757,6 +763,13 @@ export function App() {
         }
         onRetryExpertReply={() =>
           void groupChatPhase.retryExpertReply({
+            consultation: sessionConsultation,
+            memo,
+            confirmedExperts,
+          })
+        }
+        onRetryNextTurn={() =>
+          void groupChatPhase.retryNextTurn({
             consultation: sessionConsultation,
             memo,
             confirmedExperts,
