@@ -458,6 +458,11 @@ export function App() {
       targetPhase === "consultation_input"
         ? clearResponseHistory()
         : keepResponsesThroughPhase(responseHistory, targetPhase);
+    const shouldKeepExpertDrafts =
+      targetPhase === "expert_selection" ||
+      targetPhase === "deliberation" ||
+      targetPhase === "group_chat" ||
+      targetPhase === "final_memo";
 
     setCurrentPhase(targetPhase);
     setResponse(nextResponseHistory[targetPhase] ?? null);
@@ -472,6 +477,10 @@ export function App() {
         confirmedExperts,
       ),
       comments: getExpertCommentsForReturn(targetPhase, expertComments),
+      drafts: shouldKeepExpertDrafts ? expertDrafts : undefined,
+      draftProvenanceKey: shouldKeepExpertDrafts
+        ? expertDraftProvenanceKey
+        : undefined,
     });
     if (targetPhase !== "group_chat") {
       groupChatPhase.reset();
