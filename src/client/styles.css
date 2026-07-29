@@ -596,6 +596,10 @@ button:disabled {
   min-width: 0;
 }
 
+.mobile-memo-toggle {
+  display: none;
+}
+
 .side-header {
   align-items: center;
   display: flex;
@@ -677,6 +681,19 @@ button:disabled {
 
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  .mobile-memo-toggle {
+    display: block;
+    width: 100%;
+  }
+
+  .side-panel {
+    display: none;
+  }
+
+  .side-panel--mobile-open {
+    display: block;
   }
 
   .optional-grid {
