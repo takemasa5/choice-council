@@ -6,7 +6,6 @@ import type {
   FacilitatorResponseRequest,
   Phase,
   SessionMemo,
-  SessionMemoRequest,
 } from "../shared/schemas/session";
 import { maximumExpertRequestCount } from "../shared/schemas/session";
 
@@ -57,14 +56,6 @@ export type FacilitatorResponseInput = {
   memo: SessionMemo | null | undefined;
 };
 
-/** 日本語名: 割り込み操作をセッションメモへ記録する入力値。 */
-export type InterruptionMemoUpdateInput = {
-  consultation: string;
-  currentPhase: Phase;
-  previousMemo: SessionMemo | null;
-  userAction: string;
-};
-
 /**
  * 相談開始 API に送る初回入力を作成する。
  *
@@ -110,28 +101,6 @@ export function buildFacilitatorResponseRequest(
     userQuestion: input.userQuestion,
     userQuestionAnswer: input.userQuestionAnswer,
     memo: input.memo,
-  };
-}
-
-/**
- * 割り込み機能で使っていたセッションメモ API 入力を作成する。
- *
- * 仕様対応: `docs/api/schemas.md#セッションメモ`、
- * `docs/design/client-ui-refactor-implementation-plan.md#実装順序`。
- */
-export function buildInterruptionMemoUpdateRequest(
-  input: InterruptionMemoUpdateInput,
-): SessionMemoRequest | null {
-  const userAction = input.userAction.trim();
-  if (!input.consultation.trim() || !input.previousMemo || !userAction) {
-    return null;
-  }
-
-  return {
-    consultation: input.consultation,
-    currentPhase: input.currentPhase,
-    previousMemo: input.previousMemo,
-    userAction,
   };
 }
 
