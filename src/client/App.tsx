@@ -89,6 +89,7 @@ type StoredSession = {
   currentPhase?: unknown;
   expertComments?: ExpertComment[];
   expertDrafts?: ExpertDraft[];
+  expertDraftProvenanceKey?: string;
   initialExpertRequests?: ExpertRequest[];
   confirmedExperts?: ExpertRequest[];
   groupChatMessages?: GroupChatMessage[];
@@ -164,6 +165,7 @@ export function App() {
     initialExpertRequests,
     confirmedExperts,
     expertComments,
+    expertDraftProvenanceKey,
     isGenerating: isGeneratingExperts,
     errorMessage: expertErrorMessage,
     updateExpertDraft: updateExpertDraftOperation,
@@ -229,6 +231,7 @@ export function App() {
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
+  const shouldSkipRestoredCandidateSyncRef = useRef(false);
 
   const { hasRestoredSession } = useSessionPersistence<StoredSession>({
     storageKey,
@@ -259,6 +262,7 @@ export function App() {
       currentPhase,
       expertComments,
       expertDrafts,
+      expertDraftProvenanceKey,
       confirmedExperts,
       groupChatMessages,
       groupChatTurn,
@@ -312,10 +316,14 @@ export function App() {
       confirmedCandidates: restoredExperts,
       comments: parsed.expertComments ?? [],
       drafts: parsed.expertDrafts,
-      restoredResponseCandidateKey: JSON.stringify(
-        restoredSession.response?.expert_requests ?? [],
-      ),
+      restoredDraftProvenanceKey: parsed.expertDraftProvenanceKey,
     });
+    const restoredCandidates = restoredSession.response?.expert_requests ?? [];
+    synchronizeCandidates(
+      restoredCandidates,
+      JSON.stringify(restoredCandidates),
+    );
+    shouldSkipRestoredCandidateSyncRef.current = true;
     groupChatPhase.restore({
       messages: parsed.groupChatMessages ?? [],
       turn: parsed.groupChatTurn ?? null,
@@ -329,6 +337,10 @@ export function App() {
 
   useEffect(() => {
     if (!hasRestoredSession) return;
+    if (shouldSkipRestoredCandidateSyncRef.current) {
+      shouldSkipRestoredCandidateSyncRef.current = false;
+      return;
+    }
     synchronizeCandidates(response?.expert_requests ?? [], expertRequestKey);
   }, [hasRestoredSession, expertRequestKey]);
 
@@ -789,6 +801,7 @@ export function App() {
       currentPhase,
       expertComments,
       expertDrafts,
+      expertDraftProvenanceKey: expertDraftProvenanceKey ?? undefined,
       confirmedExperts,
       groupChatMessages,
       groupChatTurn: groupChatTurn ?? undefined,

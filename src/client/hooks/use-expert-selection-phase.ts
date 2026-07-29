@@ -46,6 +46,9 @@ export function useExpertSelectionPhase({
   onCommentsGenerated: (experts: ExpertRequest[]) => void;
 }) {
   const [expertDrafts, setExpertDrafts] = useState<ExpertDraft[]>([]);
+  const [expertDraftProvenanceKey, setExpertDraftProvenanceKey] = useState<
+    string | null
+  >(null);
   const [initialExpertRequests, setInitialExpertRequests] = useState<
     ExpertRequest[]
   >([]);
@@ -190,6 +193,7 @@ export function useExpertSelectionPhase({
     if (confirmation.errorMessage)
       return setErrorMessage(confirmation.errorMessage);
     setExpertDrafts(initialExpertRequests.map(createDraft));
+    setExpertDraftProvenanceKey(JSON.stringify(initialExpertRequests));
     setConfirmedExperts(confirmation.experts);
     confirmedRequestKeyRef.current = JSON.stringify(confirmation.experts);
     setExpertComments([]);
@@ -245,20 +249,22 @@ export function useExpertSelectionPhase({
     confirmedCandidates,
     comments,
     drafts,
-    restoredResponseCandidateKey,
+    restoredDraftProvenanceKey,
   }: {
     initialCandidates: ExpertRequest[];
     confirmedCandidates: ExpertRequest[];
     comments: ExpertComment[];
     drafts?: ExpertDraft[];
-    restoredResponseCandidateKey: string;
+    restoredDraftProvenanceKey?: string;
   }) {
     confirmedRequestKeyRef.current = JSON.stringify(confirmedCandidates);
     if (drafts !== undefined) {
       restoreDraftIdSequence(drafts);
       setExpertDrafts(drafts);
-      restoredDraftCandidateKeyRef.current = restoredResponseCandidateKey;
+      setExpertDraftProvenanceKey(restoredDraftProvenanceKey ?? null);
+      restoredDraftCandidateKeyRef.current = restoredDraftProvenanceKey ?? null;
     } else {
+      setExpertDraftProvenanceKey(null);
       restoredDraftCandidateKeyRef.current = null;
     }
     setInitialExpertRequests(initialCandidates);
@@ -282,6 +288,7 @@ export function useExpertSelectionPhase({
     }
     restoredDraftCandidateKeyRef.current = null;
     setExpertDrafts(candidates.map(createDraft));
+    setExpertDraftProvenanceKey(candidateKey);
     if (confirmedRequestKeyRef.current === candidateKey) {
       confirmedRequestKeyRef.current = "";
     } else {
@@ -298,6 +305,7 @@ export function useExpertSelectionPhase({
   /** 日本語名: 専門家選定の全ローカル状態を破棄する。 */
   function resetSelectionState() {
     setExpertDrafts([]);
+    setExpertDraftProvenanceKey(null);
     setInitialExpertRequests([]);
     setConfirmedExperts([]);
     setExpertComments([]);
@@ -318,6 +326,7 @@ export function useExpertSelectionPhase({
     comments: ExpertComment[];
   }) {
     setExpertDrafts([]);
+    setExpertDraftProvenanceKey(null);
     setInitialExpertRequests(initialCandidates);
     setConfirmedExperts(confirmedCandidates);
     setExpertComments(comments);
@@ -327,6 +336,7 @@ export function useExpertSelectionPhase({
 
   return {
     expertDrafts,
+    expertDraftProvenanceKey,
     initialExpertRequests,
     confirmedExperts,
     expertComments,
