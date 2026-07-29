@@ -320,18 +320,22 @@ export function useExpertSelectionPhase({
     initialCandidates,
     confirmedCandidates,
     comments,
+    drafts,
+    draftProvenanceKey,
   }: {
     initialCandidates: ExpertRequest[];
     confirmedCandidates: ExpertRequest[];
     comments: ExpertComment[];
+    drafts?: ExpertDraft[];
+    draftProvenanceKey?: string | null;
   }) {
-    setExpertDrafts([]);
-    setExpertDraftProvenanceKey(null);
+    setExpertDrafts(drafts ?? []);
+    setExpertDraftProvenanceKey(draftProvenanceKey ?? null);
     setInitialExpertRequests(initialCandidates);
     setConfirmedExperts(confirmedCandidates);
     setExpertComments(comments);
     setErrorMessage("");
-    restoredDraftCandidateKeyRef.current = null;
+    restoredDraftCandidateKeyRef.current = draftProvenanceKey ?? null;
   }
 
   return {

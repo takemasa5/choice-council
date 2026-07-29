@@ -472,6 +472,11 @@ export function App() {
         confirmedExperts,
       ),
       comments: getExpertCommentsForReturn(targetPhase, expertComments),
+      drafts: targetPhase === "expert_selection" ? expertDrafts : undefined,
+      draftProvenanceKey:
+        targetPhase === "expert_selection"
+          ? expertDraftProvenanceKey
+          : undefined,
     });
     if (targetPhase !== "group_chat") {
       groupChatPhase.reset();
