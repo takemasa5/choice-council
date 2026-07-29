@@ -67,12 +67,14 @@ export function createResponseHistoryForNewConsultation(
   };
 }
 
-/** 検討へ戻る場合だけ、根拠となる専門家コメントを残す。 */
+/** 検討または意見交換へ戻る場合だけ、根拠となる専門家コメントを残す。 */
 export function getExpertCommentsForReturn(
   targetPhase: Phase,
   expertComments: ExpertComment[],
 ) {
-  return targetPhase === "deliberation" ? expertComments : [];
+  return targetPhase === "deliberation" || targetPhase === "group_chat"
+    ? expertComments
+    : [];
 }
 
 /** 専門家選定以降へ戻る場合だけ、確定済み専門家を維持する。 */
