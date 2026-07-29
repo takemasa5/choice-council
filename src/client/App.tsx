@@ -37,7 +37,10 @@ import { usePremisePhase } from "./hooks/use-premise-phase";
 import { useConsultationPhase } from "./hooks/use-consultation-phase";
 import { useFinalMemoPhase } from "./hooks/use-final-memo-phase";
 import { useFacilitatorPhaseFlow } from "./hooks/use-facilitator-phase-flow";
-import { useExpertSelectionPhase } from "./hooks/use-expert-selection-phase";
+import {
+  type ExpertDraft,
+  useExpertSelectionPhase,
+} from "./hooks/use-expert-selection-phase";
 import { useSessionPersistence } from "./hooks/use-session-persistence";
 import { useDeliberationPhaseFlow } from "./hooks/use-deliberation-phase-flow";
 import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
@@ -85,6 +88,8 @@ type StoredSession = {
   responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
   currentPhase?: unknown;
   expertComments?: ExpertComment[];
+  expertDrafts?: ExpertDraft[];
+  expertDraftProvenanceKey?: string;
   initialExpertRequests?: ExpertRequest[];
   confirmedExperts?: ExpertRequest[];
   groupChatMessages?: GroupChatMessage[];
@@ -160,6 +165,7 @@ export function App() {
     initialExpertRequests,
     confirmedExperts,
     expertComments,
+    expertDraftProvenanceKey,
     isGenerating: isGeneratingExperts,
     errorMessage: expertErrorMessage,
     updateExpertDraft: updateExpertDraftOperation,
@@ -225,8 +231,9 @@ export function App() {
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
+  const shouldSkipRestoredCandidateSyncRef = useRef(false);
 
-  useSessionPersistence<StoredSession>({
+  const { hasRestoredSession } = useSessionPersistence<StoredSession>({
     storageKey,
     restore: restoreSession,
     createSession: buildStoredSession,
@@ -239,6 +246,7 @@ export function App() {
         expectedOutcome.trim() ||
         response ||
         Object.keys(responseHistory).length > 0 ||
+        expertDrafts.length > 0 ||
         expertComments.length > 0 ||
         finalMarkdown,
       ),
@@ -253,6 +261,8 @@ export function App() {
       responseHistory,
       currentPhase,
       expertComments,
+      expertDrafts,
+      expertDraftProvenanceKey,
       confirmedExperts,
       groupChatMessages,
       groupChatTurn,
@@ -305,7 +315,15 @@ export function App() {
       ),
       confirmedCandidates: restoredExperts,
       comments: parsed.expertComments ?? [],
+      drafts: parsed.expertDrafts,
+      restoredDraftProvenanceKey: parsed.expertDraftProvenanceKey,
     });
+    const restoredCandidates = restoredSession.response?.expert_requests ?? [];
+    synchronizeCandidates(
+      restoredCandidates,
+      JSON.stringify(restoredCandidates),
+    );
+    shouldSkipRestoredCandidateSyncRef.current = true;
     groupChatPhase.restore({
       messages: parsed.groupChatMessages ?? [],
       turn: parsed.groupChatTurn ?? null,
@@ -318,8 +336,13 @@ export function App() {
   }
 
   useEffect(() => {
+    if (!hasRestoredSession) return;
+    if (shouldSkipRestoredCandidateSyncRef.current) {
+      shouldSkipRestoredCandidateSyncRef.current = false;
+      return;
+    }
     synchronizeCandidates(response?.expert_requests ?? [], expertRequestKey);
-  }, [expertRequestKey]);
+  }, [hasRestoredSession, expertRequestKey]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return (
@@ -777,6 +800,8 @@ export function App() {
       responseHistory,
       currentPhase,
       expertComments,
+      expertDrafts,
+      expertDraftProvenanceKey: expertDraftProvenanceKey ?? undefined,
       confirmedExperts,
       groupChatMessages,
       groupChatTurn: groupChatTurn ?? undefined,
