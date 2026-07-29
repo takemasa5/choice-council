@@ -232,7 +232,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 | expert              | 必須 | `FacilitatorTurn.requestedSpeaker` と一致する専門家       |
 | facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問                  |
 
-応答は、指定専門家の `GroupChatMessage` 1件とする。専門家の回答後、クライアントは次のファシリテーターターンを要求する。
+応答は、指定専門家の `GroupChatMessage` 1件とする。`id` は入力 `recentMessages` に含まれる既存のIDと重複してはならず、重複する構造化出力は無効として再生成対象にする。専門家の回答後、クライアントは次のファシリテーターターンを要求する。
 
 #### `POST /api/facilitator/group-chat/next`
 

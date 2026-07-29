@@ -24,6 +24,9 @@ export function createGroupChatExpertReplyHandler(
       sendInvalidRequest(response, parsedRequest.error.flatten());
       return;
     }
+    const existingMessageIds = new Set(
+      parsedRequest.data.recentMessages.map((message) => message.id),
+    );
     try {
       const output = await parseStructuredOutputOnceWithRetry<GroupChatMessage>(
         () =>
@@ -33,7 +36,9 @@ export function createGroupChatExpertReplyHandler(
             schema: GroupChatMessageSchema,
             schemaName: "group_chat_message",
           }),
-        (message) => GroupChatMessageSchema.safeParse(message).success,
+        (message) =>
+          GroupChatMessageSchema.safeParse(message).success &&
+          !existingMessageIds.has(message.id),
       );
       if (!output) {
         sendInvalidModelResponse(request, response);
