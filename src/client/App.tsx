@@ -112,6 +112,11 @@ export function App() {
   const [responseHistory, setResponseHistory] = useState<ResponseHistory>({});
   const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
   const [isMobileMemoOpen, setIsMobileMemoOpen] = useState(false);
+  const [isMemoUpdateNoticeVisible, setIsMemoUpdateNoticeVisible] =
+    useState(false);
+  const memoUpdateNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const facilitatorFlow = useFacilitatorPhaseFlow();
   const {
     isLoading,
@@ -202,6 +207,10 @@ export function App() {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
   const shouldSkipRestoredCandidateSyncRef = useRef(false);
+
+  useEffect(() => {
+    return stopMemoUpdatedNoticeTimer;
+  }, []);
 
   const { hasRestoredSession } = useSessionPersistence<StoredSession>({
     storageKey,
@@ -425,6 +434,7 @@ export function App() {
     )
       return;
 
+    hideMemoUpdatedNotice();
     window.localStorage.removeItem(storageKey);
     changeConsultation("");
     setStartedConsultation("");
@@ -457,6 +467,10 @@ export function App() {
     );
 
     if (!confirmed) return;
+
+    if (targetPhase !== "group_chat") {
+      hideMemoUpdatedNotice();
+    }
 
     const nextResponseHistory =
       targetPhase === "consultation_input"
@@ -553,6 +567,7 @@ export function App() {
       }));
       return responseWithMemo;
     });
+    if (turn.memoUpdate) showMemoUpdatedNotice();
   }
 
   /** ファシリテーターターンが返すメモ更新を現在の履歴へ反映する。 */
@@ -571,6 +586,30 @@ export function App() {
           }
         : current;
     });
+    showMemoUpdatedNotice();
+  }
+
+  /** グループチャット中のメモ更新を短時間だけ通知する。 */
+  function showMemoUpdatedNotice() {
+    stopMemoUpdatedNoticeTimer();
+    setIsMemoUpdateNoticeVisible(true);
+    memoUpdateNoticeTimerRef.current = setTimeout(() => {
+      setIsMemoUpdateNoticeVisible(false);
+      memoUpdateNoticeTimerRef.current = null;
+    }, 3000);
+  }
+
+  /** 表示中のメモ更新通知を閉じる。 */
+  function hideMemoUpdatedNotice() {
+    stopMemoUpdatedNoticeTimer();
+    setIsMemoUpdateNoticeVisible(false);
+  }
+
+  /** メモ更新通知の保留タイマーを停止する。 */
+  function stopMemoUpdatedNoticeTimer() {
+    if (memoUpdateNoticeTimerRef.current === null) return;
+    clearTimeout(memoUpdateNoticeTimerRef.current);
+    memoUpdateNoticeTimerRef.current = null;
   }
 
   /** 日本語名: 終了状態をメモへ反映し、終了メモフェーズへ遷移する。 */
@@ -802,6 +841,11 @@ export function App() {
         </div>
         <div className="phase-pill">{phaseLabels[currentPhase]}</div>
       </section>
+      {isMemoUpdateNoticeVisible && (
+        <p aria-live="polite" className="notice" role="status">
+          メモを更新しました
+        </p>
+      )}
 
       <section className="workspace">
         <section className="timeline" aria-label="相談タイムライン">
