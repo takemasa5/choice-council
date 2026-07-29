@@ -272,3 +272,40 @@ test("POST /api/expert/group-chat は専門家として発言を返し未知の�
   );
   assert.equal(invalidResponse.status, 400);
 });
+
+test("POST /api/expert/group-chat は重複IDを再生成して新しい発言を返す", async () => {
+  const recentMessage = {
+    id: "message-1",
+    speakerType: "facilitator" as const,
+    speakerName: "ファシリテーター",
+    participantId: "facilitator",
+    content: "費用面を確認します。",
+    createdAt: "2026-07-18T00:00:00.000Z",
+  };
+  const duplicateReply = {
+    id: recentMessage.id,
+    speakerType: "expert",
+    speakerName: expert.role_name,
+    participantId: expert.participantId,
+    content: "予算を確認します。",
+    createdAt: "2026-07-18T00:01:00.000Z",
+  };
+  const retriedReply = { ...duplicateReply, id: "reply-2" };
+
+  const response = await requestJson(
+    createTestApp([duplicateReply, retriedReply]),
+    "/api/expert/group-chat",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages: [recentMessage],
+      expert,
+      facilitatorQuestion: "予算の考え方を教えてください。",
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal((response.body as { id: string }).id, retriedReply.id);
+});
