@@ -12,11 +12,9 @@ import { requestGroupChatStart } from "../group-chat-start";
 export function useDeliberationPhaseFlow({
   onReset,
   onStarted,
-  onFinished,
 }: {
   onReset: () => void;
   onStarted: (request: GroupChatStartRequest, turn: FacilitatorTurn) => void;
-  onFinished: () => void;
 }) {
   const [isStarting, setIsStarting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -60,7 +58,6 @@ export function useDeliberationPhaseFlow({
     onReset();
     setIsStarting(true);
     setErrorMessage("");
-    let waitsForInitialExpertReply = false;
     try {
       const result = await requestGroupChatStart(postStartRequest, request);
       if (result.kind === "failed") {
@@ -71,11 +68,8 @@ export function useDeliberationPhaseFlow({
 
       setFailedRequest(null);
       onStarted(request, result.turn);
-      waitsForInitialExpertReply =
-        result.turn.requestedSpeaker.speakerType === "expert";
     } finally {
       setIsStarting(false);
-      if (!waitsForInitialExpertReply) onFinished();
     }
   }
 

@@ -27,13 +27,9 @@ type ConfirmedGroupChatExpert = ExpertRequest & { participantId: string };
 export function useGroupChatPhase({
   onInitialTurn,
   onTurnUpdated,
-  shouldPause,
-  onFinished,
 }: {
   onInitialTurn: (turn: FacilitatorTurn) => void;
   onTurnUpdated: (turn: FacilitatorTurn) => void;
-  shouldPause: () => boolean;
-  onFinished: () => void;
 }) {
   const [state, dispatch] = useReducer(groupChatReducer, initialGroupChatState);
   const [isLoading, setIsLoading] = useState(false);
@@ -150,7 +146,6 @@ export function useGroupChatPhase({
       setErrorMessage(getGroupChatErrorMessage(error));
     } finally {
       setIsLoading(false);
-      onFinished();
     }
   }
 
@@ -185,7 +180,6 @@ export function useGroupChatPhase({
       setErrorMessage(getGroupChatErrorMessage(error));
     } finally {
       setIsLoading(false);
-      onFinished();
     }
   }
 
@@ -236,7 +230,6 @@ export function useGroupChatPhase({
       setErrorMessage(getGroupChatErrorMessage(error));
     } finally {
       setIsLoading(false);
-      onFinished();
     }
   }
 
@@ -330,7 +323,6 @@ export function useGroupChatPhase({
       contextSummary: nextContextSummary,
       expertRepliesSinceUser,
     });
-    if (shouldPause()) return;
     if (
       parsedTurn.data.requestedSpeaker.speakerType === "expert" &&
       expertRepliesSinceUser < 2

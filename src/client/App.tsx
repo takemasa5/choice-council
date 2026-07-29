@@ -8,13 +8,10 @@ import type {
   FacilitatorResponse,
   Phase,
   SessionMemo,
-  SessionMemoRequest,
   GroupChatMessage,
 } from "../shared/schemas/session";
-import { SessionMemoSchema } from "../shared/schemas/session";
 import { getRecentGroupChatMessages } from "./group-chat-context";
 import {
-  buildInterruptionMemoUpdateRequest,
   canProceedToExpertSelection,
   getFacilitatorResponsePhase,
   getInitialExpertRequests,
@@ -73,15 +70,6 @@ const nextActionLabels: Record<FacilitatorResponse["next_action"], string> = {
   finish: "終了候補",
 };
 
-const interruptionOptions = [
-  "前提を修正したい",
-  "この論点を深掘りしたい",
-  "外部情報を調べたい",
-  "別の選択肢を追加したい",
-  "いったんまとめたい",
-  "その他",
-];
-
 type StoredSession = {
   request: ConsultationRequest;
   startedConsultation?: string;
@@ -98,11 +86,6 @@ type StoredSession = {
   groupChatContextSummary?: string;
   groupChatExpertRepliesSinceUser?: number;
   finalMarkdown?: string;
-  interruption?: {
-    isReady: boolean;
-    selectedOption: string;
-    otherAnswer: string;
-  };
 };
 
 /** 日本語名: フェーズ横断のセッション状態とアプリケーションシェルを管理するコンポーネント。 */
@@ -133,17 +116,6 @@ export function App() {
     errorMessage,
     failedRequest: failedFacilitatorRequest,
   } = facilitatorFlow;
-  const [pauseRequested, setPauseRequested] = useState(false);
-  const pauseRequestedRef = useRef(false);
-  const [isInterruptionReady, setIsInterruptionReady] = useState(false);
-  const [selectedInterruptionOption, setSelectedInterruptionOption] =
-    useState("");
-  const [interruptionOtherAnswer, setInterruptionOtherAnswer] = useState("");
-  const [isUpdatingInterruptionMemo, setIsUpdatingInterruptionMemo] =
-    useState(false);
-  const [interruptionMemoErrorMessage, setInterruptionMemoErrorMessage] =
-    useState("");
-  const [memoNotice, setMemoNotice] = useState("");
   const {
     selectedQuestionOption,
     selectQuestionOption,
@@ -198,8 +170,6 @@ export function App() {
   const groupChatPhase = useGroupChatPhase({
     onInitialTurn: settleGroupChatStart,
     onTurnUpdated: applyGroupChatTurnUpdate,
-    shouldPause: () => pauseRequestedRef.current,
-    onFinished: showInterruptionOptionsIfPaused,
   });
   const {
     state: groupChat,
@@ -209,7 +179,6 @@ export function App() {
   const deliberationFlow = useDeliberationPhaseFlow({
     onReset: groupChatPhase.reset,
     onStarted: (request, turn) => groupChatPhase.begin({ request, turn }),
-    onFinished: showInterruptionOptionsIfPaused,
   });
   const {
     messages: groupChatMessages,
@@ -224,11 +193,8 @@ export function App() {
     errorMessage: finalMarkdownErrorMessage,
   } = finalMemoPhase;
   const isGroupChatBusy = isStartingGroupChat || deliberationFlow.isStarting;
-  const canRequestPause = isLoading || isGeneratingExperts || isGroupChatBusy;
   const isExpertInteractionDisabled =
-    isExpertDraftEditingDisabled(isGeneratingExperts) ||
-    isGroupChatBusy ||
-    isUpdatingInterruptionMemo;
+    isExpertDraftEditingDisabled(isGeneratingExperts) || isGroupChatBusy;
   const expertRequestKey = useMemo(() => {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
@@ -273,8 +239,6 @@ export function App() {
       finalMarkdown,
       selectedQuestionOption,
       otherQuestionAnswer,
-      selectedInterruptionOption,
-      interruptionOtherAnswer,
     ],
   });
 
@@ -333,7 +297,6 @@ export function App() {
     });
     finalMemoPhase.restore(parsed.finalMarkdown ?? "");
     restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
-    restoreInterruption(parsed.interruption);
   }
 
   useEffect(() => {
@@ -361,9 +324,6 @@ export function App() {
 
   /** 日本語名: 新規相談開始前に横断状態だけを初期化する。 */
   function resetSessionForStart() {
-    setPauseRequested(false);
-    pauseRequestedRef.current = false;
-    setMemoNotice("");
     setStartedConsultation("");
     setResponse(null);
     setResponseHistory(clearResponseHistory());
@@ -390,9 +350,6 @@ export function App() {
     changeConcerns(request.concerns ?? "");
     changeExpectedOutcome(request.expectedOutcome ?? "");
     clearQuestionAnswer();
-    setIsInterruptionReady(false);
-    setSelectedInterruptionOption("");
-    setInterruptionOtherAnswer("");
     setInitialCandidates(
       nextPhase === "expert_selection"
         ? facilitatorResponse.expert_requests
@@ -405,7 +362,6 @@ export function App() {
         nextPhase,
       ),
     );
-    showInterruptionOptionsIfPaused();
   }
 
   /** 日本語名: 前提整理回答成功後の横断状態を確定する。 */
@@ -427,7 +383,6 @@ export function App() {
         ? facilitatorResponse.expert_requests
         : [],
     );
-    showInterruptionOptionsIfPaused();
   }
 
   /** 日本語名: クライアント内で保持する相談文脈を作成する関数。 */
@@ -438,8 +393,8 @@ export function App() {
       values: emptyToUndefined(values),
       concerns: emptyToUndefined(concerns),
       expectedOutcome: emptyToUndefined(expectedOutcome),
-      userQuestion: getActiveUserQuestion(),
-      userQuestionAnswer: getUserQuestionAnswer(),
+      userQuestion: response?.user_question ?? undefined,
+      userQuestionAnswer: getPremiseAnswer(response),
       currentPhase,
       memo:
         response?.memo_updates ??
@@ -448,40 +403,12 @@ export function App() {
     };
   }
 
-  function getUserQuestionAnswer() {
-    if (selectedInterruptionOption && selectedInterruptionOption !== "その他") {
-      return selectedInterruptionOption;
-    }
-
-    return getPremiseAnswer(response);
-  }
-
-  function getActiveUserQuestion() {
-    if (selectedInterruptionOption && selectedInterruptionOption !== "その他") {
-      return {
-        question: "割り込み後にどこから調整しますか？",
-        options: interruptionOptions,
-        required: false,
-      };
-    }
-
-    return response?.user_question ?? undefined;
-  }
-
   function getPendingRequiredQuestionMessage() {
     if (!response?.user_question?.required) return "";
 
-    return getUserQuestionAnswer()
+    return getPremiseAnswer(response)
       ? "質問への回答をファシリテーターに送信してから進めてください。"
       : "先に質問へ回答してください。";
-  }
-
-  function restoreInterruption(interruption: StoredSession["interruption"]) {
-    if (!interruption) return;
-
-    setIsInterruptionReady(interruption.isReady);
-    setSelectedInterruptionOption(interruption.selectedOption);
-    setInterruptionOtherAnswer(interruption.otherAnswer);
   }
 
   function clearSession() {
@@ -489,8 +416,7 @@ export function App() {
       isLoading ||
       isGeneratingExperts ||
       isGroupChatBusy ||
-      isGeneratingFinalMarkdown ||
-      isUpdatingInterruptionMemo
+      isGeneratingFinalMarkdown
     )
       return;
 
@@ -505,12 +431,6 @@ export function App() {
     setResponseHistory({});
     setCurrentPhase("consultation_input");
     facilitatorFlow.clearFailure();
-    setPauseRequested(false);
-    pauseRequestedRef.current = false;
-    setIsInterruptionReady(false);
-    setSelectedInterruptionOption("");
-    setInterruptionOtherAnswer("");
-    setMemoNotice("");
     clearQuestionAnswer();
     resetSelectionState();
     groupChatPhase.reset();
@@ -523,8 +443,7 @@ export function App() {
       isLoading ||
       isGeneratingExperts ||
       isGroupChatBusy ||
-      isGeneratingFinalMarkdown ||
-      isUpdatingInterruptionMemo
+      isGeneratingFinalMarkdown
     )
       return;
 
@@ -543,12 +462,6 @@ export function App() {
     setResponse(nextResponseHistory[targetPhase] ?? null);
     setResponseHistory(nextResponseHistory);
     facilitatorFlow.clearFailure();
-    setPauseRequested(false);
-    pauseRequestedRef.current = false;
-    setIsInterruptionReady(false);
-    setSelectedInterruptionOption("");
-    setInterruptionOtherAnswer("");
-    setMemoNotice("");
     clearQuestionAnswer();
     restoreForPhase({
       initialCandidates:
@@ -571,7 +484,6 @@ export function App() {
       isLoading ||
       isGeneratingExperts ||
       isGeneratingFinalMarkdown ||
-      isUpdatingInterruptionMemo ||
       !response ||
       !canProceedToExpertSelection(response)
     ) {
@@ -670,130 +582,12 @@ export function App() {
     });
   }
 
-  function requestPause() {
-    if (!canRequestPause) return;
-
-    pauseRequestedRef.current = true;
-    setPauseRequested(true);
-  }
-
-  function showInterruptionOptionsIfPaused() {
-    if (!pauseRequestedRef.current) return;
-
-    setIsInterruptionReady(true);
-    setPauseRequested(false);
-    pauseRequestedRef.current = false;
-  }
-
-  function chooseInterruptionOption(option: string) {
-    setSelectedInterruptionOption(option);
-    if (option !== "その他") setInterruptionOtherAnswer("");
-    setInterruptionMemoErrorMessage("");
-  }
-
-  /**
-   * 割り込みで選んだ調整方針を、ユーザー操作としてセッションメモへ記録する。
-   *
-   * 仕様対応: `docs/api/schemas.md#セッションメモ`、
-   * `docs/design/user-experience.md#「ちょっと待って」ボタン`。
-   */
-  async function confirmInterruptionOption() {
-    if (isUpdatingInterruptionMemo) return;
-
-    const userAction =
-      selectedInterruptionOption === "その他"
-        ? interruptionOtherAnswer
-        : selectedInterruptionOption;
-    const request = buildInterruptionMemoUpdateRequest({
-      consultation: sessionConsultation,
-      currentPhase,
-      previousMemo: memo,
-      userAction,
-    });
-    if (!request) {
-      setInterruptionMemoErrorMessage(
-        "記録する調整方針とセッションメモを確認してください。",
-      );
-      return;
-    }
-
-    setIsUpdatingInterruptionMemo(true);
-    setInterruptionMemoErrorMessage("");
-
-    try {
-      const updatedMemo = await requestSessionMemoUpdate(request);
-      const updatedResponse = response
-        ? { ...response, memo_updates: updatedMemo }
-        : null;
-
-      setResponse(updatedResponse);
-      setResponseHistory((current) => {
-        if (!updatedResponse) return current;
-
-        return { ...current, [currentPhase]: updatedResponse };
-      });
-      facilitatorFlow.synchronizeRetryMemo(updatedMemo);
-      setIsInterruptionReady(false);
-      setSelectedInterruptionOption("");
-      setInterruptionOtherAnswer("");
-      setPauseRequested(false);
-      pauseRequestedRef.current = false;
-      setMemoNotice("メモを更新しました。");
-    } catch (error) {
-      setInterruptionMemoErrorMessage(
-        error instanceof Error ? error.message : "メモの更新に失敗しました。",
-      );
-    } finally {
-      setIsUpdatingInterruptionMemo(false);
-    }
-  }
-
-  /**
-   * セッションメモ更新 API のレスポンスを検証して返す。
-   *
-   * 仕様対応: `docs/api/schemas.md#セッションメモ`。
-   */
-  async function requestSessionMemoUpdate(
-    request: SessionMemoRequest,
-  ): Promise<SessionMemo> {
-    const apiResponse = await fetch("/api/session-memo/update", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-    const body: unknown = await apiResponse.json();
-
-    if (!apiResponse.ok) {
-      const message =
-        typeof body === "object" && body !== null && "message" in body
-          ? body.message
-          : undefined;
-      throw new Error(
-        typeof message === "string" ? message : "メモの更新に失敗しました。",
-      );
-    }
-
-    const parsedMemo = SessionMemoSchema.safeParse(body);
-    if (!parsedMemo.success) {
-      throw new Error(
-        "メモの更新結果を確認できませんでした。再試行してください。",
-      );
-    }
-
-    return parsedMemo.data;
-  }
-
   function buildStoredSession(): StoredSession {
     const request = {
       ...buildRequest(),
       userQuestion: response?.user_question ?? undefined,
       userQuestionAnswer: getPremiseAnswer(response),
     };
-    const hasInterruptionState =
-      isInterruptionReady ||
-      Boolean(selectedInterruptionOption) ||
-      Boolean(interruptionOtherAnswer);
-
     return {
       request,
       startedConsultation: startedConsultation || undefined,
@@ -810,13 +604,6 @@ export function App() {
       groupChatExpertRepliesSinceUser: expertRepliesSinceUser,
       initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
-      interruption: hasInterruptionState
-        ? {
-            isReady: isInterruptionReady,
-            selectedOption: selectedInterruptionOption,
-            otherAnswer: interruptionOtherAnswer,
-          }
-        : undefined,
     };
   }
 
@@ -872,12 +659,9 @@ export function App() {
           isLoading ||
           isGeneratingExperts ||
           isGroupChatBusy ||
-          isGeneratingFinalMarkdown ||
-          isUpdatingInterruptionMemo
+          isGeneratingFinalMarkdown
         }
         hasResponse={Boolean(response)}
-        canRequestPause={canRequestPause}
-        pauseRequested={pauseRequested}
         errorMessage={errorMessage}
         canRetry={Boolean(failedFacilitatorRequest)}
         onConsultationChange={changeConsultation}
@@ -885,22 +669,20 @@ export function App() {
         onValuesChange={changeValues}
         onConcernsChange={changeConcerns}
         onExpectedOutcomeChange={changeExpectedOutcome}
-        onStart={() => {
-          if (isUpdatingInterruptionMemo) return;
+        onStart={() =>
           void facilitatorFlow.start({
             input: { consultation, facts, values, concerns, expectedOutcome },
             onBeforeRequest: resetSessionForStart,
             onSuccess: applyStartedSession,
-          });
-        }}
-        onRequestPause={requestPause}
+          })
+        }
         onRetry={() => void facilitatorFlow.retry()}
       />
     ),
     premise: (
       <PremisePhase
         canProceed={Boolean(response && canProceedToExpertSelection(response))}
-        isBusy={isLoading || isUpdatingInterruptionMemo}
+        isBusy={isLoading}
         onProceed={proceedToExpertSelection}
         question={response?.user_question}
         selectedOption={selectedQuestionOption}
@@ -952,7 +734,7 @@ export function App() {
         turn={groupChatTurn}
         messages={groupChatMessages}
         otherAnswer={groupChatOtherAnswer}
-        isLoading={isGroupChatBusy || isUpdatingInterruptionMemo}
+        isLoading={isGroupChatBusy}
         errorMessage={groupChatErrorMessage}
         onOtherAnswerChange={groupChatPhase.changeOtherAnswer}
         onUserAnswer={(answer) =>
@@ -1010,60 +792,6 @@ export function App() {
                     候補行動: {nextActionLabels[response.next_action]}
                   </p>
                   {phaseContent}
-                  {isInterruptionReady && (
-                    <div className="question-box">
-                      <strong>どこから調整しますか？</strong>
-                      <div className="option-list">
-                        {interruptionOptions.map((option) => (
-                          <button
-                            type="button"
-                            key={option}
-                            className={
-                              selectedInterruptionOption === option
-                                ? "selected"
-                                : undefined
-                            }
-                            onClick={() => chooseInterruptionOption(option)}
-                            disabled={isUpdatingInterruptionMemo}
-                          >
-                            {option}
-                          </button>
-                        ))}
-                      </div>
-                      {selectedInterruptionOption === "その他" && (
-                        <label className="field inline-field">
-                          <span>自由入力</span>
-                          <textarea
-                            value={interruptionOtherAnswer}
-                            onChange={(event) =>
-                              setInterruptionOtherAnswer(event.target.value)
-                            }
-                            rows={3}
-                            disabled={isUpdatingInterruptionMemo}
-                          />
-                        </label>
-                      )}
-                      {selectedInterruptionOption && (
-                        <div className="action-row">
-                          <button
-                            className="primary-button"
-                            type="button"
-                            onClick={confirmInterruptionOption}
-                            disabled={isUpdatingInterruptionMemo}
-                          >
-                            {isUpdatingInterruptionMemo
-                              ? "メモを更新中..."
-                              : interruptionMemoErrorMessage
-                                ? "もう一度記録する"
-                                : "選択を記録する"}
-                          </button>
-                        </div>
-                      )}
-                      {interruptionMemoErrorMessage && (
-                        <p className="error">{interruptionMemoErrorMessage}</p>
-                      )}
-                    </div>
-                  )}
                 </article>
               )
             }
@@ -1083,8 +811,7 @@ export function App() {
                       isLoading ||
                       isGeneratingExperts ||
                       isGroupChatBusy ||
-                      isGeneratingFinalMarkdown ||
-                      isUpdatingInterruptionMemo
+                      isGeneratingFinalMarkdown
                     }
                   >
                     {phaseLabels[phase]}へ戻る
@@ -1107,8 +834,7 @@ export function App() {
                   isLoading ||
                   isGeneratingExperts ||
                   isGroupChatBusy ||
-                  isGeneratingFinalMarkdown ||
-                  isUpdatingInterruptionMemo
+                  isGeneratingFinalMarkdown
                 }
               >
                 削除
@@ -1124,7 +850,6 @@ export function App() {
                 />
               )}
             </div>
-            {memoNotice && <p className="notice">{memoNotice}</p>}
             {memo ? (
               <MemoView memo={memo} />
             ) : (

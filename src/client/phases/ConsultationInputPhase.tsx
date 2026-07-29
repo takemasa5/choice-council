@@ -11,8 +11,6 @@ export function ConsultationInputPhase({
   expectedOutcome,
   isBusy,
   hasResponse,
-  canRequestPause,
-  pauseRequested,
   errorMessage,
   canRetry,
   onConsultationChange,
@@ -21,7 +19,6 @@ export function ConsultationInputPhase({
   onConcernsChange,
   onExpectedOutcomeChange,
   onStart,
-  onRequestPause,
   onRetry,
 }: {
   consultation: string;
@@ -31,8 +28,6 @@ export function ConsultationInputPhase({
   expectedOutcome: string;
   isBusy: boolean;
   hasResponse: boolean;
-  canRequestPause: boolean;
-  pauseRequested: boolean;
   errorMessage: string;
   canRetry: boolean;
   onConsultationChange: (value: string) => void;
@@ -41,7 +36,6 @@ export function ConsultationInputPhase({
   onConcernsChange: (value: string) => void;
   onExpectedOutcomeChange: (value: string) => void;
   onStart: () => void;
-  onRequestPause: () => void;
   onRetry: () => void;
 }) {
   const { showOptionalFields, toggleOptionalFields } = useConsultationPhase();
@@ -106,16 +100,7 @@ export function ConsultationInputPhase({
               ? "もう一度整理する"
               : "相談を開始する"}
         </button>
-        <button
-          className="secondary-button"
-          type="button"
-          onClick={onRequestPause}
-          disabled={!canRequestPause}
-        >
-          ちょっと待って
-        </button>
       </div>
-      {pauseRequested && <p className="notice">次の区切りで止めます。</p>}
       {errorMessage && (
         <div className="error-block">
           <p className="error">{errorMessage}</p>
