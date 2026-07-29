@@ -311,3 +311,55 @@ test("次の進行の再試行待ちは専門家回答を再生成せず質問�
   assert.doesNotMatch(markup, /group-chat-question/);
   assert.doesNotMatch(markup, /予算の優先順位を教えてください。/);
 });
+
+test("専門家回答の生成中だけ見出しに進捗を表示する", () => {
+  const expertTurn: FacilitatorTurn = {
+    message: "専門家の見解を待っています。",
+    requestedSpeaker: {
+      speakerType: "expert",
+      participantId: "expert-household-a",
+      speakerName: "家計アドバイザー",
+    },
+    requestReason: "専門的な観点を確認するためです。",
+    question: "予算の優先順位を教えてください。",
+    userOptions: null,
+    memoUpdate: null,
+    contextSummaryUpdate: null,
+  };
+  const renderGroupChat = (
+    turn: FacilitatorTurn,
+    isNextTurnRetryPending = false,
+  ) =>
+    renderToStaticMarkup(
+      createElement(GroupChatPhase, {
+        turn,
+        messages: [],
+        otherAnswer: "",
+        isLoading: true,
+        isNextTurnRetryPending,
+        errorMessage: "",
+        onOtherAnswerChange: () => undefined,
+        onUserAnswer: () => undefined,
+        onRetryExpertReply: () => undefined,
+        onRetryNextTurn: () => undefined,
+        finishErrorMessage: "",
+        onFinish: () => undefined,
+      }),
+    );
+
+  const expertMarkup = renderGroupChat(expertTurn);
+  const userMarkup = renderGroupChat({
+    ...expertTurn,
+    requestedSpeaker: {
+      speakerType: "user",
+      participantId: "user",
+      speakerName: "あなた",
+    },
+    userOptions: ["費用を優先して進めたい", "そのまま意見交換を続けて"],
+  });
+  const pendingMarkup = renderGroupChat(expertTurn, true);
+
+  assert.match(expertMarkup, /回答を生成中/);
+  assert.doesNotMatch(userMarkup, /回答を生成中/);
+  assert.doesNotMatch(pendingMarkup, /回答を生成中/);
+});

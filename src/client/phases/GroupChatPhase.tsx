@@ -67,9 +67,21 @@ export function GroupChatPhase({
 
   if (!turn) return null;
 
+  const isExpertReplyGenerating =
+    !isNextTurnRetryPending &&
+    isLoading &&
+    turn.requestedSpeaker.speakerType === "expert";
+
   return (
     <section className="expert-comment-box" aria-label="意見交換">
-      <h3>意見交換</h3>
+      <h3>
+        意見交換
+        {isExpertReplyGenerating && (
+          <span aria-live="polite" role="status">
+            回答を生成中
+          </span>
+        )}
+      </h3>
       <div
         className="group-chat-timeline"
         role="log"
