@@ -39,7 +39,12 @@ test("検討へ戻るときだけ専門家コメントを保持する", () => {
   assert.deepEqual(getExpertCommentsForReturn("deliberation", [comment]), [
     comment,
   ]);
-  assert.deepEqual(getExpertCommentsForReturn("group_chat", [comment]), []);
+});
+
+test("意見交換へ戻るときは専門家コメントを保持する", () => {
+  assert.deepEqual(getExpertCommentsForReturn("group_chat", [comment]), [
+    comment,
+  ]);
 });
 
 test("専門家選定以降へ戻るときは確定済み専門家を保持する", () => {
