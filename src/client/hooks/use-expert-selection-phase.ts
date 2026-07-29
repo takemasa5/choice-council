@@ -14,6 +14,13 @@ import {
 /** 日本語名: 画面上の候補行を識別する安定ID付き専門家候補。 */
 export type ExpertDraft = ExpertRequest & { draftId: string };
 
+export function shouldPreserveRestoredExpertDrafts(
+  restoredCandidateKey: string | null,
+  candidateKey: string,
+) {
+  return restoredCandidateKey === candidateKey;
+}
+
 /**
  * 日本語名: 専門家候補の編集・確定・コメント生成で使うフェーズ状態を管理するHook。
  *
@@ -48,10 +55,20 @@ export function useExpertSelectionPhase({
   const [errorMessage, setErrorMessage] = useState("");
   const draftIdRef = useRef(0);
   const confirmedRequestKeyRef = useRef("");
+  const restoredDraftCandidateKeyRef = useRef<string | null>(null);
 
   function createDraft(expert: ExpertRequest): ExpertDraft {
     draftIdRef.current += 1;
     return { ...expert, draftId: `expert-draft-${draftIdRef.current}` };
+  }
+
+  function restoreDraftIdSequence(drafts: ExpertDraft[]) {
+    draftIdRef.current = drafts.reduce((largestSequence, draft) => {
+      const match = /^expert-draft-(\d+)$/.exec(draft.draftId);
+      return match
+        ? Math.max(largestSequence, Number(match[1]))
+        : largestSequence;
+    }, 0);
   }
 
   /** 日本語名: 専門家候補の指定フィールドを更新するローカル操作。 */
@@ -227,12 +244,23 @@ export function useExpertSelectionPhase({
     initialCandidates,
     confirmedCandidates,
     comments,
+    drafts,
+    restoredResponseCandidateKey,
   }: {
     initialCandidates: ExpertRequest[];
     confirmedCandidates: ExpertRequest[];
     comments: ExpertComment[];
+    drafts?: ExpertDraft[];
+    restoredResponseCandidateKey: string;
   }) {
     confirmedRequestKeyRef.current = JSON.stringify(confirmedCandidates);
+    if (drafts !== undefined) {
+      restoreDraftIdSequence(drafts);
+      setExpertDrafts(drafts);
+      restoredDraftCandidateKeyRef.current = restoredResponseCandidateKey;
+    } else {
+      restoredDraftCandidateKeyRef.current = null;
+    }
     setInitialExpertRequests(initialCandidates);
     setConfirmedExperts(confirmedCandidates);
     setExpertComments(comments);
@@ -243,6 +271,16 @@ export function useExpertSelectionPhase({
     candidates: ExpertRequest[],
     candidateKey: string,
   ) {
+    if (
+      shouldPreserveRestoredExpertDrafts(
+        restoredDraftCandidateKeyRef.current,
+        candidateKey,
+      )
+    ) {
+      restoredDraftCandidateKeyRef.current = null;
+      return;
+    }
+    restoredDraftCandidateKeyRef.current = null;
     setExpertDrafts(candidates.map(createDraft));
     if (confirmedRequestKeyRef.current === candidateKey) {
       confirmedRequestKeyRef.current = "";
@@ -266,6 +304,7 @@ export function useExpertSelectionPhase({
     setIsGenerating(false);
     setErrorMessage("");
     confirmedRequestKeyRef.current = "";
+    restoredDraftCandidateKeyRef.current = null;
   }
 
   /** 日本語名: 戻り先に応じて確定候補・コメントだけを復元する。 */
@@ -283,6 +322,7 @@ export function useExpertSelectionPhase({
     setConfirmedExperts(confirmedCandidates);
     setExpertComments(comments);
     setErrorMessage("");
+    restoredDraftCandidateKeyRef.current = null;
   }
 
   return {

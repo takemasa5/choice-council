@@ -37,7 +37,10 @@ import { usePremisePhase } from "./hooks/use-premise-phase";
 import { useConsultationPhase } from "./hooks/use-consultation-phase";
 import { useFinalMemoPhase } from "./hooks/use-final-memo-phase";
 import { useFacilitatorPhaseFlow } from "./hooks/use-facilitator-phase-flow";
-import { useExpertSelectionPhase } from "./hooks/use-expert-selection-phase";
+import {
+  type ExpertDraft,
+  useExpertSelectionPhase,
+} from "./hooks/use-expert-selection-phase";
 import { useSessionPersistence } from "./hooks/use-session-persistence";
 import { useDeliberationPhaseFlow } from "./hooks/use-deliberation-phase-flow";
 import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
@@ -85,6 +88,7 @@ type StoredSession = {
   responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
   currentPhase?: unknown;
   expertComments?: ExpertComment[];
+  expertDrafts?: ExpertDraft[];
   initialExpertRequests?: ExpertRequest[];
   confirmedExperts?: ExpertRequest[];
   groupChatMessages?: GroupChatMessage[];
@@ -226,7 +230,7 @@ export function App() {
     return JSON.stringify(response?.expert_requests ?? []);
   }, [response?.expert_requests]);
 
-  useSessionPersistence<StoredSession>({
+  const { hasRestoredSession } = useSessionPersistence<StoredSession>({
     storageKey,
     restore: restoreSession,
     createSession: buildStoredSession,
@@ -239,6 +243,7 @@ export function App() {
         expectedOutcome.trim() ||
         response ||
         Object.keys(responseHistory).length > 0 ||
+        expertDrafts.length > 0 ||
         expertComments.length > 0 ||
         finalMarkdown,
       ),
@@ -253,6 +258,7 @@ export function App() {
       responseHistory,
       currentPhase,
       expertComments,
+      expertDrafts,
       confirmedExperts,
       groupChatMessages,
       groupChatTurn,
@@ -305,6 +311,10 @@ export function App() {
       ),
       confirmedCandidates: restoredExperts,
       comments: parsed.expertComments ?? [],
+      drafts: parsed.expertDrafts,
+      restoredResponseCandidateKey: JSON.stringify(
+        restoredSession.response?.expert_requests ?? [],
+      ),
     });
     groupChatPhase.restore({
       messages: parsed.groupChatMessages ?? [],
@@ -318,8 +328,9 @@ export function App() {
   }
 
   useEffect(() => {
+    if (!hasRestoredSession) return;
     synchronizeCandidates(response?.expert_requests ?? [], expertRequestKey);
-  }, [expertRequestKey]);
+  }, [hasRestoredSession, expertRequestKey]);
 
   const memo = useMemo<SessionMemo | null>(() => {
     return (
@@ -777,6 +788,7 @@ export function App() {
       responseHistory,
       currentPhase,
       expertComments,
+      expertDrafts,
       confirmedExperts,
       groupChatMessages,
       groupChatTurn: groupChatTurn ?? undefined,
