@@ -4,12 +4,12 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 
 ## 呼び出し単位
 
-| 呼び出し      | 役割                                             |
-| ------------- | ------------------------------------------------ |
-| facilitator   | フェーズ管理、質問、専門家選定、次アクション決定 |
-| expert        | 指定観点からの短い意見、懸念、確認事項の提示     |
-| sessionMemo   | フェーズ区切りでの整理メモ更新                   |
-| finalMarkdown | 終了時の意思決定メモ生成                         |
+| 呼び出し      | 役割                                                                           |
+| ------------- | ------------------------------------------------------------------------------ |
+| facilitator   | フェーズ管理、質問、専門家選定、グループチャットの発言者指名、次アクション決定 |
+| expert        | 指定観点からの初回コメント、または指名されたグループチャット回答               |
+| sessionMemo   | フェーズ区切りでの整理メモ更新                                                 |
+| finalMarkdown | 終了時の意思決定メモ生成                                                       |
 
 ## バリデーション
 
@@ -20,6 +20,7 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 - 必須配列は空配列を許容する。ただし、要素を含む場合は有効な値だけを含める。
 - 失敗時は1回だけ再生成する。
 - 再生成しても失敗した場合は、ユーザーに再生成可能な失敗表示を出す。
+- 選択したプロバイダーのAPIキー未設定時は `missing_llm_api_key`、未対応の `LLM_PROVIDER` 指定時は `unsupported_llm_provider`、外部LLM API呼び出し失敗時は `llm_request_failed` を返す。
 
 表示文言:
 
@@ -74,7 +75,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 
 状態: `決定`
 
-M2 では初回開始と前提整理での回答を別 endpoint として扱う。後続マイルストーンで他フェーズの継続入力を追加する場合は、M2 の request schema を拡張せず、対象フェーズに対応する schema を追加する。
+初回開始と前提整理での回答は別 endpoint として扱う。ほかのフェーズに継続入力を追加する場合も、この request schema を拡張せず、対象フェーズに対応する schema を追加する。
 
 ### `POST /api/facilitator/start`
 
@@ -88,9 +89,11 @@ M2 では初回開始と前提整理での回答を別 endpoint として扱う�
 | concerns        | 任意 | ユーザーの不安なこと         |
 | expectedOutcome | 任意 | 期待する結果                 |
 
+`/start` の応答は、`premise` に表示する必須質問を必ず1件含める。`user_question.required` は `true`、`next_action` は `wait_user`、`expert_requests` は空配列とする。相談内容が十分に具体的でも、ユーザーが前提を確認・補足できる質問を返す。
+
 ### `POST /api/facilitator/respond`
 
-`FacilitatorResponseRequest` は、M2 の前提整理で必須質問に回答するための strict schema とする。
+`FacilitatorResponseRequest` は、前提整理で必須質問に回答するための strict schema とする。
 
 | フィールド         | 必須 | 内容                                                               |
 | ------------------ | ---: | ------------------------------------------------------------------ |
@@ -100,9 +103,9 @@ M2 では初回開始と前提整理での回答を別 endpoint として扱う�
 | userQuestionAnswer | 必須 | 非空文字列。通常の選択肢は選択肢文言、「その他」は自由入力文を送る |
 | memo               | 必須 | 直前の `FacilitatorResponse.memo_updates`                          |
 
-`/respond` のファシリテーターは、質問と回答を前提整理へ反映し、初回の前提整理からやり直さない。
+`/respond` のファシリテーターは、質問と回答を前提整理へ反映し、初回の前提整理からやり直さない。追加質問は返さず、専門家選定へ進むための候補を返す。
 
-M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/respond` の応答で必須質問が再び返る場合、最新の質問、回答、`memo_updates` を用いて `/respond` を繰り返せる。各リクエストはユーザー操作によってのみ送信する。
+前提整理で返せる必須質問は、`/start` の応答で最大1件とする。`/respond` の応答で必須質問を返してはならない。
 
 ```json
 {
@@ -117,16 +120,7 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
       "request": "費用と生活負担の観点から重要な論点を挙げる"
     }
   ],
-  "user_question": {
-    "question": "この相談では外部情報の調査も使って進めますか？",
-    "options": [
-      "必要に応じて調査する",
-      "まず調査してから議論する",
-      "調査なしで整理する",
-      "その他"
-    ],
-    "required": true
-  },
+  "user_question": null,
   "memo_updates": {
     "theme": "",
     "status": "in_progress",
@@ -140,7 +134,7 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
     "open_questions": [],
     "next_actions": []
   },
-  "next_action": "wait_user | request_experts | update_memo | move_phase | finish"
+  "next_action": "request_experts"
 }
 ```
 
@@ -151,7 +145,7 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
 | phase_goal          | 必須 | 現在フェーズで達成すること                                                                                    |
 | facilitator_message | 必須 | ユーザーに表示する進行コメント                                                                                |
 | expert_requests     | 必須 | 専門家コメント生成が必要な場合の依頼。各要素は `role_name`, `viewpoint`, `request` を含む。不要な場合は空配列 |
-| user_question       | 必須 | ユーザー回答が必要な場合の質問。不要な場合は `null`                                                           |
+| user_question       | 必須 | `/start` では必須質問1件、`/respond` では `null`                                                              |
 | memo_updates        | 必須 | この応答時点のセッションメモ案                                                                                |
 | next_action         | 必須 | アプリへの候補行動                                                                                            |
 
@@ -159,18 +153,117 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
 
 `user_question.options` は2件以上とし、必ず「その他」を含める。「その他」を選んだ場合、アプリは自由入力欄を表示する。`user_question` が `null` ではないにもかかわらず `options` に「その他」が含まれない出力は、バリデーション失敗として扱う。
 
-`expert_requests` は、`next_action` が `request_experts` の場合に1件以上必要とする。
+`expert_requests` は、`next_action` が `request_experts` の場合に1件以上必要とする。`user_question` と非空の `expert_requests` は共存できず、`user_question` が存在する場合は空配列とする。この不変条件は共有 `FacilitatorResponse` schema でも検証する。
 
 `current_phase` と `next_action` はアプリ側が検証する。状態機械で許可されない遷移を示す出力は失敗として扱う。
 
-### M2 route の追加検証
+### 初回専門家コメント生成
+
+状態: `決定`
+
+ファシリテーターの `expert_requests` は、システム設定の上限以内（初期値5件）とする。上限を超える候補を含む応答は不正として扱い、共通のバリデーション規則に従って再生成する。
+
+ユーザーが確定した専門家ロールごとに `POST /api/expert/comment` を1回呼び出す。各リクエストは `ExpertCommentRequest` に従い、`currentPhase` は `deliberation` とする。確定済み専門家ロールは1〜5件とし、同じ `role_name` と `viewpoint` の組み合わせを複数含めることを許容する。
+
+フロントエンドは全リクエストを並列で開始し、すべてが成功した場合のみ専門家コメント一覧と「意見交換をはじめる」操作を表示する。1件でも失敗した場合は、すべてのリクエストが完了してから成功分を破棄し、専門家コメントを表示・保存しない。画面には `専門家コメントの生成に失敗しました。もう一度お試しください。` を表示する。ユーザーが再試行した場合は、確定済みの全専門家ロールに対して同じリクエストを再送する。
+
+バックエンドは各コメント生成で共通のバリデーション規則に従い、構造化出力の検証失敗時に1回だけ再生成する。クライアントは専門家コメント単位の自動再試行を行わない。
+
+### グループチャット
+
+状態: `決定`
+
+全初回専門家コメントを表示した後、ユーザーの「意見交換をはじめる」操作で `group_chat` に遷移する。`src/shared/schemas` の `PhaseSchema`、`server/app.ts` の route 登録、`src/client/` のフローはこの契約へ同期する。旧 `POST /api/facilitator/deliberation` と `direction` フェーズは使用しない。
+
+#### 共通データ
+
+`GroupChatMessage` は、画面に表示する発言を表す strict schema とする。
+
+| フィールド    | 必須 | 内容                                                               |
+| ------------- | ---: | ------------------------------------------------------------------ |
+| id            | 必須 | 発言を一意に識別するID                                             |
+| speakerType   | 必須 | `facilitator`、`expert`、`user` のいずれか                         |
+| speakerName   | 必須 | 表示用の発言者名                                                   |
+| participantId | 必須 | 発言者を一意に識別するID。専門家名・観点の重複を許容するために使う |
+| content       | 必須 | 表示する発言本文                                                   |
+| createdAt     | 必須 | 発言時刻                                                           |
+
+`speakerType` と `speakerName` は、ファシリテーターが次の発言者を指定する構造でも同じ名称を使う。`participantId` は内部の対応付けに使い、表示上の発言者名には用いない。
+
+`FacilitatorTurn` は、ファシリテーターの進行発言と次の発言者の指定を表す strict schema とする。
+
+| フィールド           |     必須 | 内容                                                                                                                                       |
+| -------------------- | -------: | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| message              |     必須 | 指名理由と質問を含む、表示用のファシリテーター発言                                                                                         |
+| requestedSpeaker     |     必須 | `speakerType` が `expert` または `user` であり、`speakerName`、`participantId` を持つ、次に回答する1人                                     |
+| requestReason        |     必須 | その参加者を指名した理由                                                                                                                   |
+| question             |     必須 | 指名相手に回答してほしい内容                                                                                                               |
+| userOptions          | 条件付き | 指名先が `user` の場合は2件以上の重複しない選択肢配列。必ず「そのまま意見交換を続けて」を含み、「その他」は含めない。専門家の場合は `null` |
+| memoUpdate           |     必須 | 重要な整理がある場合の完全な `SessionMemo`、ない場合は `null`                                                                              |
+| contextSummaryUpdate |     必須 | 古い発言を圧縮した会話要約の更新、不要な場合は `null`                                                                                      |
+
+アプリ側は `requestedSpeaker` が常に1人だけであり、`speakerType` が `expert` または `user` であることを検証する。`facilitator` は次の回答者として指定してはならない。確定済み専門家と同名・同観点の専門家が複数いる場合、`participantId` で対象を照合する。
+
+#### `POST /api/facilitator/group-chat/start`
+
+`GroupChatStartRequest` は、初回専門家コメントからグループチャットを開始する strict schema とする。
+
+| フィールド            | 必須 | 内容                                                               |
+| --------------------- | ---: | ------------------------------------------------------------------ |
+| consultation          | 必須 | 初回に入力した相談内容。画面には再表示しない                       |
+| currentPhase          | 必須 | 固定値 `group_chat`                                                |
+| memo                  | 必須 | グループチャット開始時の `SessionMemo`                             |
+| confirmedExperts      | 必須 | 1〜5件の確定済み専門家。各要素に一意な `participantId` を持つ      |
+| initialExpertComments | 必須 | 全件生成に成功した初回専門家コメント。確定済み専門家と同数・同順序 |
+
+応答は `FacilitatorTurn` のうち開始専用の strict schema とする。ファシリテーターは、初回コメントの単純な再要約をせず、会話の論点を示して、`confirmedExperts` に含まれる専門家を次の1人として指名する。`requestedSpeaker.participantId` は選んだ専門家の値と完全一致させ、`speakerType` は `expert`、`userOptions` は `null` とする。
+
+#### `POST /api/expert/group-chat`
+
+`GroupChatExpertReplyRequest` は、指名された専門家の1回の回答を生成する strict schema とする。
+
+| フィールド          | 必須 | 内容                                                      |
+| ------------------- | ---: | --------------------------------------------------------- |
+| consultation        | 必須 | 初回に入力した相談内容                                    |
+| currentPhase        | 必須 | 固定値 `group_chat`                                       |
+| memo                | 必須 | 最新の `SessionMemo`                                      |
+| contextSummary      | 必須 | 過去発言の累積要約                                        |
+| recentMessages      | 必須 | 文脈として必要な末尾から最大8件の `GroupChatMessage` 配列 |
+| expert              | 必須 | `FacilitatorTurn.requestedSpeaker` と一致する専門家       |
+| facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問                  |
+
+応答は、指定専門家の `GroupChatMessage` 1件とする。`id` は入力 `recentMessages` に含まれる既存のIDと重複してはならず、重複する構造化出力は無効として再生成対象にする。専門家の回答後、クライアントは次のファシリテーターターンを要求する。
+
+#### `POST /api/facilitator/group-chat/next`
+
+`GroupChatNextRequest` は、専門家またはユーザーの1回答後に次の進行を決める strict schema とする。
+
+| フィールド             | 必須 | 内容                                                   |
+| ---------------------- | ---: | ------------------------------------------------------ |
+| consultation           | 必須 | 初回に入力した相談内容                                 |
+| currentPhase           | 必須 | 固定値 `group_chat`                                    |
+| memo                   | 必須 | 最新の `SessionMemo`                                   |
+| contextSummary         | 必須 | 過去発言の累積要約                                     |
+| recentMessages         | 必須 | 末尾から最大8件の `GroupChatMessage` 配列              |
+| confirmedExperts       | 必須 | 一意な `participantId` を含む確定済み専門家            |
+| expertRepliesSinceUser | 必須 | 前回のユーザー意思表示以降の連続した専門家回答数。0〜2 |
+
+応答は `FacilitatorTurn` とする。アプリ側は、`expertRepliesSinceUser` が2の場合に専門家を指名する応答を不正として扱う。値が1の場合、ファシリテーターは専門家またはユーザーを指名できる。ユーザーを指名した場合、アプリは選択肢と自由入力 textarea を常時同時に表示する。選択肢を選ぶと、その文言をユーザー回答として直ちに送信する。ユーザーの自由入力、選択肢回答、「そのまま意見交換を続けて」のいずれもユーザー意思表示としてカウンタを0へ戻す。
+
+専門家回答の生成・構造化出力の検証に成功した後、次のファシリテーターターンの生成または検証だけが失敗した場合、アプリは成功済み専門家発言と `expertRepliesSinceUser` を保持する。セッションメモと累積要約は更新せず、ユーザーは専門家回答を再生成せずに次の進行だけを再試行できる。
+
+それ以外の発言生成または構造化出力の検証が失敗した場合、アプリは会話履歴、セッションメモ、`expertRepliesSinceUser` を更新してはならない。対象の発言だけをユーザー操作で再生成できる状態にする。
+
+`recentMessages` の上限は、shared 定数 `recentGroupChatMessageLimit` の値 `8` を正とする。グループチャットと終了メモ生成はこの同じ上限を使い、会話履歴全件をリクエストへ渡さない。
+
+### 初回・前提整理 route の追加検証
 
 `/api/facilitator/start` と `/api/facilitator/respond` は、共通の `FacilitatorResponse` schema に加えて、次を検証する。
 
 - `current_phase` は `premise` である。
-- `user_question` が存在する場合、`required` は `true` かつ `next_action` は `wait_user` である。
-- `user_question` が `null` の場合、`next_action` は `request_experts` であり、`expert_requests` は 1 件以上である。
-- `update_memo`、`move_phase`、`finish`、`required: false` の質問は M2 の route では受け入れない。
+- `/start` では、`user_question` が必ず存在し、`required` は `true`、`next_action` は `wait_user`、`expert_requests` は空配列である。
+- `/respond` では、`user_question` は `null`、`next_action` は `request_experts`、`expert_requests` は 1 件以上である。
+- `update_memo`、`move_phase`、`finish`、`required: false` の質問はこの route では受け入れない。
 
 ## セッションメモ
 
@@ -227,13 +320,23 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
 | pending_family_discussion | 家族・関係者相談待ち |
 | action_plan               | 実行計画             |
 
-`in_progress` はセッション途中の表示状態であり、終了状態ではない。`finalMarkdown` 呼び出し時に `SessionMemo.status` が `in_progress` の場合、アプリ側は終了メモ生成へ進まず、方向性整理または次アクション確認へ戻す。
+`in_progress` はセッション途中の表示状態であり、終了状態ではない。`finalMarkdown` 呼び出し時に `SessionMemo.status` が `in_progress` の場合、アプリ側は終了メモ生成へ進まない。`group_chat` の終了確認でユーザーが選んだ終了状態をクライアント側で `SessionMemo.status` へ設定してから呼び出す。この状態設定のための LLM またはセッションメモ更新 API 呼び出しは行わない。
 
 ## Markdown 終了メモ
 
 状態: `決定`
 
 `finalMarkdown` は、セッション終了時に Markdown 文字列を生成する呼び出しである。
+
+終了メモ生成リクエストは次の入力を持つ。
+
+| フィールド     | 必須 | 内容                                      |
+| -------------- | ---: | ----------------------------------------- |
+| consultation   | 必須 | 初回に入力した相談内容                    |
+| memo           | 必須 | 終了状態が設定された最新の `SessionMemo`  |
+| expertComments | 任意 | 初回専門家コメント                        |
+| contextSummary | 必須 | グループチャットの累積要約                |
+| recentMessages | 必須 | 末尾から最大8件の `GroupChatMessage` 配列 |
 
 ```json
 {
@@ -245,11 +348,22 @@ M2 の 1 回の応答で返せる `user_question` は最大 1 件とする。`/r
 | ---------- | ---: | ------------------------------------------------------------------------ |
 | markdown   | 必須 | `docs/design/memo-and-output.md#Markdown 終了メモ` の構成に従う Markdown |
 
+終了メモ生成リクエストは、終了状態が設定された `SessionMemo` に加え、グループチャットの累積要約と直近発言を含む。終了メモの `セッションログ要約` には、重要な論点の展開、ユーザーの意思表示、終了状態に至った経緯を反映する。発言全文は出力しない。
+
 Markdown 内では、断定できないことを断定しない。未確認事項と次アクションを必ず含める。
 
 ## モデル構成
 
-MVP では、同一 LLM を複数ロールとして使う。ただし、内部設計では、将来的に異なる LLM を接続できるようにする。
+MVP では、環境変数で選択した単一の LLM プロバイダーを複数ロールとして使う。選択肢は `openai` と `gemini` であり、`LLM_PROVIDER` を省略した場合は `openai` とする。
+
+プロバイダーごとの設定は次のとおりとする。APIキーとモデル名はバックエンドだけが読み取り、ブラウザへ渡さない。
+
+| プロバイダー | APIキー          | モデル指定     | 既定モデル         |
+| ------------ | ---------------- | -------------- | ------------------ |
+| `openai`     | `OPENAI_API_KEY` | `OPENAI_MODEL` | `gpt-5-mini`       |
+| `gemini`     | `GEMINI_API_KEY` | `GEMINI_MODEL` | `gemini-2.5-flash` |
+
+ロールごとのプロバイダー・モデル選択は MVP の対象外とする。
 
 専門家ロールは、次の要素で表現する。
 

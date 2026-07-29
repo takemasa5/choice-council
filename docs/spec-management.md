@@ -25,8 +25,8 @@
 
 1. 詳細仕様を検討する。
 2. `docs/` の該当ファイルを更新する。
-3. 未確定事項がある場合は、本文に状態を明記するか `docs/tasks/` に切り出す。
-4. Issue 化する場合は、Acceptance Criteria を EARS 形式で記述する。
+3. 未確定事項がある場合は、該当仕様の本文に状態を明記する。
+4. 実装対象、優先順位、依存関係は GitHub Issue で管理する。Issue 化する場合は、Acceptance Criteria を EARS 形式で記述する。
 5. `docs/api/` や `docs/design/` を変更した場合は、`src/shared/` の型・schema と照合する。
 6. 仕様と Acceptance Criteria を満たすテストコードを作成または更新する。
 7. 仕様に基づいて実装する。
@@ -47,4 +47,5 @@
 - `docs/design/`: ユーザー体験、状態機械、ロール、調査、メモ出力、ガードレール、プライバシー。
 - `docs/api/`: LLM 呼び出し単位、JSON schema、バリデーション。
 - `docs/prompts/`: LLM 呼び出しごとのプロンプト契約と草案。
-- `docs/tasks/`: 未決事項、次に作る成果物、マイルストーン。
+- `docs/design/implementation-rules.md`: 実装時のモジュール境界、ファイル肥大化防止、検証。
+- GitHub Issues: 実装対象、優先順位、依存関係、進捗。

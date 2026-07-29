@@ -1,5 +1,6 @@
 import type {
   ExpertComment,
+  ExpertRequest,
   FacilitatorResponse,
   Phase,
 } from "../shared/schemas/session";
@@ -22,7 +23,9 @@ export function getReturnablePhases(
 
   return phaseOrder.slice(0, currentIndex).filter((phase) => {
     return (
-      phase !== "deliberation" &&
+      (phase !== "deliberation" ||
+        currentPhase === "group_chat" ||
+        currentPhase === "final_memo") &&
       (phase === "consultation_input" || Boolean(responseHistory[phase]))
     );
   });
@@ -47,12 +50,43 @@ export function clearResponseHistory(): ResponseHistory {
   return {};
 }
 
-/** 方向性整理へ戻る場合だけ、根拠となる専門家コメントを残す。 */
+/**
+ * 新しい相談の開始応答だけを履歴として保持する。
+ *
+ * 仕様対応: `docs/design/safety-and-privacy.md#保存とプライバシー`、
+ * `docs/design/memo-and-output.md#Markdown 終了メモ`。
+ */
+export function createResponseHistoryForNewConsultation(
+  premiseResponse: FacilitatorResponse,
+  nextResponse: FacilitatorResponse,
+  phase: Phase,
+): ResponseHistory {
+  return {
+    premise: premiseResponse,
+    ...(phase === "expert_selection" ? { expert_selection: nextResponse } : {}),
+  };
+}
+
+/** 検討または意見交換へ戻る場合だけ、根拠となる専門家コメントを残す。 */
 export function getExpertCommentsForReturn(
   targetPhase: Phase,
   expertComments: ExpertComment[],
 ) {
-  return targetPhase === "direction" ? expertComments : [];
+  return targetPhase === "deliberation" || targetPhase === "group_chat"
+    ? expertComments
+    : [];
+}
+
+/** 専門家選定以降へ戻る場合だけ、確定済み専門家を維持する。 */
+export function getConfirmedExpertsForReturn(
+  targetPhase: Phase,
+  confirmedExperts: ExpertRequest[],
+) {
+  return targetPhase === "expert_selection" ||
+    targetPhase === "deliberation" ||
+    targetPhase === "group_chat"
+    ? confirmedExperts
+    : [];
 }
 
 /** 指定フェーズ用の応答を作り、専門家ロールの編集内容も保持する。 */
@@ -73,6 +107,6 @@ export const phaseOrder: Phase[] = [
   "premise",
   "expert_selection",
   "deliberation",
-  "direction",
+  "group_chat",
   "final_memo",
 ];

@@ -9,13 +9,14 @@
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/client/*.test.ts test/server/routes/*.test.ts",
+    "test": "tsx --test test/client/*.test.ts test/server/routes/*.test.ts test/server/llm/*.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "preview": "vite preview --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
+    "@google/genai": "^2.12.0",
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.2.0",
     "express": "^5.1.0",

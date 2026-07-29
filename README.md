@@ -6,7 +6,7 @@ Choice Council は、複数の専門家ロールとファシリテーターを�
 
 - Frontend: TypeScript + React + Vite
 - Backend: TypeScript + Node.js + Express
-- LLM: OpenAI API
+- LLM: OpenAI API / Gemini API（環境変数で選択）
 
 ## 開発方針
 
@@ -24,7 +24,12 @@ GitHub Actions で以下を確認します。
 
 ## 起動
 
-`OPENAI_API_KEY` を環境変数として設定してから起動します。
+`LLM_PROVIDER` でアプリ全体のLLMを選択し、対応するAPIキーを環境変数として設定してから起動します。`LLM_PROVIDER` を省略した場合は `openai` を使用します。
+
+| `LLM_PROVIDER` | 必須のAPIキー    | 任意のモデル指定 | 既定モデル         |
+| -------------- | ---------------- | ---------------- | ------------------ |
+| `openai`       | `OPENAI_API_KEY` | `OPENAI_MODEL`   | `gpt-5-mini`       |
+| `gemini`       | `GEMINI_API_KEY` | `GEMINI_MODEL`   | `gemini-2.5-flash` |
 
 ```bash
 npm install

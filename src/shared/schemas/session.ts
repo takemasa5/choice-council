@@ -2,6 +2,18 @@ import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);
 const nonEmptyStringArray = z.array(nonEmptyString);
+/**
+ * 選択・確定できる専門家ロール数の上限。
+ *
+ * 仕様対応: `docs/api/schemas.md#初回専門家コメント生成`。
+ */
+export const maximumExpertRequestCount = 5;
+/**
+ * LLM に送信するグループチャット直近発言数の上限。
+ *
+ * 仕様対応: `docs/api/schemas.md#グループチャット`。
+ */
+export const recentGroupChatMessageLimit = 8;
 const finalMarkdownRequiredHeadings = [
   "# 意思決定メモ",
   "## 相談テーマ",
@@ -30,7 +42,7 @@ export const PhaseSchema = z.enum([
   "premise",
   "expert_selection",
   "deliberation",
-  "direction",
+  "group_chat",
   "final_memo",
 ]);
 
@@ -188,6 +200,220 @@ export const ExpertCommentSchema = z.strictObject({
 
 export type ExpertComment = z.infer<typeof ExpertCommentSchema>;
 
+/**
+ * グループチャットの専門家を一意に識別する確定済みロール。
+ *
+ * 仕様対応: `docs/api/schemas.md#グループチャット`。
+ */
+export const GroupChatExpertSchema = ExpertRequestSchema.extend({
+  participantId: nonEmptyString,
+});
+
+/** 日本語名: グループチャット参加専門家。 */
+export type GroupChatExpert = z.infer<typeof GroupChatExpertSchema>;
+
+/**
+ * 画面に表示するグループチャット発言。
+ *
+ * 仕様対応: `docs/api/schemas.md#グループチャット`。
+ */
+export const GroupChatMessageSchema = z.strictObject({
+  id: nonEmptyString,
+  speakerType: z.enum(["facilitator", "expert", "user"]),
+  speakerName: nonEmptyString,
+  participantId: nonEmptyString,
+  content: nonEmptyString,
+  createdAt: nonEmptyString,
+});
+
+/** 日本語名: グループチャット発言。 */
+export type GroupChatMessage = z.infer<typeof GroupChatMessageSchema>;
+
+const RequestedSpeakerSchema = z.strictObject({
+  speakerType: z.enum(["expert", "user"]),
+  speakerName: nonEmptyString,
+  participantId: nonEmptyString,
+});
+
+/**
+ * 次の発言者を指名するファシリテーターターン。
+ *
+ * 仕様対応: `docs/api/schemas.md#グループチャット`。
+ */
+export const FacilitatorTurnSchema = z
+  .strictObject({
+    message: nonEmptyString,
+    requestedSpeaker: RequestedSpeakerSchema,
+    requestReason: nonEmptyString,
+    question: nonEmptyString,
+    userOptions: nonEmptyStringArray.nullable(),
+    memoUpdate: SessionMemoSchema.nullable(),
+    contextSummaryUpdate: nonEmptyString.nullable(),
+  })
+  .superRefine((turn, context) => {
+    if (turn.requestedSpeaker.speakerType === "user") {
+      if (!turn.userOptions || turn.userOptions.length < 2) {
+        context.addIssue({
+          code: "custom",
+          message: "userOptions are required for user",
+          path: ["userOptions"],
+        });
+        return;
+      }
+      if (!turn.userOptions.includes("そのまま意見交換を続けて")) {
+        context.addIssue({
+          code: "custom",
+          message: "userOptions must include そのまま意見交換を続けて",
+          path: ["userOptions"],
+        });
+      }
+      if (new Set(turn.userOptions).size !== turn.userOptions.length) {
+        context.addIssue({
+          code: "custom",
+          message: "userOptions must not contain duplicates",
+          path: ["userOptions"],
+        });
+      }
+      if (turn.userOptions.includes("その他")) {
+        context.addIssue({
+          code: "custom",
+          message: "userOptions must not include その他",
+          path: ["userOptions"],
+        });
+      }
+    } else if (turn.userOptions !== null) {
+      context.addIssue({
+        code: "custom",
+        message: "userOptions must be null for expert",
+        path: ["userOptions"],
+      });
+    }
+  });
+
+/** 日本語名: ファシリテーターのグループチャット進行ターン。 */
+export type FacilitatorTurn = z.infer<typeof FacilitatorTurnSchema>;
+
+/**
+ * グループチャット開始時のファシリテーターターン。
+ *
+ * 開始時は初回専門家コメントを踏まえ、確定済み専門家の1人へ最初の発言を
+ * 依頼する。Gemini に渡す JSON Schema でもユーザー向け選択肢を禁止する。
+ */
+export const GroupChatStartTurnSchema = z.strictObject({
+  message: nonEmptyString,
+  requestedSpeaker: z.strictObject({
+    speakerType: z.literal("expert"),
+    speakerName: nonEmptyString,
+    participantId: nonEmptyString,
+  }),
+  requestReason: nonEmptyString,
+  question: nonEmptyString,
+  userOptions: z.null(),
+  memoUpdate: SessionMemoSchema.nullable(),
+  contextSummaryUpdate: nonEmptyString.nullable(),
+});
+
+/** 日本語名: グループチャット開始時のファシリテーターターン。 */
+export type GroupChatStartTurn = z.infer<typeof GroupChatStartTurnSchema>;
+
+export const GroupChatStartRequestSchema = z
+  .strictObject({
+    consultation: nonEmptyString,
+    currentPhase: z.literal("group_chat"),
+    memo: SessionMemoSchema,
+    confirmedExperts: z
+      .array(GroupChatExpertSchema)
+      .min(1)
+      .max(maximumExpertRequestCount),
+    initialExpertComments: z.array(ExpertCommentSchema),
+  })
+  .superRefine((request, context) => {
+    if (
+      request.confirmedExperts.length !== request.initialExpertComments.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "initialExpertComments must match confirmedExperts",
+        path: ["initialExpertComments"],
+      });
+    }
+    if (
+      new Set(request.confirmedExperts.map((expert) => expert.participantId))
+        .size !== request.confirmedExperts.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "confirmedExperts participantId must be unique",
+        path: ["confirmedExperts"],
+      });
+    }
+    for (const [index, expert] of request.confirmedExperts.entries()) {
+      const comment = request.initialExpertComments[index];
+      if (
+        comment &&
+        (comment.role_name !== expert.role_name ||
+          comment.viewpoint !== expert.viewpoint)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "initialExpertComments must match confirmedExperts in order",
+          path: ["initialExpertComments", index],
+        });
+      }
+    }
+  });
+
+/** 日本語名: グループチャット開始リクエスト。 */
+export type GroupChatStartRequest = z.infer<typeof GroupChatStartRequestSchema>;
+
+/** グループチャットで専門家が回答する API の入力契約。仕様対応: `docs/api/schemas.md#グループチャット`。 */
+export const GroupChatExpertReplyRequestSchema = z.strictObject({
+  consultation: nonEmptyString,
+  currentPhase: z.literal("group_chat"),
+  memo: SessionMemoSchema,
+  contextSummary: nonEmptyString,
+  recentMessages: z
+    .array(GroupChatMessageSchema)
+    .max(recentGroupChatMessageLimit),
+  expert: GroupChatExpertSchema,
+  facilitatorQuestion: nonEmptyString,
+});
+
+export type GroupChatExpertReplyRequest = z.infer<
+  typeof GroupChatExpertReplyRequestSchema
+>;
+
+/** 次のグループチャット進行ターンを求める API の入力契約。仕様対応: `docs/api/schemas.md#グループチャット`。 */
+export const GroupChatNextRequestSchema = z
+  .strictObject({
+    consultation: nonEmptyString,
+    currentPhase: z.literal("group_chat"),
+    memo: SessionMemoSchema,
+    contextSummary: nonEmptyString,
+    recentMessages: z
+      .array(GroupChatMessageSchema)
+      .max(recentGroupChatMessageLimit),
+    confirmedExperts: z
+      .array(GroupChatExpertSchema)
+      .min(1)
+      .max(maximumExpertRequestCount),
+    expertRepliesSinceUser: z.number().int().min(0).max(2),
+  })
+  .superRefine((request, context) => {
+    if (
+      new Set(request.confirmedExperts.map((expert) => expert.participantId))
+        .size !== request.confirmedExperts.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "confirmedExperts participantId must be unique",
+        path: ["confirmedExperts"],
+      });
+    }
+  });
+
+export type GroupChatNextRequest = z.infer<typeof GroupChatNextRequestSchema>;
+
 export const SessionMemoRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   currentPhase: PhaseSchema,
@@ -205,7 +431,9 @@ export const FacilitatorResponseSchema = z
     current_phase_label: nonEmptyString,
     phase_goal: nonEmptyString,
     facilitator_message: nonEmptyString,
-    expert_requests: z.array(ExpertRequestSchema),
+    expert_requests: z
+      .array(ExpertRequestSchema)
+      .max(maximumExpertRequestCount),
     user_question: UserQuestionSchema.nullable(),
     memo_updates: SessionMemoSchema,
     next_action: z.enum([
@@ -217,6 +445,14 @@ export const FacilitatorResponseSchema = z
     ]),
   })
   .superRefine((response, context) => {
+    if (response.user_question && response.expert_requests.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: "expert_requests must be empty when user_question is present",
+        path: ["expert_requests"],
+      });
+    }
+
     if (
       response.next_action === "request_experts" &&
       response.expert_requests.length === 0
@@ -231,6 +467,30 @@ export const FacilitatorResponseSchema = z
   });
 
 export type FacilitatorResponse = z.infer<typeof FacilitatorResponseSchema>;
+
+/**
+ * 必須質問への回答後に専門家候補を返すファシリテーター応答。
+ *
+ * Gemini へ渡す JSON Schema でも追加質問との共存を禁止するため、
+ * 共通応答 schema とは別に endpoint 固有のリテラル制約を定義する。
+ */
+export const FacilitatorRespondResponseSchema = z.strictObject({
+  current_phase: z.literal("premise"),
+  current_phase_label: nonEmptyString,
+  phase_goal: nonEmptyString,
+  facilitator_message: nonEmptyString,
+  expert_requests: z
+    .array(ExpertRequestSchema)
+    .min(1)
+    .max(maximumExpertRequestCount),
+  user_question: z.null(),
+  memo_updates: SessionMemoSchema,
+  next_action: z.literal("request_experts"),
+});
+
+export type FacilitatorRespondResponse = z.infer<
+  typeof FacilitatorRespondResponseSchema
+>;
 
 export const FinalMarkdownSchema = z
   .strictObject({
@@ -264,6 +524,10 @@ export const FinalMarkdownRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   memo: FinalSessionMemoSchema,
   expertComments: z.array(ExpertCommentSchema).optional(),
+  contextSummary: nonEmptyString,
+  recentMessages: z
+    .array(GroupChatMessageSchema)
+    .max(recentGroupChatMessageLimit),
 });
 
 export type FinalMarkdownRequest = z.infer<typeof FinalMarkdownRequestSchema>;

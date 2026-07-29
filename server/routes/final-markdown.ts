@@ -1,5 +1,4 @@
 import type { RequestHandler } from "express";
-import { zodTextFormat } from "openai/helpers/zod";
 import {
   FinalMarkdownRequestSchema,
   FinalMarkdownSchema,
@@ -10,8 +9,7 @@ import {
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
-  sendMissingApiKey,
-  sendOpenAIRequestFailed,
+  sendLlmRequestFailed,
 } from "./response-utils";
 import type { AppDependencies } from "./types";
 
@@ -45,28 +43,18 @@ export function createFinalMarkdownHandler(
       return;
     }
 
-    const apiKey = dependencies.getApiKey();
-    if (!apiKey) {
-      sendMissingApiKey(response);
-      return;
-    }
-
     try {
-      const client = dependencies.createOpenAIClient(apiKey);
+      const provider = dependencies.createLlmProvider();
       const expectedStatusLabel =
         finalMemoStatusLabels[parsedRequest.data.memo.status];
       const output = await parseStructuredOutputOnceWithRetry<FinalMarkdown>(
         () =>
-          client.responses.parse({
-            model: dependencies.getModel(),
-            input: [
-              developerMessage(finalMarkdownDeveloperPrompt),
-              userMessage(parsedRequest.data),
-            ],
-            text: {
-              format: zodTextFormat(FinalMarkdownSchema, "final_markdown"),
-            },
-          }) as unknown as Promise<{ output_parsed: FinalMarkdown | null }>,
+          provider.generateStructuredOutput({
+            systemPrompt: finalMarkdownDeveloperPrompt,
+            userInput: parsedRequest.data,
+            schema: FinalMarkdownSchema,
+            schemaName: "final_markdown",
+          }),
         (modelResponse) =>
           getMarkdownSection(
             modelResponse.markdown,
@@ -75,32 +63,14 @@ export function createFinalMarkdownHandler(
       );
 
       if (!output) {
-        sendInvalidModelResponse(response);
+        sendInvalidModelResponse(request, response);
         return;
       }
 
       response.json(output);
     } catch (error) {
-      sendOpenAIRequestFailed(response, error);
+      sendLlmRequestFailed(request, response, error);
     }
-  };
-}
-
-/** 日本語名: 開発者メッセージをResponses API形式へ変換する関数。 */
-function developerMessage(text: string) {
-  return {
-    role: "developer" as const,
-    content: [{ type: "input_text" as const, text }],
-  };
-}
-
-/** 日本語名: ユーザー入力をResponses API形式へ変換する関数。 */
-function userMessage(value: unknown) {
-  return {
-    role: "user" as const,
-    content: [
-      { type: "input_text" as const, text: JSON.stringify(value, null, 2) },
-    ],
   };
 }
 
@@ -156,6 +126,7 @@ const finalMarkdownDeveloperPrompt = `
   - ## 次アクション
   - ## セッションログ要約
 - 専門家コメントは要点だけに整理する。
+- contextSummary と recentMessages から、重要な論点の展開、ユーザーの意思表示、終了状態に至った経緯を「セッションログ要約」へ反映する。発言全文は列挙しない。
 - 断定できないことを断定しない。
 - 医療、法律、投資、生命安全、虐待、DVなどの高リスク領域では、断定的助言ではなく判断材料の整理と相談準備に留める。
 - 出力は指定 schema に厳密に従う。

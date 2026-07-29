@@ -1,6 +1,15 @@
 import express from "express";
-import OpenAI from "openai";
+import { createLlmProviderFromEnvironment } from "./llm/create-provider";
+import {
+  consoleApiLogger,
+  createApiRequestLogger,
+} from "./observability/api-request-logger";
 import { createExpertCommentHandler } from "./routes/expert-comment";
+import { createGroupChatExpertReplyHandler } from "./routes/expert-group-chat";
+import {
+  createGroupChatNextHandler,
+  createGroupChatStartHandler,
+} from "./routes/facilitator-group-chat";
 import {
   createFacilitatorRespondHandler,
   createFacilitatorStartHandler,
@@ -19,14 +28,14 @@ import type { AppDependencies } from "./routes/types";
 export function createApp(overrides: Partial<AppDependencies> = {}) {
   /** APIハンドラへ渡す外部依存の実装。 */
   const dependencies: AppDependencies = {
-    createOpenAIClient: (apiKey) => new OpenAI({ apiKey }),
-    getApiKey: () => process.env.OPENAI_API_KEY,
-    getModel: () => process.env.OPENAI_MODEL ?? "gpt-5-mini",
+    createLlmProvider: () => createLlmProviderFromEnvironment(),
+    logger: consoleApiLogger,
     ...overrides,
   };
   /** HTTPリクエストを処理するExpressアプリケーション。 */
   const app = express();
 
+  app.use(createApiRequestLogger(dependencies.logger));
   app.use(express.json({ limit: "1mb" }));
   // 仕様対応: `docs/api/schemas.md#呼び出し単位` の公開エンドポイント。
   app.get("/api/health", healthHandler);
@@ -39,6 +48,18 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     createFacilitatorRespondHandler(dependencies),
   );
   app.post("/api/expert/comment", createExpertCommentHandler(dependencies));
+  app.post(
+    "/api/expert/group-chat",
+    createGroupChatExpertReplyHandler(dependencies),
+  );
+  app.post(
+    "/api/facilitator/group-chat/start",
+    createGroupChatStartHandler(dependencies),
+  );
+  app.post(
+    "/api/facilitator/group-chat/next",
+    createGroupChatNextHandler(dependencies),
+  );
   app.post("/api/session-memo/update", createSessionMemoHandler(dependencies));
   app.post(
     "/api/final-markdown/generate",

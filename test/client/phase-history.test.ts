@@ -1,80 +1,79 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createResponseForPhase,
+  getConfirmedExpertsForReturn,
   getExpertCommentsForReturn,
   getReturnablePhases,
-  keepResponsesThroughPhase,
-  type ResponseHistory,
+  phaseOrder,
 } from "../../src/client/phase-history";
-import type {
-  ExpertRequest,
-  ExpertComment,
-  FacilitatorResponse,
-} from "../../src/shared/schemas/session";
 
-const response = (phase: FacilitatorResponse["current_phase"]) =>
-  ({ current_phase: phase }) as FacilitatorResponse;
+const comment = {
+  role_name: "専門家",
+  viewpoint: "観点",
+  summary: "要約",
+  key_point: "要点",
+  concern: "懸念",
+  question_to_user: "質問",
+  confidence: "medium" as const,
+  needs_research: false,
+};
 
-test("方向性整理からは専門家選定へ戻り、検討を直接の戻り先にしない", () => {
-  const history: ResponseHistory = {
-    premise: response("premise"),
-    expert_selection: response("expert_selection"),
-    deliberation: response("deliberation"),
-    direction: response("direction"),
-  };
+const expert = {
+  role_name: "専門家",
+  viewpoint: "観点",
+  request: "論点を整理してください",
+};
 
-  assert.deepEqual(getReturnablePhases("direction", history), [
+test("グループチャットを含む新しいフェーズ順序を使う", () => {
+  assert.deepEqual(phaseOrder, [
     "consultation_input",
     "premise",
     "expert_selection",
+    "deliberation",
+    "group_chat",
+    "final_memo",
   ]);
 });
 
-test("専門家選定へ戻るとその入力状態を残して後続履歴を破棄する", () => {
-  const expertSelection = response("expert_selection");
-  const history: ResponseHistory = {
-    premise: response("premise"),
-    expert_selection: expertSelection,
-    direction: response("direction"),
-  };
-
-  assert.deepEqual(keepResponsesThroughPhase(history, "expert_selection"), {
-    premise: history.premise,
-    expert_selection: expertSelection,
-  });
+test("検討へ戻るときだけ専門家コメントを保持する", () => {
+  assert.deepEqual(getExpertCommentsForReturn("deliberation", [comment]), [
+    comment,
+  ]);
 });
 
-test("確定済みの専門家ロールを専門家選定の履歴へ保存する", () => {
-  const confirmedExperts: ExpertRequest[] = [
-    {
-      role_name: "教育コンサルタント",
-      viewpoint: "学習負荷",
-      request: "家庭への負担を確認する",
-    },
-  ];
+test("意見交換へ戻るときは専門家コメントを保持する", () => {
+  assert.deepEqual(getExpertCommentsForReturn("group_chat", [comment]), [
+    comment,
+  ]);
+});
 
+test("専門家選定以降へ戻るときは確定済み専門家を保持する", () => {
+  assert.deepEqual(getConfirmedExpertsForReturn("expert_selection", [expert]), [
+    expert,
+  ]);
+  assert.deepEqual(getConfirmedExpertsForReturn("deliberation", [expert]), [
+    expert,
+  ]);
+  assert.deepEqual(getConfirmedExpertsForReturn("group_chat", [expert]), [
+    expert,
+  ]);
+  assert.deepEqual(getConfirmedExpertsForReturn("premise", [expert]), []);
+});
+
+test("グループチャットからは検討フェーズへ戻れる", () => {
   assert.deepEqual(
-    createResponseForPhase(
-      response("premise"),
-      "expert_selection",
-      confirmedExperts,
-    ).expert_requests,
-    confirmedExperts,
+    getReturnablePhases("group_chat", {
+      deliberation: { current_phase: "deliberation" } as never,
+    }),
+    ["consultation_input", "deliberation"],
   );
 });
 
-test("方向性整理へ戻る場合は専門家コメントを残す", () => {
-  const expertComments = [
-    { role_name: "教育コンサルタント" },
-  ] as ExpertComment[];
-
-  assert.equal(
-    getExpertCommentsForReturn("direction", expertComments),
-    expertComments,
-  );
+test("終了メモからは検討フェーズへ戻れる", () => {
   assert.deepEqual(
-    getExpertCommentsForReturn("expert_selection", expertComments),
-    [],
+    getReturnablePhases("final_memo", {
+      deliberation: { current_phase: "deliberation" } as never,
+    }),
+    ["consultation_input", "deliberation"],
   );
 });

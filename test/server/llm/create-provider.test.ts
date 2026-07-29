@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createLlmProviderFromEnvironment } from "../../../server/llm/create-provider";
+import { GeminiLlmProvider } from "../../../server/llm/gemini-provider";
+import { OpenAiLlmProvider } from "../../../server/llm/openai-provider";
+import {
+  MissingLlmApiKeyError,
+  UnsupportedLlmProviderError,
+} from "../../../server/llm/types";
+
+test("LLM_PROVIDER未指定時はOpenAIプロバイダーを選択する", () => {
+  const provider = createLlmProviderFromEnvironment({
+    OPENAI_API_KEY: "test-api-key",
+  });
+
+  assert.ok(provider instanceof OpenAiLlmProvider);
+});
+
+test("LLM_PROVIDER=geminiではGeminiプロバイダーを選択する", () => {
+  const provider = createLlmProviderFromEnvironment({
+    LLM_PROVIDER: "gemini",
+    GEMINI_API_KEY: "test-api-key",
+  });
+
+  assert.ok(provider instanceof GeminiLlmProvider);
+});
+
+test("選択済みプロバイダーのAPIキーがない場合は設定エラーにする", () => {
+  assert.throws(
+    () => createLlmProviderFromEnvironment({ LLM_PROVIDER: "gemini" }),
+    (error: unknown) =>
+      error instanceof MissingLlmApiKeyError && error.provider === "gemini",
+  );
+});
+
+test("未対応のLLM_PROVIDERは設定エラーにする", () => {
+  assert.throws(
+    () => createLlmProviderFromEnvironment({ LLM_PROVIDER: "unknown" }),
+    (error: unknown) =>
+      error instanceof UnsupportedLlmProviderError &&
+      error.provider === "unknown",
+  );
+});

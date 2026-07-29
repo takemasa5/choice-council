@@ -4,14 +4,14 @@ MVPでは、アプリ側がフェーズ遷移を管理する。LLM は次の候�
 
 ## フェーズ
 
-| ID                 | 表示名     | 目的                                                   |
-| ------------------ | ---------- | ------------------------------------------------------ |
-| consultation_input | 相談入力   | ユーザーが相談内容を入力する                           |
-| premise            | 前提整理   | 事実、希望、不安、不明点を整理する                     |
-| expert_selection   | 専門家選定 | 必要な専門家ロールを提案し、ユーザーが編集する         |
-| deliberation       | 検討       | 専門家コメント、論点整理、調査候補の提示を行う         |
-| direction          | 方向性整理 | 判断軸、選択肢、対立点、未確認事項を整理する           |
-| final_memo         | 終了メモ   | 暫定結論、保留理由、次アクションを Markdown で出力する |
+| ID                 | 表示名     | 目的                                                           |
+| ------------------ | ---------- | -------------------------------------------------------------- |
+| consultation_input | 相談入力   | ユーザーが相談内容を入力する                                   |
+| premise            | 前提整理   | 事実、希望、不安、不明点を整理する                             |
+| expert_selection   | 専門家選定 | 必要な専門家ロールを提案し、ユーザーが編集する                 |
+| deliberation       | 検討準備   | 初回の専門家コメントを表示し、意見交換を開始できる状態にする   |
+| group_chat         | 意見交換   | ファシリテーターの指名により、専門家・ユーザーが順番に検討する |
+| final_memo         | 終了メモ   | 暫定結論、保留理由、次アクションを Markdown で出力する         |
 
 ## 初期遷移
 
@@ -21,8 +21,8 @@ stateDiagram-v2
   consultation_input --> premise
   premise --> expert_selection
   expert_selection --> deliberation
-  deliberation --> direction
-  direction --> final_memo
+  deliberation --> group_chat
+  group_chat --> final_memo
   final_memo --> [*]
 ```
 
@@ -32,14 +32,14 @@ stateDiagram-v2
 
 MVP の基本フローは前進方向のフェーズ遷移とする。ただし、ユーザーは通常操作として前フェーズへ戻れる。
 
-| 現在フェーズ       | 前進先           | 戻れるフェーズ                                           |
-| ------------------ | ---------------- | -------------------------------------------------------- |
-| consultation_input | premise          | なし                                                     |
-| premise            | expert_selection | consultation_input                                       |
-| expert_selection   | deliberation     | consultation_input, premise                              |
-| deliberation       | direction        | consultation_input, premise, expert_selection            |
-| direction          | final_memo       | consultation_input, premise, expert_selection            |
-| final_memo         | 終了             | consultation_input, premise, expert_selection, direction |
+| 現在フェーズ       | 前進先           | 戻れるフェーズ                                                          |
+| ------------------ | ---------------- | ----------------------------------------------------------------------- |
+| consultation_input | premise          | なし                                                                    |
+| premise            | expert_selection | consultation_input                                                      |
+| expert_selection   | deliberation     | consultation_input, premise                                             |
+| deliberation       | group_chat       | consultation_input, premise, expert_selection                           |
+| group_chat         | final_memo       | consultation_input, premise, expert_selection, deliberation             |
+| final_memo         | 終了             | consultation_input, premise, expert_selection, deliberation, group_chat |
 
 アプリ側は、現在フェーズより後のフェーズへユーザー操作だけで直接移動させない。後続フェーズへ進む場合は、現在フェーズの完了条件を満たし、必要な LLM 呼び出しまたはユーザー確認が完了している必要がある。
 
@@ -52,10 +52,10 @@ LLM は `next_action` で候補行動を返せるが、実際のフェーズ遷�
 | フェーズ           | 完了条件                                                                           |
 | ------------------ | ---------------------------------------------------------------------------------- |
 | consultation_input | 必須項目の相談内容が入力されている                                                 |
-| premise            | 相談テーマ、事実、希望、不安、不明点が初期整理されている                           |
+| premise            | 初期整理と必須確認質問への回答が完了している                                       |
 | expert_selection   | 専門家ロール案をユーザーが承認、追加、削除、入れ替え、またはおまかせで確定している |
-| deliberation       | 必要な専門家コメントとファシリテーター整理が生成されている                         |
-| direction          | 判断軸、選択肢、対立点、未確認事項、次アクション候補が整理されている               |
+| deliberation       | 確定済み専門家の初回コメントが全件生成され、ユーザーが意見交換開始を選べる         |
+| group_chat         | ユーザーが終了確認で終了状態を選択している                                         |
 | final_memo         | Markdown 終了メモが生成され、ユーザーが保存または終了できる状態になっている        |
 
 ## 前フェーズへ戻る操作
@@ -72,24 +72,17 @@ LLM は `next_action` で候補行動を返せるが、実際のフェーズ遷�
 
 ユーザーが同意した場合のみ、戻り先より後のファシリテーター応答、専門家コメント、セッションメモ更新、終了メモを現在セッションから完全に取り除く。MVP では破棄済み履歴を保持しない。
 
-専門家コメントは `deliberation` の独立履歴として保存しない。`direction` から検討をやり直す場合、ユーザーは `expert_selection` に戻り、保存済みの専門家ロールを編集または再確定してコメント生成を実行する。
+`group_chat` から `deliberation` に戻る場合、アプリはグループチャット履歴と、グループチャット開始後に更新したセッションメモを破棄する。初回専門家コメントと確定済み専門家は保持し、セッションメモはグループチャット開始時点へ戻す。
 
-`final_memo` から `direction` に戻る場合は、専門家コメントを保持し、終了メモだけを破棄する。
+`deliberation` から `expert_selection` に戻る場合、アプリは初回専門家コメントとグループチャット履歴を破棄する。
+
+`final_memo` から `group_chat` に戻る場合は、終了メモだけを破棄する。グループチャット履歴とセッションメモは保持する。
+
+終了メモの自動生成が失敗した場合は、アプリは `group_chat` へ戻る。この失敗復旧では、ユーザーが終了状態を選び直せるよう `SessionMemo.status` を `in_progress` に戻す。
+
+終了メモの生成中に保存済みセッションを復元した場合も、Markdown がなければ自動生成は完了していないものとして扱う。アプリは `group_chat` へ戻り、`SessionMemo.status` を `in_progress` に戻して終了状態を選び直せるようにする。
 
 ユーザーが同意しない場合、現在フェーズに留まる。
-
-## 割り込み
-
-ユーザーが「ちょっと待って」を押した場合、実行中の LLM 処理は即時キャンセルせず、次の区切りで停止する。
-
-停止後、ファシリテーターは次の選択肢を提示する。
-
-- 前提を修正したい
-- この論点を深掘りしたい
-- 外部情報を調べたい
-- 別の選択肢を追加したい
-- いったんまとめたい
-- その他
 
 ## `next_action`
 
