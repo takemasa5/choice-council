@@ -167,7 +167,7 @@ export function App() {
     onGenerationStarted: () => {
       finalMemoPhase.clear();
     },
-    onCommentsGenerated: () => moveResponseToPhase("deliberation"),
+    onCommentsGenerated: settleExpertCommentsMemo,
   });
   const groupChatPhase = useGroupChatPhase({
     onInitialTurn: settleGroupChatStart,
@@ -516,6 +516,24 @@ export function App() {
     }));
   }
 
+  /** 初回専門家コメントを反映したメモと検討フェーズを同時に確定する。 */
+  function settleExpertCommentsMemo(updatedMemo: SessionMemo) {
+    setCurrentPhase("deliberation");
+    setResponse((currentResponse) => {
+      if (!currentResponse) return currentResponse;
+
+      const deliberationResponse = {
+        ...createResponseForPhase(currentResponse, "deliberation"),
+        memo_updates: updatedMemo,
+      };
+      setResponseHistory((current) => ({
+        ...keepResponsesThroughPhase(current, currentPhase),
+        deliberation: deliberationResponse,
+      }));
+      return deliberationResponse;
+    });
+  }
+
   /** 日本語名: 意見交換開始成功後の横断フェーズ状態を確定する。 */
   function settleGroupChatStart(turn: FacilitatorTurn) {
     setCurrentPhase("group_chat");
@@ -620,22 +638,6 @@ export function App() {
       initialExpertRequests,
       finalMarkdown: finalMarkdown || undefined,
     };
-  }
-
-  function moveResponseToPhase(nextPhase: Phase) {
-    setCurrentPhase(nextPhase);
-    setResponse((currentResponse) => {
-      if (!currentResponse) return currentResponse;
-
-      const nextResponse = createResponseForPhase(currentResponse, nextPhase);
-
-      setResponseHistory((current) => ({
-        ...keepResponsesThroughPhase(current, currentPhase),
-        [nextPhase]: nextResponse,
-      }));
-
-      return nextResponse;
-    });
   }
 
   function saveConfirmedExpertDrafts(experts: ExpertRequest[]) {
