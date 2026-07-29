@@ -209,11 +209,7 @@ export function App() {
   const shouldSkipRestoredCandidateSyncRef = useRef(false);
 
   useEffect(() => {
-    return () => {
-      if (memoUpdateNoticeTimerRef.current) {
-        clearTimeout(memoUpdateNoticeTimerRef.current);
-      }
-    };
+    return stopMemoUpdatedNoticeTimer;
   }, []);
 
   const { hasRestoredSession } = useSessionPersistence<StoredSession>({
@@ -438,6 +434,7 @@ export function App() {
     )
       return;
 
+    hideMemoUpdatedNotice();
     window.localStorage.removeItem(storageKey);
     changeConsultation("");
     setStartedConsultation("");
@@ -470,6 +467,10 @@ export function App() {
     );
 
     if (!confirmed) return;
+
+    if (targetPhase !== "group_chat") {
+      hideMemoUpdatedNotice();
+    }
 
     const nextResponseHistory =
       targetPhase === "consultation_input"
@@ -590,14 +591,25 @@ export function App() {
 
   /** グループチャット中のメモ更新を短時間だけ通知する。 */
   function showMemoUpdatedNotice() {
-    if (memoUpdateNoticeTimerRef.current) {
-      clearTimeout(memoUpdateNoticeTimerRef.current);
-    }
+    stopMemoUpdatedNoticeTimer();
     setIsMemoUpdateNoticeVisible(true);
     memoUpdateNoticeTimerRef.current = setTimeout(() => {
       setIsMemoUpdateNoticeVisible(false);
       memoUpdateNoticeTimerRef.current = null;
     }, 3000);
+  }
+
+  /** 表示中のメモ更新通知を閉じる。 */
+  function hideMemoUpdatedNotice() {
+    stopMemoUpdatedNoticeTimer();
+    setIsMemoUpdateNoticeVisible(false);
+  }
+
+  /** メモ更新通知の保留タイマーを停止する。 */
+  function stopMemoUpdatedNoticeTimer() {
+    if (memoUpdateNoticeTimerRef.current === null) return;
+    clearTimeout(memoUpdateNoticeTimerRef.current);
+    memoUpdateNoticeTimerRef.current = null;
   }
 
   /** 日本語名: 終了状態をメモへ反映し、終了メモフェーズへ遷移する。 */
