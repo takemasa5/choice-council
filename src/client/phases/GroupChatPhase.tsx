@@ -39,10 +39,12 @@ export function GroupChatPhase({
   messages,
   otherAnswer,
   isLoading,
+  isNextTurnRetryPending = false,
   errorMessage,
   onOtherAnswerChange,
   onUserAnswer,
   onRetryExpertReply,
+  onRetryNextTurn,
   finishErrorMessage,
   onFinish,
 }: {
@@ -50,10 +52,12 @@ export function GroupChatPhase({
   messages: GroupChatMessage[];
   otherAnswer: string;
   isLoading: boolean;
+  isNextTurnRetryPending?: boolean;
   errorMessage: string;
   onOtherAnswerChange: (value: string) => void;
   onUserAnswer: (answer: string) => void;
   onRetryExpertReply: () => void;
+  onRetryNextTurn?: () => void;
   finishErrorMessage: string;
   onFinish: (status: FinalMemoStatus) => void;
 }) {
@@ -131,64 +135,76 @@ export function GroupChatPhase({
             </article>
           );
         })}
-        <article className="group-chat-message group-chat-message--facilitator group-chat-question">
-          <span
-            className="group-chat-avatar group-chat-avatar--facilitator"
-            aria-hidden="true"
-          >
-            司
-          </span>
-          <div className="group-chat-message-body">
-            <header className="group-chat-message-header">
-              <strong>ファシリテーター</strong>
-            </header>
-            <p>
-              <span className="group-chat-question-label">質問</span>
-              {turn.question}
-            </p>
-          </div>
-        </article>
-      </div>
-      {turn.requestedSpeaker.speakerType === "user" && (
-        <div className="group-chat-answer-controls">
-          {turn.userOptions && (
-            <div className="group-chat-option-grid">
-              {turn.userOptions
-                .filter((option) => option !== "その他")
-                .map((option) => (
-                  <button
-                    type="button"
-                    key={option}
-                    onClick={() => onUserAnswer(option)}
-                    disabled={isLoading}
-                  >
-                    {option}
-                  </button>
-                ))}
-            </div>
-          )}
-          <div className="group-chat-free-response">
-            <label className="field">
-              <span>自由入力</span>
-              <textarea
-                value={otherAnswer}
-                onChange={(event) => onOtherAnswerChange(event.target.value)}
-                rows={3}
-              />
-            </label>
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => onUserAnswer(otherAnswer.trim())}
-              disabled={isLoading || !otherAnswer.trim()}
+        {!isNextTurnRetryPending && (
+          <article className="group-chat-message group-chat-message--facilitator group-chat-question">
+            <span
+              className="group-chat-avatar group-chat-avatar--facilitator"
+              aria-hidden="true"
             >
-              回答を送る
-            </button>
+              司
+            </span>
+            <div className="group-chat-message-body">
+              <header className="group-chat-message-header">
+                <strong>ファシリテーター</strong>
+              </header>
+              <p>
+                <span className="group-chat-question-label">質問</span>
+                {turn.question}
+              </p>
+            </div>
+          </article>
+        )}
+      </div>
+      {!isNextTurnRetryPending &&
+        turn.requestedSpeaker.speakerType === "user" && (
+          <div className="group-chat-answer-controls">
+            {turn.userOptions && (
+              <div className="group-chat-option-grid">
+                {turn.userOptions
+                  .filter((option) => option !== "その他")
+                  .map((option) => (
+                    <button
+                      type="button"
+                      key={option}
+                      onClick={() => onUserAnswer(option)}
+                      disabled={isLoading}
+                    >
+                      {option}
+                    </button>
+                  ))}
+              </div>
+            )}
+            <div className="group-chat-free-response">
+              <label className="field">
+                <span>自由入力</span>
+                <textarea
+                  value={otherAnswer}
+                  onChange={(event) => onOtherAnswerChange(event.target.value)}
+                  rows={3}
+                />
+              </label>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => onUserAnswer(otherAnswer.trim())}
+                disabled={isLoading || !otherAnswer.trim()}
+              >
+                回答を送る
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       {errorMessage && <p className="error">{errorMessage}</p>}
-      {turn.requestedSpeaker.speakerType === "expert" && (
+      {isNextTurnRetryPending ? (
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={onRetryNextTurn}
+          disabled={isLoading}
+        >
+          次の進行を再試行する
+        </button>
+      ) : turn.requestedSpeaker.speakerType === "expert" ? (
         <button
           className="secondary-button"
           type="button"
@@ -197,7 +213,7 @@ export function GroupChatPhase({
         >
           専門家回答を再生成する
         </button>
-      )}
+      ) : null}
       {finishErrorMessage && <p className="error">{finishErrorMessage}</p>}
       <button
         className="secondary-button"

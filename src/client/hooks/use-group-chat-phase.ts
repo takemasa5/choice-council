@@ -149,6 +149,37 @@ export function useGroupChatPhase({
     }
   }
 
+  /** 日本語名: 成功済み専門家回答の後続進行だけを再試行する。 */
+  async function retryNextTurn({
+    consultation,
+    memo,
+    confirmedExperts,
+  }: {
+    consultation: string;
+    memo: SessionMemo | null;
+    confirmedExperts: ExpertRequest[];
+  }) {
+    if (isLoading || !state.isNextTurnRetryPending || !state.turn || !memo)
+      return;
+
+    setIsLoading(true);
+    setErrorMessage("");
+    try {
+      await requestNextTurn({
+        consultation,
+        messages: state.messages,
+        experts: addParticipantIds(confirmedExperts),
+        expertRepliesSinceUser: state.expertRepliesSinceUser,
+        memo,
+        contextSummary: state.contextSummary || state.turn.message,
+      });
+    } catch (error) {
+      setErrorMessage(getGroupChatErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   /** 日本語名: ユーザー回答を会話へ反映し、次の進行ターンを要求する。 */
   async function submitUserAnswer({
     answer,
@@ -270,11 +301,19 @@ export function useGroupChatPhase({
     if (!parsedMessage.success) {
       throw new Error("専門家の回答生成に失敗しました。再試行してください。");
     }
+    const nextMessages = [...messages, parsedMessage.data];
+    const nextExpertRepliesSinceUser = expertRepliesSinceUser + 1;
+    dispatch({
+      type: "set_pending_next_turn",
+      messages: nextMessages,
+      contextSummary,
+      expertRepliesSinceUser: nextExpertRepliesSinceUser,
+    });
     await requestNextTurn({
       consultation,
-      messages: [...messages, parsedMessage.data],
+      messages: nextMessages,
       experts,
-      expertRepliesSinceUser: expertRepliesSinceUser + 1,
+      expertRepliesSinceUser: nextExpertRepliesSinceUser,
       memo,
       contextSummary,
     });
@@ -345,6 +384,7 @@ export function useGroupChatPhase({
     errorMessage,
     begin,
     retryExpertReply,
+    retryNextTurn,
     submitUserAnswer,
     restore,
     reset,

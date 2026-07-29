@@ -77,3 +77,38 @@ test("グループチャットの復元は累積要約と連続専門家回答�
   assert.equal(state.contextSummary, "保存済みの論点");
   assert.equal(state.expertRepliesSinceUser, 2);
 });
+
+test("次の進行の再試行待ちでも成功済み専門家回答を保持する", () => {
+  const expertMessage: GroupChatMessage = {
+    id: "expert-1",
+    speakerType: "expert",
+    speakerName: "家計アドバイザー",
+    participantId: "expert-1",
+    content: "予算を優先しましょう。",
+    createdAt: "2026-07-18T00:01:00.000Z",
+  };
+  const pendingState = groupChatReducer(
+    { ...initialGroupChatState, turn, messages: [message] },
+    {
+      type: "set_pending_next_turn",
+      messages: [message, expertMessage],
+      contextSummary: "予算を優先する論点",
+      expertRepliesSinceUser: 1,
+    },
+  );
+
+  assert.deepEqual(pendingState.messages, [message, expertMessage]);
+  assert.equal(pendingState.contextSummary, "予算を優先する論点");
+  assert.equal(pendingState.expertRepliesSinceUser, 1);
+  assert.equal(pendingState.isNextTurnRetryPending, true);
+
+  const nextState = groupChatReducer(pendingState, {
+    type: "set_turn",
+    messages: [message, expertMessage],
+    turn,
+    contextSummary: "次の論点",
+    expertRepliesSinceUser: 1,
+  });
+
+  assert.equal(nextState.isNextTurnRetryPending, false);
+});

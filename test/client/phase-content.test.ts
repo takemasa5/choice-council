@@ -273,3 +273,41 @@ test("専門家ターンではエラーがなくても回答再生成ボタン�
 
   assert.match(markup, />専門家回答を再生成する<\/button>/);
 });
+
+test("次の進行の再試行待ちは専門家回答を再生成せず質問を隠す", () => {
+  const turn: FacilitatorTurn = {
+    message: "専門家の見解を待っています。",
+    requestedSpeaker: {
+      speakerType: "expert",
+      participantId: "expert-household-a",
+      speakerName: "家計アドバイザー",
+    },
+    requestReason: "専門的な観点を確認するためです。",
+    question: "予算の優先順位を教えてください。",
+    userOptions: null,
+    memoUpdate: null,
+    contextSummaryUpdate: null,
+  };
+
+  const markup = renderToStaticMarkup(
+    createElement(GroupChatPhase, {
+      turn,
+      messages: [],
+      otherAnswer: "",
+      isLoading: false,
+      isNextTurnRetryPending: true,
+      errorMessage: "次の意見交換の進行に失敗しました。再試行してください。",
+      onOtherAnswerChange: () => undefined,
+      onUserAnswer: () => undefined,
+      onRetryExpertReply: () => undefined,
+      onRetryNextTurn: () => undefined,
+      finishErrorMessage: "",
+      onFinish: () => undefined,
+    }),
+  );
+
+  assert.match(markup, />次の進行を再試行する<\/button>/);
+  assert.doesNotMatch(markup, />専門家回答を再生成する<\/button>/);
+  assert.doesNotMatch(markup, /group-chat-question/);
+  assert.doesNotMatch(markup, /予算の優先順位を教えてください。/);
+});
