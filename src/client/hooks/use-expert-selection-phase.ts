@@ -6,6 +6,7 @@ import type {
   Phase,
   SessionMemo,
 } from "../../shared/schemas/session";
+import { SessionMemoSchema } from "../../shared/schemas/session";
 import {
   collectExpertCommentGenerationResults,
   confirmExpertDrafts,
@@ -43,7 +44,7 @@ export function useExpertSelectionPhase({
   isInteractionDisabled: () => boolean;
   onConfirmed: (experts: ExpertRequest[]) => void;
   onGenerationStarted: () => void;
-  onCommentsGenerated: (experts: ExpertRequest[]) => void;
+  onCommentsGenerated: (memo: SessionMemo) => void;
 }) {
   const [expertDrafts, setExpertDrafts] = useState<ExpertDraft[]>([]);
   const [expertDraftProvenanceKey, setExpertDraftProvenanceKey] = useState<
@@ -170,6 +171,38 @@ export function useExpertSelectionPhase({
     return body;
   }
 
+  /** 日本語名: 初回専門家コメントを反映したセッションメモを更新する。 */
+  async function updateSessionMemo({
+    consultation,
+    currentPhase,
+    previousMemo,
+    comments,
+  }: {
+    consultation: string;
+    currentPhase: Phase;
+    previousMemo: SessionMemo | null;
+    comments: ExpertComment[];
+  }): Promise<SessionMemo> {
+    const response = await fetch("/api/session-memo/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        consultation,
+        currentPhase,
+        previousMemo: previousMemo ?? undefined,
+        expertComments: comments,
+      }),
+    });
+    const body: unknown = await response.json();
+    const parsedMemo = SessionMemoSchema.safeParse(body);
+    if (!response.ok || !parsedMemo.success) {
+      throw new Error(
+        "専門家コメントの生成に失敗しました。もう一度お試しください。",
+      );
+    }
+    return parsedMemo.data;
+  }
+
   /** 日本語名: 編集済み候補を検証し、確定結果だけを横断状態へ渡す。 */
   function confirmDrafts() {
     if (isInteractionDisabled()) return;
@@ -221,26 +254,41 @@ export function useExpertSelectionPhase({
       currentPhase === "expert_selection" ? "deliberation" : currentPhase;
     setIsGenerating(true);
     onGenerationStarted();
-    const result = await collectExpertCommentGenerationResults(
-      confirmedExperts.map((expert) => async () => {
-        const request: ExpertCommentRequest = {
-          consultation,
-          currentPhase: expertCommentPhase,
-          memo: memo ?? undefined,
-          expert,
-        };
-        return (await requestComment(request)) as ExpertComment;
-      }),
-    );
-    if (result.errorMessage) {
-      setExpertComments([]);
-      setErrorMessage(result.errorMessage);
-    } else {
+    try {
+      const result = await collectExpertCommentGenerationResults(
+        confirmedExperts.map((expert) => async () => {
+          const request: ExpertCommentRequest = {
+            consultation,
+            currentPhase: expertCommentPhase,
+            memo: memo ?? undefined,
+            expert,
+          };
+          return (await requestComment(request)) as ExpertComment;
+        }),
+      );
+      if (result.errorMessage) {
+        setExpertComments([]);
+        setErrorMessage(result.errorMessage);
+        return;
+      }
+
+      const updatedMemo = await updateSessionMemo({
+        consultation,
+        currentPhase,
+        previousMemo: memo,
+        comments: result.comments,
+      });
       setExpertComments(result.comments);
       confirmedRequestKeyRef.current = JSON.stringify(confirmedExperts);
-      onCommentsGenerated(confirmedExperts);
+      onCommentsGenerated(updatedMemo);
+    } catch {
+      setExpertComments([]);
+      setErrorMessage(
+        "専門家コメントの生成に失敗しました。もう一度お試しください。",
+      );
+    } finally {
+      setIsGenerating(false);
     }
-    setIsGenerating(false);
   }
 
   /** 日本語名: 保存済みの専門家選定状態をまとめて復元する。 */

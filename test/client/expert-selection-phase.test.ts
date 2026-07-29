@@ -6,6 +6,11 @@ import {
   shouldPreserveRestoredExpertDrafts,
   useExpertSelectionPhase,
 } from "../../src/client/hooks/use-expert-selection-phase";
+import type {
+  ExpertComment,
+  ExpertRequest,
+  SessionMemo,
+} from "../../src/shared/schemas/session";
 
 test("復元済みresponseと同じ候補キーなら編集済みdraftを維持する", () => {
   assert.equal(
@@ -218,4 +223,185 @@ test("前提整理へ戻った後は新しい候補からdraftを同期する", 
     { ...nextCandidate, draftId: "expert-draft-1" },
   ]);
   assert.equal(restoredProvenance, nextCandidateKey);
+});
+
+test("全専門家コメントの成功後に更新済みメモを渡して検討へ進める", async () => {
+  const expert: ExpertRequest = {
+    role_name: "家計アドバイザー",
+    viewpoint: "予算",
+    request: "費用を整理してください",
+  };
+  const expertComment: ExpertComment = {
+    role_name: expert.role_name,
+    viewpoint: expert.viewpoint,
+    summary: "予算上限を先に決めるべきです。",
+    key_point: "予算上限",
+    concern: "追加費用が不明です。",
+    question_to_user: "なし",
+    confidence: "medium",
+    needs_research: false,
+  };
+  const previousMemo: SessionMemo = {
+    theme: "家族旅行",
+    status: "in_progress",
+    facts: ["予算は10万円です。"],
+    values: [],
+    concerns: [],
+    options: [],
+    decision_axes: [],
+    expert_summaries: [],
+    conflicts: [],
+    open_questions: [],
+    next_actions: [],
+  };
+  const updatedMemo: SessionMemo = {
+    ...previousMemo,
+    expert_summaries: ["家計アドバイザー: 予算上限を先に決める。"],
+  };
+  const requests: { path: string; body: unknown }[] = [];
+  const originalFetch = globalThis.fetch;
+  let receivedMemo: SessionMemo | null = null;
+  let generation: Promise<void> | null = null;
+
+  globalThis.fetch = async (input, init) => {
+    const path = String(input);
+    requests.push({ path, body: JSON.parse(String(init?.body)) });
+    if (path === "/api/expert/comment") {
+      return new Response(JSON.stringify(expertComment), { status: 200 });
+    }
+    if (path === "/api/session-memo/update") {
+      return new Response(JSON.stringify(updatedMemo), { status: 200 });
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  };
+
+  try {
+    function HookHarness() {
+      const selection = useExpertSelectionPhase({
+        getContext: () => ({
+          consultation: "相談内容",
+          currentPhase: "expert_selection" as const,
+          memo: previousMemo,
+        }),
+        getRequiredQuestionMessage: () => "",
+        isInteractionDisabled: () => false,
+        onConfirmed: () => undefined,
+        onGenerationStarted: () => undefined,
+        onCommentsGenerated: (memo) => {
+          receivedMemo = memo;
+        },
+      });
+      const [isPrepared, setIsPrepared] = useState(false);
+
+      if (!isPrepared) {
+        selection.restoreSelection({
+          initialCandidates: [],
+          confirmedCandidates: [expert],
+          comments: [],
+        });
+        setIsPrepared(true);
+      } else if (!generation) {
+        generation = selection.generateComments();
+      }
+
+      return null;
+    }
+
+    renderToStaticMarkup(createElement(HookHarness));
+    await generation;
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requests, [
+    {
+      path: "/api/expert/comment",
+      body: {
+        consultation: "相談内容",
+        currentPhase: "deliberation",
+        memo: previousMemo,
+        expert,
+      },
+    },
+    {
+      path: "/api/session-memo/update",
+      body: {
+        consultation: "相談内容",
+        currentPhase: "expert_selection",
+        previousMemo,
+        expertComments: [expertComment],
+      },
+    },
+  ]);
+  assert.deepEqual(receivedMemo, updatedMemo);
+});
+
+test("メモ更新が失敗した場合は検討へ進めない", async () => {
+  const expert: ExpertRequest = {
+    role_name: "家計アドバイザー",
+    viewpoint: "予算",
+    request: "費用を整理してください",
+  };
+  const expertComment: ExpertComment = {
+    role_name: expert.role_name,
+    viewpoint: expert.viewpoint,
+    summary: "予算上限を先に決めるべきです。",
+    key_point: "予算上限",
+    concern: "追加費用が不明です。",
+    question_to_user: "なし",
+    confidence: "medium",
+    needs_research: false,
+  };
+  const originalFetch = globalThis.fetch;
+  let commentsGenerated = false;
+  let generation: Promise<void> | null = null;
+
+  globalThis.fetch = async (input) => {
+    if (String(input) === "/api/expert/comment") {
+      return new Response(JSON.stringify(expertComment), { status: 200 });
+    }
+    return new Response(JSON.stringify({ theme: "不正な応答" }), {
+      status: 200,
+    });
+  };
+
+  try {
+    function HookHarness() {
+      const selection = useExpertSelectionPhase({
+        getContext: () => ({
+          consultation: "相談内容",
+          currentPhase: "expert_selection" as const,
+          memo: null,
+        }),
+        getRequiredQuestionMessage: () => "",
+        isInteractionDisabled: () => false,
+        onConfirmed: () => undefined,
+        onGenerationStarted: () => undefined,
+        onCommentsGenerated: () => {
+          commentsGenerated = true;
+        },
+      });
+      const [isPrepared, setIsPrepared] = useState(false);
+
+      if (!isPrepared) {
+        selection.restoreSelection({
+          initialCandidates: [],
+          confirmedCandidates: [expert],
+          comments: [],
+        });
+        setIsPrepared(true);
+      } else if (!generation) {
+        generation = selection.generateComments();
+      }
+
+      return null;
+    }
+
+    renderToStaticMarkup(createElement(HookHarness));
+    await generation;
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(commentsGenerated, false);
 });
