@@ -240,3 +240,36 @@ test("旧保存データのその他選択肢は表示せず自由入力を維�
   assert.doesNotMatch(markup, />その他<\/button>/);
   assert.match(markup, /<textarea rows="3"><\/textarea>/);
 });
+
+test("専門家ターンではエラーがなくても回答再生成ボタンを表示する", () => {
+  const turn: FacilitatorTurn = {
+    message: "専門家の見解を待っています。",
+    requestedSpeaker: {
+      speakerType: "expert",
+      participantId: "expert-household-a",
+      speakerName: "家計アドバイザー",
+    },
+    requestReason: "専門的な観点を確認するためです。",
+    question: "予算の優先順位を教えてください。",
+    userOptions: null,
+    memoUpdate: null,
+    contextSummaryUpdate: null,
+  };
+
+  const markup = renderToStaticMarkup(
+    createElement(GroupChatPhase, {
+      turn,
+      messages: [],
+      otherAnswer: "",
+      isLoading: false,
+      errorMessage: "",
+      onOtherAnswerChange: () => undefined,
+      onUserAnswer: () => undefined,
+      onRetryExpertReply: () => undefined,
+      finishErrorMessage: "",
+      onFinish: () => undefined,
+    }),
+  );
+
+  assert.match(markup, />専門家回答を再生成する<\/button>/);
+});

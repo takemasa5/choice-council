@@ -187,20 +187,16 @@ export function GroupChatPhase({
           </div>
         </div>
       )}
-      {errorMessage && (
-        <>
-          <p className="error">{errorMessage}</p>
-          {turn.requestedSpeaker.speakerType === "expert" && (
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={onRetryExpertReply}
-              disabled={isLoading}
-            >
-              専門家回答を再生成する
-            </button>
-          )}
-        </>
+      {errorMessage && <p className="error">{errorMessage}</p>}
+      {turn.requestedSpeaker.speakerType === "expert" && (
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={onRetryExpertReply}
+          disabled={isLoading}
+        >
+          専門家回答を再生成する
+        </button>
       )}
       {finishErrorMessage && <p className="error">{finishErrorMessage}</p>}
       <button
