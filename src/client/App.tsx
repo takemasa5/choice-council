@@ -1,16 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConsultationStartRequest,
-  ConsultationRequest,
-  ExpertComment,
   ExpertRequest,
   FacilitatorTurn,
   FacilitatorResponse,
   Phase,
   SessionMemo,
-  GroupChatMessage,
 } from "../shared/schemas/session";
-import { getRecentGroupChatMessages } from "./group-chat-context";
 import {
   canProceedToExpertSelection,
   getFacilitatorResponsePhase,
@@ -19,36 +15,39 @@ import {
   isExpertDraftEditingDisabled,
 } from "./facilitator-flow";
 import {
-  clearResponseHistory,
-  createResponseForPhase,
-  createResponseHistoryForNewConsultation,
   getConfirmedExpertsForReturn,
   getExpertCommentsForReturn,
-  getReturnablePhases,
-  keepResponsesThroughPhase,
-  phaseOrder,
-  type ResponseHistory,
 } from "./phase-history";
 import { useGroupChatPhase } from "./hooks/use-group-chat-phase";
 import { usePremisePhase } from "./hooks/use-premise-phase";
 import { useConsultationPhase } from "./hooks/use-consultation-phase";
 import { useFinalMemoPhase } from "./hooks/use-final-memo-phase";
 import { useFacilitatorPhaseFlow } from "./hooks/use-facilitator-phase-flow";
-import {
-  type ExpertDraft,
-  useExpertSelectionPhase,
-} from "./hooks/use-expert-selection-phase";
+import { useExpertSelectionPhase } from "./hooks/use-expert-selection-phase";
 import { useSessionPersistence } from "./hooks/use-session-persistence";
 import { useDeliberationPhaseFlow } from "./hooks/use-deliberation-phase-flow";
-import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
-import { restoreSessionPhase } from "./session-phase-restoration";
-import { ConsultationInputPhase } from "./phases/ConsultationInputPhase";
-import { DeliberationPhase } from "./phases/DeliberationPhase";
-import { ExpertSelectionPhase } from "./phases/ExpertSelectionPhase";
-import { FinalMemoPhase } from "./phases/FinalMemoPhase";
-import { GroupChatPhase } from "./phases/GroupChatPhase";
+import {
+  applyGroupChatMemoUpdate,
+  applyPremiseSessionResponse,
+  createInitialSessionState,
+  createSessionRequest,
+  createStoredSession,
+  getAvailableReturnPhases,
+  getCurrentSessionMemo,
+  proceedToExpertSelection as proceedSessionToExpertSelection,
+  restoreGroupChatAfterFinalMemoFailure as restoreSessionGroupChatAfterFinalMemoFailure,
+  restoreStoredSessionState,
+  returnToPhase as returnSessionToPhase,
+  saveConfirmedExperts,
+  settleExpertComments,
+  settleFinalMemo,
+  settleGroupChatStart as settleSessionGroupChatStart,
+  startSession,
+  type StoredSession,
+} from "./session-lifecycle";
 import { AppPhaseRouter } from "./phases/AppPhaseRouter";
-import { PremisePhase } from "./phases/PremisePhase";
+import { createPhaseContent } from "./phases/create-phase-content";
+import { FinalMemoPhaseConnection } from "./phases/FinalMemoPhaseConnection";
 import { MemoView } from "./MemoView";
 import "./styles.css";
 
@@ -60,33 +59,6 @@ const phaseLabels: Record<Phase, string> = {
   deliberation: "検討",
   group_chat: "意見交換",
   final_memo: "終了メモ",
-};
-
-const nextActionLabels: Record<FacilitatorResponse["next_action"], string> = {
-  wait_user: "ユーザー回答待ち",
-  request_experts: "専門家コメント生成候補",
-  update_memo: "セッションメモ更新候補",
-  move_phase: "次フェーズ候補",
-  finish: "終了候補",
-};
-
-type StoredSession = {
-  request: ConsultationRequest;
-  startedConsultation?: string;
-  response: FacilitatorResponse | null;
-  responseHistory?: Partial<Record<Phase, FacilitatorResponse>>;
-  currentPhase?: unknown;
-  expertComments?: ExpertComment[];
-  expertDrafts?: ExpertDraft[];
-  expertDraftProvenanceKey?: string;
-  initialExpertRequests?: ExpertRequest[];
-  confirmedExperts?: ExpertRequest[];
-  groupChatMessages?: GroupChatMessage[];
-  groupChatTurn?: FacilitatorTurn;
-  groupChatContextSummary?: string;
-  groupChatExpertRepliesSinceUser?: number;
-  groupChatNextTurnRetryPending?: boolean;
-  finalMarkdown?: string;
 };
 
 /** 日本語名: フェーズ横断のセッション状態とアプリケーションシェルを管理するコンポーネント。 */
@@ -107,10 +79,9 @@ export function App() {
     expectedOutcome,
     changeExpectedOutcome,
   } = useConsultationPhase();
-  const [startedConsultation, setStartedConsultation] = useState("");
-  const [response, setResponse] = useState<FacilitatorResponse | null>(null);
-  const [responseHistory, setResponseHistory] = useState<ResponseHistory>({});
-  const [currentPhase, setCurrentPhase] = useState<Phase>("consultation_input");
+  const [sessionState, setSessionState] = useState(createInitialSessionState);
+  const { startedConsultation, response, responseHistory, currentPhase } =
+    sessionState;
   const [isMobileMemoOpen, setIsMobileMemoOpen] = useState(false);
   const [isMemoUpdateNoticeVisible, setIsMemoUpdateNoticeVisible] =
     useState(false);
@@ -259,44 +230,29 @@ export function App() {
   function restoreSession(parsed: StoredSession | null) {
     if (!parsed) return;
 
-    const restoredPhase = restoreSessionPhase(
-      parsed.currentPhase,
-      parsed.response?.current_phase,
-    );
-    const restoredSession = recoverInterruptedFinalMemo({
-      currentPhase: restoredPhase,
-      response: parsed.response,
-      responseHistory:
-        parsed.responseHistory ?? responseToHistory(parsed.response),
-      finalMarkdown: parsed.finalMarkdown ?? "",
-    });
+    const restoredSessionState = restoreStoredSessionState(parsed);
 
     changeConsultation(parsed.request.consultation);
-    setStartedConsultation(
-      parsed.startedConsultation ??
-        (parsed.response ? parsed.request.consultation : ""),
-    );
     changeFacts(parsed.request.facts ?? "");
     changeValues(parsed.request.values ?? "");
     changeConcerns(parsed.request.concerns ?? "");
     changeExpectedOutcome(parsed.request.expectedOutcome ?? "");
-    setResponse(restoredSession.response);
-    setResponseHistory(restoredSession.responseHistory);
-    setCurrentPhase(restoredSession.currentPhase);
+    setSessionState(restoredSessionState);
     const restoredExperts =
       parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
     restoreSelection({
       initialCandidates: getInitialExpertRequests(
         parsed.initialExpertRequests,
-        restoredSession.currentPhase,
-        restoredSession.response,
+        restoredSessionState.currentPhase,
+        restoredSessionState.response,
       ),
       confirmedCandidates: restoredExperts,
       comments: parsed.expertComments ?? [],
       drafts: parsed.expertDrafts,
       restoredDraftProvenanceKey: parsed.expertDraftProvenanceKey,
     });
-    const restoredCandidates = restoredSession.response?.expert_requests ?? [];
+    const restoredCandidates =
+      restoredSessionState.response?.expert_requests ?? [];
     synchronizeCandidates(
       restoredCandidates,
       JSON.stringify(restoredCandidates),
@@ -322,26 +278,22 @@ export function App() {
     synchronizeCandidates(response?.expert_requests ?? [], expertRequestKey);
   }, [hasRestoredSession, expertRequestKey]);
 
-  const memo = useMemo<SessionMemo | null>(() => {
-    return (
-      response?.memo_updates ??
-      getLatestMemoBeforePhase(responseHistory, currentPhase)
-    );
-  }, [response, responseHistory, currentPhase]);
+  const memo = useMemo<SessionMemo | null>(
+    () => getCurrentSessionMemo(sessionState),
+    [sessionState],
+  );
   const sessionConsultation = getSessionConsultation(
     startedConsultation,
     consultation,
   );
-  const availableReturnPhases = useMemo(() => {
-    return getReturnablePhases(currentPhase, responseHistory);
-  }, [currentPhase, responseHistory]);
+  const availableReturnPhases = useMemo(
+    () => getAvailableReturnPhases(sessionState),
+    [sessionState],
+  );
 
   /** 日本語名: 新規相談開始前に横断状態だけを初期化する。 */
   function resetSessionForStart() {
-    setStartedConsultation("");
-    setResponse(null);
-    setResponseHistory(clearResponseHistory());
-    setCurrentPhase("consultation_input");
+    setSessionState(createInitialSessionState());
     resetSelectionState();
     groupChatPhase.reset();
     deliberationFlow.clearFailure();
@@ -354,10 +306,7 @@ export function App() {
     facilitatorResponse: FacilitatorResponse,
   ) {
     const nextPhase = getFacilitatorResponsePhase(facilitatorResponse);
-    const nextResponse = createResponseForPhase(facilitatorResponse, nextPhase);
-    setCurrentPhase(nextPhase);
-    setResponse(nextResponse);
-    setStartedConsultation(request.consultation);
+    setSessionState(startSession(request, facilitatorResponse, nextPhase));
     changeConsultation(request.consultation);
     changeFacts(request.facts ?? "");
     changeValues(request.values ?? "");
@@ -369,52 +318,20 @@ export function App() {
         ? facilitatorResponse.expert_requests
         : [],
     );
-    setResponseHistory(
-      createResponseHistoryForNewConsultation(
-        facilitatorResponse,
-        nextResponse,
-        nextPhase,
-      ),
-    );
   }
 
   /** 日本語名: 前提整理回答成功後の横断状態を確定する。 */
   function applyPremiseResponse(facilitatorResponse: FacilitatorResponse) {
     const nextPhase = getFacilitatorResponsePhase(facilitatorResponse);
-    const nextResponse = createResponseForPhase(facilitatorResponse, nextPhase);
-    setCurrentPhase(nextPhase);
-    setResponse(nextResponse);
-    setResponseHistory((current) => ({
-      ...current,
-      premise: facilitatorResponse,
-      ...(nextPhase === "expert_selection"
-        ? { expert_selection: nextResponse }
-        : {}),
-    }));
+    setSessionState((state) =>
+      applyPremiseSessionResponse(state, facilitatorResponse, nextPhase),
+    );
     clearQuestionAnswer();
     setInitialCandidates(
       nextPhase === "expert_selection"
         ? facilitatorResponse.expert_requests
         : [],
     );
-  }
-
-  /** 日本語名: クライアント内で保持する相談文脈を作成する関数。 */
-  function buildRequest(): ConsultationRequest {
-    return {
-      consultation,
-      facts: emptyToUndefined(facts),
-      values: emptyToUndefined(values),
-      concerns: emptyToUndefined(concerns),
-      expectedOutcome: emptyToUndefined(expectedOutcome),
-      userQuestion: response?.user_question ?? undefined,
-      userQuestionAnswer: getPremiseAnswer(response),
-      currentPhase,
-      memo:
-        response?.memo_updates ??
-        getLatestMemoBeforePhase(responseHistory, currentPhase) ??
-        undefined,
-    };
   }
 
   function getPendingRequiredQuestionMessage() {
@@ -437,14 +354,11 @@ export function App() {
     hideMemoUpdatedNotice();
     window.localStorage.removeItem(storageKey);
     changeConsultation("");
-    setStartedConsultation("");
     changeFacts("");
     changeValues("");
     changeConcerns("");
     changeExpectedOutcome("");
-    setResponse(null);
-    setResponseHistory({});
-    setCurrentPhase("consultation_input");
+    setSessionState(createInitialSessionState());
     facilitatorFlow.clearFailure();
     clearQuestionAnswer();
     resetSelectionState();
@@ -472,19 +386,17 @@ export function App() {
       hideMemoUpdatedNotice();
     }
 
-    const nextResponseHistory =
-      targetPhase === "consultation_input"
-        ? clearResponseHistory()
-        : keepResponsesThroughPhase(responseHistory, targetPhase);
+    const returnedSessionState = returnSessionToPhase(
+      sessionState,
+      targetPhase,
+    );
     const shouldKeepExpertDrafts =
       targetPhase === "expert_selection" ||
       targetPhase === "deliberation" ||
       targetPhase === "group_chat" ||
       targetPhase === "final_memo";
 
-    setCurrentPhase(targetPhase);
-    setResponse(nextResponseHistory[targetPhase] ?? null);
-    setResponseHistory(nextResponseHistory);
+    setSessionState(returnedSessionState);
     facilitatorFlow.clearFailure();
     clearQuestionAnswer();
     restoreForPhase({
@@ -518,55 +430,18 @@ export function App() {
       return;
     }
 
-    const nextResponse = createResponseForPhase(response, "expert_selection");
-
     setInitialCandidates(response.expert_requests);
-    setCurrentPhase("expert_selection");
-    setResponse(nextResponse);
-    setResponseHistory((current) => ({
-      ...keepResponsesThroughPhase(current, "premise"),
-      premise: current.premise ?? response,
-      expert_selection: nextResponse,
-    }));
+    setSessionState(proceedSessionToExpertSelection);
   }
 
   /** 初回専門家コメントを反映したメモと検討フェーズを同時に確定する。 */
   function settleExpertCommentsMemo(updatedMemo: SessionMemo) {
-    setCurrentPhase("deliberation");
-    setResponse((currentResponse) => {
-      if (!currentResponse) return currentResponse;
-
-      const deliberationResponse = {
-        ...createResponseForPhase(currentResponse, "deliberation"),
-        memo_updates: updatedMemo,
-      };
-      setResponseHistory((current) => ({
-        ...keepResponsesThroughPhase(current, currentPhase),
-        deliberation: deliberationResponse,
-      }));
-      return deliberationResponse;
-    });
+    setSessionState((state) => settleExpertComments(state, updatedMemo));
   }
 
   /** 日本語名: 意見交換開始成功後の横断フェーズ状態を確定する。 */
   function settleGroupChatStart(turn: FacilitatorTurn) {
-    setCurrentPhase("group_chat");
-    setResponse((currentResponse) => {
-      if (!currentResponse) return currentResponse;
-
-      const nextResponse = createResponseForPhase(
-        currentResponse,
-        "group_chat",
-      );
-      const responseWithMemo = turn.memoUpdate
-        ? { ...nextResponse, memo_updates: turn.memoUpdate }
-        : nextResponse;
-      setResponseHistory((current) => ({
-        ...keepResponsesThroughPhase(current, currentPhase),
-        group_chat: responseWithMemo,
-      }));
-      return responseWithMemo;
-    });
+    setSessionState((state) => settleSessionGroupChatStart(state, turn));
     if (turn.memoUpdate) showMemoUpdatedNotice();
   }
 
@@ -574,18 +449,7 @@ export function App() {
   function applyGroupChatTurnUpdate(turn: FacilitatorTurn) {
     const memoUpdate = turn.memoUpdate;
     if (!memoUpdate) return;
-    setResponse((currentResponse) =>
-      currentResponse ? { ...currentResponse, memo_updates: memoUpdate } : null,
-    );
-    setResponseHistory((current) => {
-      const currentResponse = current.group_chat;
-      return currentResponse
-        ? {
-            ...current,
-            group_chat: { ...currentResponse, memo_updates: memoUpdate },
-          }
-        : current;
-    });
+    setSessionState((state) => applyGroupChatMemoUpdate(state, memoUpdate));
     showMemoUpdatedNotice();
   }
 
@@ -614,57 +478,29 @@ export function App() {
 
   /** 日本語名: 終了状態をメモへ反映し、終了メモフェーズへ遷移する。 */
   function settleFinalMemoGeneration(finalMemo: SessionMemo) {
-    setCurrentPhase("final_memo");
-    setResponse((currentResponse) => {
-      if (!currentResponse) return currentResponse;
-
-      const groupChatResponse = {
-        ...currentResponse,
-        memo_updates: finalMemo,
-      };
-      const finalMemoResponse = createResponseForPhase(
-        groupChatResponse,
-        "final_memo",
-      );
-      setResponseHistory((current) => ({
-        ...keepResponsesThroughPhase(current, "group_chat"),
-        group_chat: groupChatResponse,
-        final_memo: finalMemoResponse,
-      }));
-      return finalMemoResponse;
-    });
+    setSessionState((state) => settleFinalMemo(state, finalMemo));
   }
 
   /** 日本語名: 終了メモ生成失敗後に意見交換と進行中メモを復元する。 */
   function restoreGroupChatAfterFinalMemoFailure(inProgressMemo: SessionMemo) {
-    setCurrentPhase("group_chat");
-    setResponse((currentResponse) => {
-      if (!currentResponse) return currentResponse;
-
-      const groupChatResponse = {
-        ...createResponseForPhase(currentResponse, "group_chat"),
-        memo_updates: inProgressMemo,
-      };
-      setResponseHistory((current) => ({
-        ...keepResponsesThroughPhase(current, "group_chat"),
-        group_chat: groupChatResponse,
-      }));
-      return groupChatResponse;
-    });
+    setSessionState((state) =>
+      restoreSessionGroupChatAfterFinalMemoFailure(state, inProgressMemo),
+    );
   }
 
   function buildStoredSession(): StoredSession {
-    const request = {
-      ...buildRequest(),
-      userQuestion: response?.user_question ?? undefined,
+    const request = createSessionRequest({
+      consultation,
+      facts,
+      values,
+      concerns,
+      expectedOutcome,
       userQuestionAnswer: getPremiseAnswer(response),
-    };
-    return {
+      state: sessionState,
+    });
+    return createStoredSession({
       request,
-      startedConsultation: startedConsultation || undefined,
-      response,
-      responseHistory,
-      currentPhase,
+      state: sessionState,
       expertComments,
       expertDrafts,
       expertDraftProvenanceKey: expertDraftProvenanceKey ?? undefined,
@@ -675,162 +511,103 @@ export function App() {
       groupChatExpertRepliesSinceUser: expertRepliesSinceUser,
       groupChatNextTurnRetryPending: groupChatNextTurnRetryPending || undefined,
       initialExpertRequests,
-      finalMarkdown: finalMarkdown || undefined,
-    };
-  }
-
-  function saveConfirmedExpertDrafts(experts: ExpertRequest[]) {
-    const nextPhase =
-      currentPhase === "premise" ? "expert_selection" : currentPhase;
-
-    facilitatorFlow.clearFailure();
-    setCurrentPhase(nextPhase);
-    setResponse((currentResponse) => {
-      if (!currentResponse) return currentResponse;
-
-      const nextResponse = createResponseForPhase(
-        currentResponse,
-        nextPhase,
-        experts,
-      );
-
-      setResponseHistory((current) => ({
-        ...keepResponsesThroughPhase(current, currentPhase),
-        [nextPhase]: nextResponse,
-      }));
-
-      return nextResponse;
+      finalMarkdown,
     });
   }
 
-  const phaseContent: Record<Phase, React.ReactNode> = {
-    consultation_input: (
-      <ConsultationInputPhase
-        consultation={consultation}
-        facts={facts}
-        values={values}
-        concerns={concerns}
-        expectedOutcome={expectedOutcome}
-        isBusy={
-          isLoading ||
-          isGeneratingExperts ||
-          isGroupChatBusy ||
-          isGeneratingFinalMarkdown
-        }
-        hasResponse={Boolean(response)}
-        errorMessage={errorMessage}
-        canRetry={Boolean(failedFacilitatorRequest)}
-        onConsultationChange={changeConsultation}
-        onFactsChange={changeFacts}
-        onValuesChange={changeValues}
-        onConcernsChange={changeConcerns}
-        onExpectedOutcomeChange={changeExpectedOutcome}
-        onStart={() =>
-          void facilitatorFlow.start({
-            input: { consultation, facts, values, concerns, expectedOutcome },
-            onBeforeRequest: resetSessionForStart,
-            onSuccess: applyStartedSession,
-          })
-        }
-        onRetry={() => void facilitatorFlow.retry()}
-      />
-    ),
-    premise: (
-      <PremisePhase
-        canProceed={Boolean(response && canProceedToExpertSelection(response))}
-        isBusy={isLoading}
-        onProceed={proceedToExpertSelection}
-        question={response?.user_question}
-        selectedOption={selectedQuestionOption}
-        otherAnswer={otherQuestionAnswer}
-        onSelectOption={selectQuestionOption}
-        onOtherAnswerChange={changeOtherQuestionAnswer}
-        onSubmitAnswer={() => void submitAnswer()}
-        errorMessage={errorMessage}
-        canRetry={Boolean(failedFacilitatorRequest)}
-        onRetry={() => void facilitatorFlow.retry()}
-      />
-    ),
-    expert_selection:
-      response && response.expert_requests.length > 0 ? (
-        <ExpertSelectionPhase
-          expertDrafts={expertDrafts}
-          confirmedExperts={confirmedExperts}
-          isDisabled={isExpertInteractionDisabled}
-          isGenerating={isGeneratingExperts}
-          errorMessage={expertErrorMessage}
-          onUpdate={updateExpertDraftOperation}
-          onAdd={addExpertDraftOperation}
-          onRemove={removeExpertDraftOperation}
-          onReplace={replaceExpertDraftOperation}
-          onConfirmInitial={confirmInitialExpertDrafts}
-          onConfirm={confirmExpertDrafts}
-          onGenerate={() => void generateExpertComments()}
-        />
-      ) : null,
-    deliberation: (
-      <DeliberationPhase
-        expertComments={expertComments}
-        isStarting={deliberationFlow.isStarting}
-        errorMessage={expertErrorMessage}
-        startErrorMessage={deliberationFlow.errorMessage}
-        onStart={() =>
-          void deliberationFlow.start({
-            consultation: sessionConsultation,
-            memo,
-            confirmedExperts,
-            expertComments,
-          })
-        }
-        onRetryStart={() => void deliberationFlow.retry()}
-      />
-    ),
-    group_chat: (
-      <GroupChatPhase
-        turn={groupChatTurn}
-        messages={groupChatMessages}
-        otherAnswer={groupChatOtherAnswer}
-        isLoading={isGroupChatBusy}
-        isNextTurnRetryPending={groupChatNextTurnRetryPending}
-        errorMessage={groupChatErrorMessage}
-        onOtherAnswerChange={groupChatPhase.changeOtherAnswer}
-        onUserAnswer={(answer) =>
-          void groupChatPhase.submitUserAnswer({
-            answer,
-            consultation: sessionConsultation,
-            memo,
-            confirmedExperts,
-          })
-        }
-        onRetryExpertReply={() =>
-          void groupChatPhase.retryExpertReply({
-            consultation: sessionConsultation,
-            memo,
-            confirmedExperts,
-          })
-        }
-        onRetryNextTurn={() =>
-          void groupChatPhase.retryNextTurn({
-            consultation: sessionConsultation,
-            memo,
-            confirmedExperts,
-          })
-        }
-        finishErrorMessage={finalMarkdownErrorMessage}
-        onFinish={(status) =>
-          void finalMemoPhase.finish({
-            consultation: sessionConsultation,
-            memo,
-            status,
-            expertComments,
-            contextSummary: groupChatContextSummary,
-            recentMessages: getRecentGroupChatMessages(groupChatMessages),
-          })
-        }
-      />
-    ),
-    final_memo: null,
-  };
+  function saveConfirmedExpertDrafts(experts: ExpertRequest[]) {
+    facilitatorFlow.clearFailure();
+    setSessionState((state) => saveConfirmedExperts(state, experts));
+  }
+
+  const phaseContent = createPhaseContent(
+    {
+      input: {
+        consultation,
+        facts,
+        values,
+        concerns,
+        expectedOutcome,
+        changeConsultation,
+        changeFacts,
+        changeValues,
+        changeConcerns,
+        changeExpectedOutcome,
+      },
+      isBusy:
+        isLoading ||
+        isGeneratingExperts ||
+        isGroupChatBusy ||
+        isGeneratingFinalMarkdown,
+      hasResponse: Boolean(response),
+      errorMessage,
+      canRetry: Boolean(failedFacilitatorRequest),
+      start: facilitatorFlow.start,
+      resetSession: resetSessionForStart,
+      applyStartedSession,
+      retry: facilitatorFlow.retry,
+    },
+    {
+      response,
+      isBusy: isLoading,
+      selectedOption: selectedQuestionOption,
+      otherAnswer: otherQuestionAnswer,
+      errorMessage,
+      canRetry: Boolean(failedFacilitatorRequest),
+      selectOption: selectQuestionOption,
+      changeOtherAnswer: changeOtherQuestionAnswer,
+      submitAnswer,
+      proceedToExpertSelection,
+      retry: facilitatorFlow.retry,
+    },
+    {
+      response,
+      expertDrafts,
+      confirmedExperts,
+      isDisabled: isExpertInteractionDisabled,
+      isGenerating: isGeneratingExperts,
+      errorMessage: expertErrorMessage,
+      updateExpertDraft: updateExpertDraftOperation,
+      addExpertDraft: addExpertDraftOperation,
+      removeExpertDraft: removeExpertDraftOperation,
+      replaceExpertDraft: replaceExpertDraftOperation,
+      confirmInitialDrafts: confirmInitialExpertDrafts,
+      confirmDrafts: confirmExpertDrafts,
+      generateComments: generateExpertComments,
+    },
+    {
+      consultation: sessionConsultation,
+      memo,
+      confirmedExperts,
+      expertComments,
+      isStarting: deliberationFlow.isStarting,
+      expertErrorMessage,
+      startErrorMessage: deliberationFlow.errorMessage,
+      start: deliberationFlow.start,
+      retryStart: deliberationFlow.retry,
+    },
+    {
+      turn: groupChatTurn,
+      messages: groupChatMessages,
+      otherAnswer: groupChatOtherAnswer,
+      isLoading: isGroupChatBusy,
+      isNextTurnRetryPending: groupChatNextTurnRetryPending ?? false,
+      errorMessage: groupChatErrorMessage,
+      context: {
+        consultation: sessionConsultation,
+        memo,
+        confirmedExperts,
+      },
+      expertComments,
+      contextSummary: groupChatContextSummary,
+      finishErrorMessage: finalMarkdownErrorMessage,
+      changeOtherAnswer: groupChatPhase.changeOtherAnswer,
+      submitUserAnswer: groupChatPhase.submitUserAnswer,
+      retryExpertReply: groupChatPhase.retryExpertReply,
+      retryNextTurn: groupChatPhase.retryNextTurn,
+      finish: finalMemoPhase.finish,
+    },
+  );
 
   return (
     <main className="app-shell">
@@ -852,18 +629,7 @@ export function App() {
           <AppPhaseRouter
             currentPhase={currentPhase}
             content={phaseContent}
-            renderResponse={(phaseContent) =>
-              response && (
-                <article className="message-card">
-                  <div className="message-label">ファシリテーター</div>
-                  <p>{response.facilitator_message}</p>
-                  <p className="next-action">
-                    候補行動: {nextActionLabels[response.next_action]}
-                  </p>
-                  {phaseContent}
-                </article>
-              )
-            }
+            response={response}
           />
 
           <button
@@ -925,13 +691,12 @@ export function App() {
             </div>
             <p className="privacy-note">この端末に一時保存されます。</p>
             <div className="memo-actions">
-              {currentPhase === "final_memo" && (
-                <FinalMemoPhase
-                  isGenerating={isGeneratingFinalMarkdown}
-                  finalMarkdown={finalMarkdown}
-                  onDownload={finalMemoPhase.download}
-                />
-              )}
+              <FinalMemoPhaseConnection
+                isVisible={currentPhase === "final_memo"}
+                isGenerating={isGeneratingFinalMarkdown}
+                finalMarkdown={finalMarkdown}
+                download={finalMemoPhase.download}
+              />
             </div>
             {memo ? (
               <MemoView memo={memo} />
@@ -945,28 +710,4 @@ export function App() {
       </section>
     </main>
   );
-}
-
-function responseToHistory(response: FacilitatorResponse | null) {
-  return response ? { [response.current_phase]: response } : {};
-}
-
-function getLatestMemoBeforePhase(
-  responseHistory: Partial<Record<Phase, FacilitatorResponse>>,
-  targetPhase: Phase,
-) {
-  const targetIndex = phaseOrder.indexOf(targetPhase);
-
-  for (let index = targetIndex - 1; index >= 0; index -= 1) {
-    const phase = phaseOrder[index];
-    const memo = responseHistory[phase]?.memo_updates;
-    if (memo) return memo;
-  }
-
-  return null;
-}
-
-function emptyToUndefined(value: string) {
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
 }
