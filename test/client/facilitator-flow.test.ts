@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assignProposalIds,
   isExpertDraftEditingDisabled,
   replaceMemoInFailedFacilitatorRequest,
 } from "../../src/client/facilitator-flow";
-import type { SessionMemo } from "../../src/shared/schemas/session";
+import type {
+  ExpertComment,
+  SessionMemo,
+} from "../../src/shared/schemas/session";
 
 const memo: SessionMemo = {
   theme: "相談",
@@ -59,5 +63,33 @@ test("確認回答のリトライには最新メモを保持する", () => {
         userQuestionAnswer: "A",
       },
     },
+  );
+});
+
+test("並列生成した重複案IDは専門家の入力順で安定して再採番する", () => {
+  const comment = (role_name: string): ExpertComment => ({
+    role_name,
+    viewpoint: "観点",
+    summary: "要約",
+    proposal: {
+      id: "model-duplicate",
+      name: "案",
+      content: "内容",
+      benefits: ["利点"],
+      sacrifices: ["犠牲"],
+      conditions: ["条件"],
+    },
+    key_point: "要点",
+    concern: "懸念",
+    question_to_user: "なし",
+    confidence: "medium",
+    needs_research: false,
+  });
+
+  const comments = assignProposalIds([comment("専門家A"), comment("専門家B")]);
+
+  assert.deepEqual(
+    comments.map((item) => item.proposal.id),
+    ["proposal-1", "proposal-2"],
   );
 });

@@ -163,14 +163,20 @@ export async function collectExpertCommentGenerationResults(
     return { comments: [], errorMessage: expertCommentGenerationErrorMessage };
   }
 
-  return {
-    comments: results.map((result) => {
-      if (result.status === "fulfilled") return result.value;
+  const comments = results.map((result) => {
+    if (result.status === "fulfilled") return result.value;
 
-      throw new Error("専門家コメント生成の結果を取得できませんでした。");
-    }),
-    errorMessage: "",
-  };
+    throw new Error("専門家コメント生成の結果を取得できませんでした。");
+  });
+  return { comments: assignProposalIds(comments), errorMessage: "" };
+}
+
+/** 独立・並列に生成された案へ、確定済み専門家の入力順で安定IDを付ける。 */
+export function assignProposalIds(comments: ExpertComment[]): ExpertComment[] {
+  return comments.map((comment, index) => ({
+    ...comment,
+    proposal: { ...comment.proposal, id: `proposal-${index + 1}` },
+  }));
 }
 
 /** 日本語名: 開始済みセッションで使う確定相談内容を選ぶ関数。 */

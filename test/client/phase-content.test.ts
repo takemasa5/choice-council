@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createElement, type ReactNode } from "react";
+import { createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   PhaseContent,
   selectPhaseContent,
 } from "../../src/client/phases/PhaseContent";
+import { AppPhaseRouter } from "../../src/client/phases/AppPhaseRouter";
+import { ConsultationInputPhaseConnection } from "../../src/client/phases/ConsultationInputPhaseConnection";
+import { DeliberationPhaseConnection } from "../../src/client/phases/DeliberationPhaseConnection";
+import { ExpertSelectionPhaseConnection } from "../../src/client/phases/ExpertSelectionPhaseConnection";
+import { GroupChatPhaseConnection } from "../../src/client/phases/GroupChatPhaseConnection";
+import { PremisePhaseConnection } from "../../src/client/phases/PremisePhaseConnection";
+import { createPhaseContent } from "../../src/client/phases/create-phase-content";
 import { GroupChatPhase } from "../../src/client/phases/GroupChatPhase";
 import type {
   FacilitatorTurn,
@@ -32,6 +39,31 @@ test("現在フェーズに対応するUIは PhaseContent の唯一の分岐で�
   }
 });
 
+test("フェーズ内容の生成は各フェーズに対応する接続コンポーネントだけを登録する", () => {
+  const content = createPhaseContent(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  assert.ok(isValidElement(content.consultation_input));
+  assert.equal(
+    content.consultation_input.type,
+    ConsultationInputPhaseConnection,
+  );
+  assert.ok(isValidElement(content.premise));
+  assert.equal(content.premise.type, PremisePhaseConnection);
+  assert.ok(isValidElement(content.expert_selection));
+  assert.equal(content.expert_selection.type, ExpertSelectionPhaseConnection);
+  assert.ok(isValidElement(content.deliberation));
+  assert.equal(content.deliberation.type, DeliberationPhaseConnection);
+  assert.ok(isValidElement(content.group_chat));
+  assert.equal(content.group_chat.type, GroupChatPhaseConnection);
+  assert.equal(content.final_memo, null);
+});
+
 test("検討中は相談入力UIではなく検討UIだけを描画する", () => {
   const content = Object.fromEntries(
     phases.map((phase) => [
@@ -51,6 +83,53 @@ test("検討中は相談入力UIではなく検討UIだけを描画する", () =
 
   assert.match(markup, /data-phase="deliberation"/);
   assert.doesNotMatch(markup, /data-phase="consultation_input"/);
+});
+
+test("フェーズルーターは相談入力以外をファシリテーター応答カード内へ配置する", () => {
+  const content = Object.fromEntries(
+    phases.map((phase) => [
+      phase,
+      createElement("section", { "data-phase": phase }, `${phase}-content`),
+    ]),
+  ) as Record<Phase, ReactNode>;
+
+  const markup = renderToStaticMarkup(
+    createElement(AppPhaseRouter, {
+      currentPhase: "premise",
+      content,
+      response: {
+        facilitator_message: "回答を確認します。",
+        next_action: "wait_user",
+      } as never,
+    }),
+  );
+
+  assert.match(markup, /class="message-card"/);
+  assert.match(markup, /回答を確認します。/);
+  assert.match(markup, /data-phase="premise"/);
+});
+
+test("フェーズルーターは相談入力をファシリテーター応答カードで包まない", () => {
+  const content = Object.fromEntries(
+    phases.map((phase) => [
+      phase,
+      createElement("section", { "data-phase": phase }, `${phase}-content`),
+    ]),
+  ) as Record<Phase, ReactNode>;
+
+  const markup = renderToStaticMarkup(
+    createElement(AppPhaseRouter, {
+      currentPhase: "consultation_input",
+      content,
+      response: {
+        facilitator_message: "回答を確認します。",
+        next_action: "wait_user",
+      } as never,
+    }),
+  );
+
+  assert.doesNotMatch(markup, /class="message-card"/);
+  assert.match(markup, /data-phase="consultation_input"/);
 });
 
 test("意見交換は発言者の役割に応じたカードと現在のファシリテーター質問を表示する", () => {
@@ -194,6 +273,7 @@ test("意見交換は発言者の役割に応じたカードと現在のファ�
   );
   assert.match(markup, /class="group-chat-answer-controls"/);
   assert.match(markup, /class="group-chat-option-grid"/);
+  assert.doesNotMatch(markup, /group-chat-network-activity/);
   assert.match(markup, />費用を優先して進めたい<\/button>/);
   assert.match(markup, />そのまま意見交換を続けて<\/button>/);
   assert.match(markup, /<textarea rows="3"><\/textarea>/);
@@ -312,7 +392,7 @@ test("次の進行の再試行待ちは専門家回答を再生成せず質問�
   assert.doesNotMatch(markup, /予算の優先順位を教えてください。/);
 });
 
-test("専門家回答の生成中だけ見出しに進捗を表示する", () => {
+test("通信中は現在の会話領域で状態別に通知する", () => {
   const expertTurn: FacilitatorTurn = {
     message: "専門家の見解を待っています。",
     requestedSpeaker: {
@@ -359,7 +439,18 @@ test("専門家回答の生成中だけ見出しに進捗を表示する", () =>
   });
   const pendingMarkup = renderGroupChat(expertTurn, true);
 
-  assert.match(expertMarkup, /回答を生成中/);
-  assert.doesNotMatch(userMarkup, /回答を生成中/);
-  assert.doesNotMatch(pendingMarkup, /回答を生成中/);
+  assert.match(expertMarkup, /専門家の回答を生成中/);
+  assert.match(
+    expertMarkup,
+    /class="network-activity group-chat-network-activity" aria-live="polite" role="status">[\s\S]*?専門家の回答を生成中/,
+  );
+  assert.match(
+    userMarkup,
+    /class="network-activity group-chat-network-activity" aria-live="polite" role="status">[\s\S]*?次の進行を生成中/,
+  );
+  assert.match(pendingMarkup, /次の進行を生成中/);
+  assert.equal((expertMarkup.match(/role="status"/g) ?? []).length, 1);
+  assert.equal((userMarkup.match(/role="status"/g) ?? []).length, 1);
+  assert.equal((pendingMarkup.match(/role="status"/g) ?? []).length, 1);
+  assert.match(expertMarkup, /<h3>意見交換<\/h3>/);
 });

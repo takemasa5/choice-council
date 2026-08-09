@@ -1,22 +1,27 @@
 import type { ReactNode } from "react";
-import type { Phase } from "../../shared/schemas/session";
+import type { FacilitatorResponse, Phase } from "../../shared/schemas/session";
+import { FacilitatorResponseCard } from "./FacilitatorResponseCard";
 import { PhaseContent } from "./PhaseContent";
 
 /** 日本語名: フェーズUIを選択するだけのアプリケーションルーター。 */
 export function AppPhaseRouter({
   currentPhase,
   content,
-  renderResponse,
+  response,
 }: {
   currentPhase: Phase;
   content: Record<Phase, ReactNode>;
-  renderResponse: (phaseContent: ReactNode) => ReactNode;
+  response: FacilitatorResponse | null;
 }) {
   return (
     <PhaseContent
       currentPhase={currentPhase}
       content={content}
-      renderResponse={renderResponse}
+      renderResponse={(phaseContent) => (
+        <FacilitatorResponseCard response={response}>
+          {phaseContent}
+        </FacilitatorResponseCard>
+      )}
     />
   );
 }

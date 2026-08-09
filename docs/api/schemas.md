@@ -32,7 +32,7 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 
 状態: `決定`
 
-専門家コメントは、専門家ごとの個別 LLM 呼び出しで生成する。専門家は人間的なキャラクターではなく、役割と観点として扱う。
+専門家コメントは、専門家ごとの個別 LLM 呼び出しで生成する。専門家は人間的なキャラクターではなく、役割と観点として扱う。ファシリテーターは、同じ判断軸を異なる価値・制約から見るロールを優先して候補にし、必要な不足観点だけを補完する。人格的な対立を作ることはしない。
 
 専門家コメント呼び出しの入力は、確定済み専門家ロールと現在文脈である。
 
@@ -50,6 +50,14 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
   "role_name": "家計・生活負担アドバイザー",
   "viewpoint": "費用、送迎、親の時間、継続可能性",
   "summary": "300〜400字程度の表示用コメント",
+  "proposal": {
+    "id": "proposal-budget-first",
+    "name": "予算上限を先に決める案",
+    "content": "総費用の上限を決め、その範囲で候補を絞る。",
+    "benefits": ["継続負担を見通しやすい"],
+    "sacrifices": ["候補の幅が狭まる"],
+    "conditions": ["家計上限を確認できる"]
+  },
   "key_point": "最重要ポイント1つ",
   "concern": "気になるリスクや不明点",
   "question_to_user": "必要ならユーザーへの質問1つ",
@@ -58,16 +66,17 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 }
 ```
 
-| フィールド       | 必須 | 内容                                                                     |
-| ---------------- | ---: | ------------------------------------------------------------------------ |
-| role_name        | 必須 | 表示する専門家ロール名                                                   |
-| viewpoint        | 必須 | この専門家が重視する観点                                                 |
-| summary          | 必須 | 通常表示用コメント。300〜400字程度                                       |
-| key_point        | 必須 | 最重要ポイント1つ                                                        |
-| concern          | 必須 | 気になるリスクや不明点。ない場合も「現時点では特になし」のように明示する |
-| question_to_user | 必須 | 必要な場合の質問1つ。不要な場合は「なし」とする                          |
-| confidence       | 必須 | `high`, `medium`, `low` のいずれか                                       |
-| needs_research   | 必須 | 外部情報の確認が必要なら `true`                                          |
+| フィールド       | 必須 | 内容                                                                                               |
+| ---------------- | ---: | -------------------------------------------------------------------------------------------------- |
+| role_name        | 必須 | 表示する専門家ロール名                                                                             |
+| viewpoint        | 必須 | この専門家が重視する観点                                                                           |
+| summary          | 必須 | 通常表示用コメント。300〜400字程度                                                                 |
+| proposal         | 必須 | この専門家が初回コメントで提示する具体的な案。`id`、案名、内容、利点、犠牲にする点、成立条件を持つ |
+| key_point        | 必須 | 最重要ポイント1つ                                                                                  |
+| concern          | 必須 | 気になるリスクや不明点。ない場合も「現時点では特になし」のように明示する                           |
+| question_to_user | 必須 | 必要な場合の質問1つ。不要な場合は「なし」とする                                                    |
+| confidence       | 必須 | `high`, `medium`, `low` のいずれか                                                                 |
+| needs_research   | 必須 | 外部情報の確認が必要なら `true`                                                                    |
 
 MVP では外部調査を実施しない。`needs_research: true` の内容と、「なし」以外の `question_to_user` は、断定せずセッションメモの未確認事項へ送る。
 
@@ -149,7 +158,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 | memo_updates        | 必須 | この応答時点のセッションメモ案                                                                                |
 | next_action         | 必須 | アプリへの候補行動                                                                                            |
 
-`expert_requests` の各要素は、`role_name`, `viewpoint`, `request` を必須とする。`viewpoint` は専門家コメント呼び出しへそのまま渡す指定観点であり、専門家が推測で観点を補完しないために使う。
+`expert_requests` の各要素は、`role_name`, `viewpoint`, `request` を必須とする。候補全体では、相談に固有の判断軸について相反または補完する価値・制約が分かるように選ぶ。`viewpoint` は専門家コメント呼び出しへそのまま渡す指定観点であり、専門家が推測で観点を補完しないために使う。
 
 `user_question.options` は2件以上とし、必ず「その他」を含める。「その他」を選んだ場合、アプリは自由入力欄を表示する。`user_question` が `null` ではないにもかかわらず `options` に「その他」が含まれない出力は、バリデーション失敗として扱う。
 
@@ -174,6 +183,18 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 状態: `決定`
 
 全初回専門家コメントを表示した後、ユーザーの「意見交換をはじめる」操作で `group_chat` に遷移する。`src/shared/schemas` の `PhaseSchema`、`server/app.ts` の route 登録、`src/client/` のフローはこの契約へ同期する。旧 `POST /api/facilitator/deliberation` と `direction` フェーズは使用しない。
+
+グループチャットの前に、ユーザーは初回コメント内の**案**を対象に、次のいずれかを必ず選ぶ。専門家ロール自体を選択対象にしない。
+
+| 選択種別     | 値          | 制約                                   | 意味                                                         |
+| ------------ | ----------- | -------------------------------------- | ------------------------------------------------------------ |
+| 1案を深掘り  | `deep_dive` | `proposalId` を1件                     | 提案者の根拠を検証し、他者が反論・代替・成立条件を具体化する |
+| 2案を比較    | `compare`   | 重複しない `proposalIds` をちょうど2件 | 2案のトレードオフを検討する                                  |
+| まだ選ばない | `defer`     | 案IDなし                               | 案を早期に脱落させず、比較軸を整理する                       |
+
+`proposalId` は初回コメントの `proposal.id` を指す。初回コメントは独立・並列に生成されるため、クライアントは確定済み専門家の入力順で `proposal-1`、`proposal-2` のように案IDを決定的に再採番する。LLM が返した `proposal.id` は選択・保存・後続APIの識別子として使用しない。開始リクエストは、選択種別と参照する案IDが初回コメントの案と一致することを検証する。未選択、不明な案ID、比較対象が2件以外のリクエストは受け付けない。
+
+グループチャットの開始後は、`discussionContext` をすべての専門家・ファシリテーター呼び出しに渡す。これは `selection` と、初回コメント由来の全 `proposals` を持つ strict object である。各要素は提案者の `participantId`、表示役割名、案本体（案ID、案名、内容、利点、犠牲にする点、成立条件）を一体で持つ。開始リクエストの `confirmedExperts` の順序と `participantId` をそのまま使うため、同名・同観点の専門家も区別できる。選択済み案の実体と提案者を参照できるようにし、`defer` の場合も案を早期に脱落させず全案を比較対象として利用できるようにする。
 
 #### 共通データ
 
@@ -208,29 +229,31 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 
 `GroupChatStartRequest` は、初回専門家コメントからグループチャットを開始する strict schema とする。
 
-| フィールド            | 必須 | 内容                                                               |
-| --------------------- | ---: | ------------------------------------------------------------------ |
-| consultation          | 必須 | 初回に入力した相談内容。画面には再表示しない                       |
-| currentPhase          | 必須 | 固定値 `group_chat`                                                |
-| memo                  | 必須 | グループチャット開始時の `SessionMemo`                             |
-| confirmedExperts      | 必須 | 1〜5件の確定済み専門家。各要素に一意な `participantId` を持つ      |
-| initialExpertComments | 必須 | 全件生成に成功した初回専門家コメント。確定済み専門家と同数・同順序 |
+| フィールド            | 必須 | 内容                                                                                              |
+| --------------------- | ---: | ------------------------------------------------------------------------------------------------- |
+| consultation          | 必須 | 初回に入力した相談内容。画面には再表示しない                                                      |
+| currentPhase          | 必須 | 固定値 `group_chat`                                                                               |
+| memo                  | 必須 | グループチャット開始時の `SessionMemo`                                                            |
+| confirmedExperts      | 必須 | 1〜5件の確定済み専門家。各要素に一意な `participantId` を持つ                                     |
+| initialExpertComments | 必須 | 全件生成に成功した初回専門家コメント。確定済み専門家と同数・同順序                                |
+| discussionSelection   | 必須 | `deep_dive`、`compare`、`defer` のいずれかの案選択。案IDは初回コメントの `proposal.id` と一致する |
 
-応答は `FacilitatorTurn` のうち開始専用の strict schema とする。ファシリテーターは、初回コメントの単純な再要約をせず、会話の論点を示して、`confirmedExperts` に含まれる専門家を次の1人として指名する。`requestedSpeaker.participantId` は選んだ専門家の値と完全一致させ、`speakerType` は `expert`、`userOptions` は `null` とする。
+応答は `FacilitatorTurn` のうち開始専用の strict schema とする。ファシリテーターは、初回コメントの単純な再要約をせず、`discussionSelection` を会話の起点として論点を示して、`confirmedExperts` に含まれる専門家を次の1人として指名する。`requestedSpeaker.participantId` は選んだ専門家の値と完全一致させ、`speakerType` は `expert`、`userOptions` は `null` とする。
 
 #### `POST /api/expert/group-chat`
 
 `GroupChatExpertReplyRequest` は、指名された専門家の1回の回答を生成する strict schema とする。
 
-| フィールド          | 必須 | 内容                                                      |
-| ------------------- | ---: | --------------------------------------------------------- |
-| consultation        | 必須 | 初回に入力した相談内容                                    |
-| currentPhase        | 必須 | 固定値 `group_chat`                                       |
-| memo                | 必須 | 最新の `SessionMemo`                                      |
-| contextSummary      | 必須 | 過去発言の累積要約                                        |
-| recentMessages      | 必須 | 文脈として必要な末尾から最大8件の `GroupChatMessage` 配列 |
-| expert              | 必須 | `FacilitatorTurn.requestedSpeaker` と一致する専門家       |
-| facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問                  |
+| フィールド          | 必須 | 内容                                                                               |
+| ------------------- | ---: | ---------------------------------------------------------------------------------- |
+| consultation        | 必須 | 初回に入力した相談内容                                                             |
+| currentPhase        | 必須 | 固定値 `group_chat`                                                                |
+| memo                | 必須 | 最新の `SessionMemo`                                                               |
+| contextSummary      | 必須 | 過去発言の累積要約                                                                 |
+| recentMessages      | 必須 | 文脈として必要な末尾から最大8件の `GroupChatMessage` 配列                          |
+| expert              | 必須 | `FacilitatorTurn.requestedSpeaker` と一致する専門家                                |
+| facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問                                           |
+| discussionContext   | 必須 | 開始時に確定した案選択と、初回コメント由来の全具体案。専門家は回答の起点として使う |
 
 応答は、指定専門家の `GroupChatMessage` 1件とする。`id` は入力 `recentMessages` に含まれる既存のIDと重複してはならず、重複する構造化出力は無効として再生成対象にする。専門家の回答後、クライアントは次のファシリテーターターンを要求する。
 
@@ -238,17 +261,18 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 
 `GroupChatNextRequest` は、専門家またはユーザーの1回答後に次の進行を決める strict schema とする。
 
-| フィールド             | 必須 | 内容                                                   |
-| ---------------------- | ---: | ------------------------------------------------------ |
-| consultation           | 必須 | 初回に入力した相談内容                                 |
-| currentPhase           | 必須 | 固定値 `group_chat`                                    |
-| memo                   | 必須 | 最新の `SessionMemo`                                   |
-| contextSummary         | 必須 | 過去発言の累積要約                                     |
-| recentMessages         | 必須 | 末尾から最大8件の `GroupChatMessage` 配列              |
-| confirmedExperts       | 必須 | 一意な `participantId` を含む確定済み専門家            |
-| expertRepliesSinceUser | 必須 | 前回のユーザー意思表示以降の連続した専門家回答数。0〜2 |
+| フィールド             | 必須 | 内容                                                                           |
+| ---------------------- | ---: | ------------------------------------------------------------------------------ |
+| consultation           | 必須 | 初回に入力した相談内容                                                         |
+| currentPhase           | 必須 | 固定値 `group_chat`                                                            |
+| memo                   | 必須 | 最新の `SessionMemo`                                                           |
+| contextSummary         | 必須 | 過去発言の累積要約                                                             |
+| recentMessages         | 必須 | 末尾から最大8件の `GroupChatMessage` 配列                                      |
+| confirmedExperts       | 必須 | 一意な `participantId` を含む確定済み専門家                                    |
+| expertRepliesSinceUser | 必須 | 前回のユーザー意思表示以降の連続した専門家回答数。0〜2                         |
+| discussionContext      | 必須 | 開始時に確定した案選択と、初回コメント由来の全具体案。次の進行の起点として使う |
 
-応答は `FacilitatorTurn` とする。アプリ側は、`expertRepliesSinceUser` が2の場合に専門家を指名する応答を不正として扱う。値が1の場合、ファシリテーターは専門家またはユーザーを指名できる。ユーザーを指名した場合、アプリは選択肢と自由入力 textarea を常時同時に表示する。選択肢を選ぶと、その文言をユーザー回答として直ちに送信する。ユーザーの自由入力、選択肢回答、「そのまま意見交換を続けて」のいずれもユーザー意思表示としてカウンタを0へ戻す。
+応答は `FacilitatorTurn` とする。アプリ側は、`expertRepliesSinceUser` が2の場合に専門家を指名する応答を不正として扱う。値が1の場合、ファシリテーターは専門家またはユーザーを指名できる。直近の非ファシリテーター発言が専門家で、確定済み専門家が2人以上ある場合は、次に専門家を指名するなら直前の専門家とは別の `participantId` を指定しなければならない。これにより、連続する専門家回答を主張への応答として扱う。進行は常に `discussionContext.selection` を起点とし、具体案は `discussionContext.proposals` から参照する。`deep_dive` では根拠の検証と反論・代替・成立条件、`compare` では2案のトレードオフ、`defer` では案を脱落させない比較軸の整理を求める。ユーザーを指名した場合、アプリは選択肢と自由入力 textarea を常時同時に表示する。選択肢を選ぶと、その文言をユーザー回答として直ちに送信する。ユーザーの自由入力、選択肢回答、「そのまま意見交換を続けて」のいずれもユーザー意思表示としてカウンタを0へ戻す。
 
 専門家回答の生成・構造化出力の検証に成功した後、次のファシリテーターターンの生成または検証だけが失敗した場合、アプリは成功済み専門家発言と `expertRepliesSinceUser` を保持する。セッションメモと累積要約は更新せず、ユーザーは専門家回答を再生成せずに次の進行だけを再試行できる。
 

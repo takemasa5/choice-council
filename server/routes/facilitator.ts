@@ -158,6 +158,8 @@ const facilitatorDeveloperPrompt = `
 - 出力の current_phase は必ず premise にする。
 - userQuestion と userQuestionAnswer が入力に含まれる場合は、その質問へのユーザー回答として扱い、memo_updates と次アクションに反映する。追加質問をしてはならない。user_question は null、next_action は request_experts、expert_requests は1件以上にする。
 - userQuestion と userQuestionAnswer が入力に含まれる場合は、user_question と expert_requests を同時に返してはならない。必ず user_question: null、next_action: request_experts、expert_requests: 1件以上を返す。
+- 専門家候補を返す場合は、相談の主要な判断軸で競合する価値・制約を持つ役割を優先する。人格的な対立を作らず、競合だけでは不足する観点だけを補完する。
+- 各 expert_requests.viewpoint には、どの価値または制約を重視する立場かを具体的に書く。
 - user_question を返す場合、options は2件以上にし、必ず「その他」を含める。
 - 出力は指定 schema に厳密に従う。
 `;
