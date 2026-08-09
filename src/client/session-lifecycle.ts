@@ -1,6 +1,7 @@
 import type {
   ConsultationRequest,
   ConsultationStartRequest,
+  DiscussionSelection,
   ExpertComment,
   ExpertRequest,
   FacilitatorResponse,
@@ -8,6 +9,10 @@ import type {
   GroupChatMessage,
   Phase,
   SessionMemo,
+} from "../shared/schemas/session";
+import {
+  DiscussionSelectionSchema,
+  ExpertCommentSchema,
 } from "../shared/schemas/session";
 import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
 import {
@@ -45,7 +50,17 @@ export type StoredSession = {
   groupChatContextSummary?: string;
   groupChatExpertRepliesSinceUser?: number;
   groupChatNextTurnRetryPending?: boolean;
+  discussionSelection?: DiscussionSelection;
+  selectedProposalIds?: string[];
   finalMarkdown?: string;
+};
+
+/** 保存データから安全に利用できる初回案と選択の状態。 */
+export type RestoredProposalState = {
+  expertComments: ExpertComment[];
+  discussionSelection: DiscussionSelection | null;
+  selectedProposalIds: string[];
+  isValid: boolean;
 };
 
 export function createInitialSessionState(): SessionState {
@@ -71,7 +86,7 @@ export function restoreStoredSessionState(parsed: StoredSession): SessionState {
     finalMarkdown: parsed.finalMarkdown ?? "",
   });
 
-  return {
+  const restoredState = {
     startedConsultation:
       parsed.startedConsultation ??
       (parsed.response ? parsed.request.consultation : ""),
@@ -79,6 +94,98 @@ export function restoreStoredSessionState(parsed: StoredSession): SessionState {
     responseHistory: restoredSession.responseHistory,
     currentPhase: restoredSession.currentPhase,
   };
+
+  const proposalState = getRestoredProposalState(parsed);
+  if (
+    !isStoredProposalStateComplete(restoredState.currentPhase, proposalState)
+  ) {
+    return recoverToExpertSelection(restoredState);
+  }
+
+  return restoredState;
+}
+
+/** 端末保存値を検証し、画面表示・API送信に安全な案選択だけを返す。 */
+export function getRestoredProposalState(
+  parsed: StoredSession,
+): RestoredProposalState {
+  const commentsResult = ExpertCommentSchema.array().safeParse(
+    parsed.expertComments ?? [],
+  );
+  const selectionResult = parsed.discussionSelection
+    ? DiscussionSelectionSchema.safeParse(parsed.discussionSelection)
+    : null;
+  const expertComments = commentsResult.success ? commentsResult.data : [];
+  const discussionSelection = selectionResult?.success
+    ? selectionResult.data
+    : null;
+  const selectedProposalIds = Array.isArray(parsed.selectedProposalIds)
+    ? parsed.selectedProposalIds.filter(
+        (id): id is string => typeof id === "string" && Boolean(id.trim()),
+      )
+    : [];
+  const proposalIds = expertComments.map((comment) => comment.proposal.id);
+  const selectedByDiscussion =
+    discussionSelection?.kind === "deep_dive"
+      ? [discussionSelection.proposalId]
+      : discussionSelection?.kind === "compare"
+        ? discussionSelection.proposalIds
+        : [];
+  const commentsMatchExperts =
+    !parsed.confirmedExperts ||
+    parsed.confirmedExperts.length === 0 ||
+    (parsed.confirmedExperts.length === expertComments.length &&
+      parsed.confirmedExperts.every(
+        (expert, index) =>
+          expert.role_name === expertComments[index]?.role_name &&
+          expert.viewpoint === expertComments[index]?.viewpoint,
+      ));
+  const areSelectedProposalIdsValid =
+    selectedProposalIds.length === new Set(selectedProposalIds).size &&
+    selectedProposalIds.every((id) => proposalIds.includes(id));
+  const areDiscussionReferencesValid = selectedByDiscussion.every((id) =>
+    proposalIds.includes(id),
+  );
+  const doStoredSelectionAndCheckedIdsMatch =
+    discussionSelection?.kind === "deep_dive"
+      ? selectedProposalIds.length === 1 &&
+        selectedProposalIds[0] === discussionSelection.proposalId
+      : discussionSelection?.kind === "compare"
+        ? selectedProposalIds.length === 2 &&
+          selectedProposalIds.every((id) =>
+            discussionSelection.proposalIds.includes(id),
+          )
+        : discussionSelection?.kind === "defer"
+          ? selectedProposalIds.length === 0
+          : true;
+  const areProposalIdsUnique = proposalIds.length === new Set(proposalIds).size;
+  const isValid =
+    commentsResult.success &&
+    (!parsed.discussionSelection || selectionResult?.success === true) &&
+    areProposalIdsUnique &&
+    areSelectedProposalIdsValid &&
+    areDiscussionReferencesValid &&
+    doStoredSelectionAndCheckedIdsMatch &&
+    commentsMatchExperts;
+
+  return {
+    expertComments: isValid ? expertComments : [],
+    discussionSelection: isValid ? discussionSelection : null,
+    selectedProposalIds: isValid ? selectedProposalIds : [],
+    isValid,
+  };
+}
+
+/** フェーズ再開に必要な初回案と選択がそろっているかを判定する。 */
+export function isStoredProposalStateComplete(
+  phase: Phase,
+  proposalState: RestoredProposalState,
+) {
+  if (!isProposalStateRequired(phase)) return true;
+  if (!proposalState.isValid || proposalState.expertComments.length === 0) {
+    return false;
+  }
+  return phase === "deliberation" || proposalState.discussionSelection !== null;
 }
 
 /** 新規相談の開始応答を横断状態へ反映する。 */
@@ -337,6 +444,8 @@ export function createStoredSession({
   groupChatContextSummary,
   groupChatExpertRepliesSinceUser,
   groupChatNextTurnRetryPending,
+  discussionSelection,
+  selectedProposalIds,
   finalMarkdown,
 }: Omit<
   StoredSession,
@@ -359,6 +468,8 @@ export function createStoredSession({
     groupChatContextSummary: groupChatContextSummary || undefined,
     groupChatExpertRepliesSinceUser,
     groupChatNextTurnRetryPending: groupChatNextTurnRetryPending || undefined,
+    discussionSelection,
+    selectedProposalIds,
     initialExpertRequests,
     finalMarkdown: finalMarkdown || undefined,
   };
@@ -368,6 +479,28 @@ function responseToHistory(
   response: FacilitatorResponse | null,
 ): ResponseHistory {
   return response ? { [response.current_phase]: response } : {};
+}
+
+function isProposalStateRequired(phase: Phase) {
+  return (
+    phase === "deliberation" || phase === "group_chat" || phase === "final_memo"
+  );
+}
+
+/** 不正な案保存値では、確定済み専門家を保持できる選定フェーズへ戻す。 */
+function recoverToExpertSelection(state: SessionState): SessionState {
+  if (!state.response) return createInitialSessionState();
+
+  const response = createResponseForPhase(state.response, "expert_selection");
+  return {
+    ...state,
+    currentPhase: "expert_selection",
+    response,
+    responseHistory: {
+      ...keepResponsesThroughPhase(state.responseHistory, "premise"),
+      expert_selection: response,
+    },
+  };
 }
 
 function getLatestMemoBeforePhase(

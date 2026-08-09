@@ -60,6 +60,8 @@ export function useExpertSelectionPhase({
   const draftIdRef = useRef(0);
   const confirmedRequestKeyRef = useRef("");
   const restoredDraftCandidateKeyRef = useRef<string | null>(null);
+  const shouldGenerateReturnedCommentsRef = useRef(false);
+  const isCommentGenerationInFlightRef = useRef(false);
 
   function createDraft(expert: ExpertRequest): ExpertDraft {
     draftIdRef.current += 1;
@@ -119,6 +121,7 @@ export function useExpertSelectionPhase({
     setConfirmedExperts([]);
     setExpertComments([]);
     setErrorMessage("");
+    shouldGenerateReturnedCommentsRef.current = false;
   }
 
   /** 日本語名: 候補の編集と依存状態の破棄をまとめて行う操作。 */
@@ -204,7 +207,7 @@ export function useExpertSelectionPhase({
   }
 
   /** 日本語名: 編集済み候補を検証し、確定結果だけを横断状態へ渡す。 */
-  function confirmDrafts() {
+  function confirmDrafts(): Promise<void> | void {
     if (isInteractionDisabled()) return;
     const requiredQuestionMessage = getRequiredQuestionMessage();
     if (requiredQuestionMessage)
@@ -212,11 +215,17 @@ export function useExpertSelectionPhase({
     const confirmation = confirmExpertDrafts(expertDrafts);
     if (confirmation.errorMessage)
       return setErrorMessage(confirmation.errorMessage);
+    const shouldGenerateReturnedComments =
+      shouldGenerateReturnedCommentsRef.current;
     setConfirmedExperts(confirmation.experts);
     confirmedRequestKeyRef.current = JSON.stringify(confirmation.experts);
     setExpertComments([]);
     setErrorMessage("");
     onConfirmed(confirmation.experts);
+    if (shouldGenerateReturnedComments) {
+      shouldGenerateReturnedCommentsRef.current = false;
+      return generateComments(confirmation.experts);
+    }
   }
 
   /** 日本語名: 初期候補を編集せず確定する。 */
@@ -235,13 +244,16 @@ export function useExpertSelectionPhase({
   }
 
   /** 日本語名: 確定済み専門家の初回コメントを全件生成する。 */
-  async function generateComments() {
-    if (isInteractionDisabled()) return;
+  async function generateComments(
+    expertsToGenerate = confirmedExperts,
+  ): Promise<void> {
+    if (isCommentGenerationInFlightRef.current || isInteractionDisabled())
+      return;
     setErrorMessage("");
     const requiredQuestionMessage = getRequiredQuestionMessage();
     if (requiredQuestionMessage)
       return setErrorMessage(requiredQuestionMessage);
-    if (confirmedExperts.length === 0) {
+    if (expertsToGenerate.length === 0) {
       setErrorMessage("先に専門家ロールを確定してください。");
       return;
     }
@@ -252,11 +264,12 @@ export function useExpertSelectionPhase({
     }
     const expertCommentPhase =
       currentPhase === "expert_selection" ? "deliberation" : currentPhase;
+    isCommentGenerationInFlightRef.current = true;
     setIsGenerating(true);
     onGenerationStarted();
     try {
       const result = await collectExpertCommentGenerationResults(
-        confirmedExperts.map((expert) => async () => {
+        expertsToGenerate.map((expert) => async () => {
           const request: ExpertCommentRequest = {
             consultation,
             currentPhase: expertCommentPhase,
@@ -279,7 +292,7 @@ export function useExpertSelectionPhase({
         comments: result.comments,
       });
       setExpertComments(result.comments);
-      confirmedRequestKeyRef.current = JSON.stringify(confirmedExperts);
+      confirmedRequestKeyRef.current = JSON.stringify(expertsToGenerate);
       onCommentsGenerated(updatedMemo);
     } catch {
       setExpertComments([]);
@@ -287,6 +300,7 @@ export function useExpertSelectionPhase({
         "専門家コメントの生成に失敗しました。もう一度お試しください。",
       );
     } finally {
+      isCommentGenerationInFlightRef.current = false;
       setIsGenerating(false);
     }
   }
@@ -306,6 +320,7 @@ export function useExpertSelectionPhase({
     restoredDraftProvenanceKey?: string;
   }) {
     confirmedRequestKeyRef.current = JSON.stringify(confirmedCandidates);
+    shouldGenerateReturnedCommentsRef.current = false;
     if (drafts !== undefined) {
       restoreDraftIdSequence(drafts);
       setExpertDrafts(drafts);
@@ -361,6 +376,8 @@ export function useExpertSelectionPhase({
     setErrorMessage("");
     confirmedRequestKeyRef.current = "";
     restoredDraftCandidateKeyRef.current = null;
+    shouldGenerateReturnedCommentsRef.current = false;
+    isCommentGenerationInFlightRef.current = false;
   }
 
   /** 日本語名: 戻り先に応じて確定候補・コメントだけを復元する。 */
@@ -377,6 +394,9 @@ export function useExpertSelectionPhase({
     drafts?: ExpertDraft[];
     draftProvenanceKey?: string | null;
   }) {
+    confirmedRequestKeyRef.current = JSON.stringify(confirmedCandidates);
+    shouldGenerateReturnedCommentsRef.current =
+      confirmedCandidates.length > 0 && comments.length === 0;
     setExpertDrafts(drafts ?? []);
     setExpertDraftProvenanceKey(draftProvenanceKey ?? null);
     setInitialExpertRequests(initialCandidates);

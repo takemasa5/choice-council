@@ -30,6 +30,14 @@ const comment = {
   role_name: expert.role_name,
   viewpoint: expert.viewpoint,
   summary: "予算を確認します。",
+  proposal: {
+    id: "proposal-budget",
+    name: "予算を守る案",
+    content: "予算上限を決めて候補を絞ります。",
+    benefits: ["支出を管理しやすい"],
+    sacrifices: ["候補が減る"],
+    conditions: ["予算上限を決める"],
+  },
   key_point: "予算",
   concern: "追加費用",
   question_to_user: "予算上限はありますか。",
@@ -181,9 +189,15 @@ test("専門家選定と検討の接続は表示状態と開始操作を渡す",
       memo,
       confirmedExperts: [expert],
       expertComments: [comment],
+      discussionSelection: { kind: "deep_dive", proposalId: "proposal-budget" },
+      selectedProposalIds: ["proposal-budget"],
       isStarting: true,
       expertErrorMessage: "コメントを確認してください。",
       startErrorMessage: "意見交換の開始に失敗しました。",
+      toggleProposal: () => undefined,
+      selectDeepDive: () => undefined,
+      selectComparison: () => undefined,
+      selectDefer: () => undefined,
       start: async (input) => {
         startInput = input;
       },
@@ -204,6 +218,7 @@ test("専門家選定と検討の接続は表示状態と開始操作を渡す",
     memo,
     confirmedExperts: [expert],
     expertComments: [comment],
+    discussionSelection: { kind: "deep_dive", proposalId: "proposal-budget" },
   });
 });
 
@@ -237,7 +252,13 @@ test("意見交換と終了メモの接続はエラー・再試行・終了操�
       isLoading: true,
       isNextTurnRetryPending: true,
       errorMessage: "回答の送信に失敗しました。",
-      context: { consultation: "相談内容", memo, confirmedExperts: [expert] },
+      context: {
+        consultation: "相談内容",
+        memo,
+        confirmedExperts: [expert],
+        discussionSelection: { kind: "defer" },
+        expertComments: [comment],
+      },
       expertComments: [comment],
       contextSummary: "要約",
       finishErrorMessage: "終了メモの生成に失敗しました。",
@@ -272,6 +293,8 @@ test("意見交換と終了メモの接続はエラー・再試行・終了操�
     consultation: "相談内容",
     memo,
     confirmedExperts: [expert],
+    discussionSelection: { kind: "defer" },
+    expertComments: [comment],
     answer: "回答",
   });
   assert.equal(retried, 1);

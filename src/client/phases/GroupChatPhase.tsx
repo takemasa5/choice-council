@@ -4,6 +4,7 @@ import type {
   GroupChatMessage,
 } from "../../shared/schemas/session";
 import { finalMemoStatusOptions } from "../final-memo-flow";
+import { NetworkActivityIndicator } from "../NetworkActivityIndicator";
 import { type CSSProperties, useState } from "react";
 
 function getExpertAvatarText(roleName: string) {
@@ -67,21 +68,14 @@ export function GroupChatPhase({
 
   if (!turn) return null;
 
-  const isExpertReplyGenerating =
-    !isNextTurnRetryPending &&
-    isLoading &&
-    turn.requestedSpeaker.speakerType === "expert";
+  const networkActivityMessage =
+    !isNextTurnRetryPending && turn.requestedSpeaker.speakerType === "expert"
+      ? "専門家の回答を生成中"
+      : "次の進行を生成中";
 
   return (
     <section className="expert-comment-box" aria-label="意見交換">
-      <h3>
-        意見交換
-        {isExpertReplyGenerating && (
-          <span aria-live="polite" role="status">
-            回答を生成中
-          </span>
-        )}
-      </h3>
+      <h3>意見交換</h3>
       <div
         className="group-chat-timeline"
         role="log"
@@ -167,6 +161,11 @@ export function GroupChatPhase({
           </article>
         )}
       </div>
+      <NetworkActivityIndicator
+        isActive={isLoading}
+        className="group-chat-network-activity"
+        message={networkActivityMessage}
+      />
       {!isNextTurnRetryPending &&
         turn.requestedSpeaker.speakerType === "user" && (
           <div className="group-chat-answer-controls">
