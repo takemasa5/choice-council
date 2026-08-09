@@ -157,7 +157,7 @@ export function getRestoredProposalState(
           )
         : discussionSelection?.kind === "defer"
           ? selectedProposalIds.length === 0
-          : selectedProposalIds.length === 0;
+          : true;
   const areProposalIdsUnique = proposalIds.length === new Set(proposalIds).size;
   const isValid =
     commentsResult.success &&

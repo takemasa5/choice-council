@@ -3,7 +3,10 @@ import test from "node:test";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { requestGroupChatStart } from "../../src/client/group-chat-start";
-import { createGroupChatStartRequest } from "../../src/client/hooks/use-deliberation-phase-flow";
+import {
+  createGroupChatStartRequest,
+  getRetryableGroupChatStartRequest,
+} from "../../src/client/hooks/use-deliberation-phase-flow";
 import { createGroupChatDiscussionContext } from "../../src/client/group-chat-context";
 import { DeliberationPhase } from "../../src/client/phases/DeliberationPhase";
 import type {
@@ -82,6 +85,74 @@ test("意見交換開始の失敗は検討画面で再試行できる", () => {
   assert.ok(retryButton.props.onClick);
   retryButton.props.onClick();
   assert.equal(retryCount, 1);
+});
+
+test("案を変更した後は開始失敗の再試行操作を表示しない", () => {
+  const view = DeliberationPhase({
+    expertComments: [expertComment],
+    discussionSelection: null,
+    selectedProposalIds: [expertComment.proposal.id],
+    isStarting: false,
+    errorMessage: "",
+    startErrorMessage: "",
+    onStart: () => undefined,
+    onRetryStart: () => {
+      throw new Error("古いリクエストを再試行してはいけません。");
+    },
+    onToggleProposal: () => undefined,
+    onSelectDeepDive: () => undefined,
+    onSelectComparison: () => undefined,
+    onSelectDefer: () => undefined,
+  });
+
+  const elements = collectElements(view);
+  assert.equal(
+    elements.some(
+      (element) =>
+        element.type === "button" &&
+        element.props.children === "意見交換の開始を再試行する",
+    ),
+    false,
+  );
+});
+
+test("案を変更した後は古い開始失敗リクエストを再試行できない", () => {
+  const failedRequest: GroupChatStartRequest = {
+    consultation: "相談内容",
+    currentPhase: "group_chat",
+    memo: {
+      theme: "相談内容",
+      status: "in_progress",
+      facts: [],
+      values: [],
+      concerns: [],
+      options: [],
+      decision_axes: [],
+      expert_summaries: [],
+      conflicts: [],
+      open_questions: [],
+      next_actions: [],
+    },
+    confirmedExperts: [
+      {
+        role_name: expertComment.role_name,
+        viewpoint: expertComment.viewpoint,
+        request: "費用を検討してください。",
+        participantId: "expert-1",
+      },
+    ],
+    initialExpertComments: [expertComment],
+    discussionSelection: {
+      kind: "deep_dive",
+      proposalId: expertComment.proposal.id,
+    },
+  };
+
+  assert.equal(getRetryableGroupChatStartRequest(failedRequest, null), null);
+  assert.equal(
+    getRetryableGroupChatStartRequest(failedRequest, { kind: "defer" }),
+    null,
+  );
 });
 
 test("案の選択は深掘り・厳密な2案比較・保留だけを開始対象にする", () => {

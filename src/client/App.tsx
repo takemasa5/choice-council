@@ -572,6 +572,7 @@ export function App() {
 
   function toggleProposalSelection(proposalId: string) {
     if (isGroupChatBusy) return;
+    deliberationFlow.clearFailure();
     setDiscussionSelection(null);
     setSelectedProposalIds((current) =>
       current.includes(proposalId)
@@ -677,7 +678,7 @@ export function App() {
       selectComparison: selectProposalsForComparison,
       selectDefer: deferProposalSelection,
       start: deliberationFlow.start,
-      retryStart: deliberationFlow.retry,
+      retryStart: () => deliberationFlow.retry(discussionSelection),
     },
     {
       turn: groupChatTurn,

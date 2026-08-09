@@ -53,9 +53,17 @@ export function useDeliberationPhaseFlow({
   }
 
   /** 日本語名: 失敗した意見交換開始リクエストを同じ内容で再送する。 */
-  async function retry() {
+  async function retry(discussionSelection: DiscussionSelection | null) {
     if (isStarting || !failedRequest) return;
-    await sendStartRequest(failedRequest);
+    const retryRequest = getRetryableGroupChatStartRequest(
+      failedRequest,
+      discussionSelection,
+    );
+    if (!retryRequest) {
+      clearFailure();
+      return;
+    }
+    await sendStartRequest(retryRequest);
   }
 
   async function sendStartRequest(request: GroupChatStartRequest) {
@@ -113,6 +121,37 @@ export function useDeliberationPhaseFlow({
     retry,
     clearFailure,
   };
+}
+
+/** 日本語名: 現在の案選択と一致する開始失敗だけを再試行対象にする。 */
+export function getRetryableGroupChatStartRequest(
+  failedRequest: GroupChatStartRequest,
+  discussionSelection: DiscussionSelection | null,
+) {
+  if (!discussionSelection) return null;
+  const failedSelection = failedRequest.discussionSelection;
+  if (
+    failedSelection.kind === "deep_dive" &&
+    discussionSelection.kind === "deep_dive" &&
+    failedSelection.proposalId === discussionSelection.proposalId
+  ) {
+    return failedRequest;
+  }
+  if (
+    failedSelection.kind === "compare" &&
+    discussionSelection.kind === "compare" &&
+    failedSelection.proposalIds.length ===
+      discussionSelection.proposalIds.length &&
+    failedSelection.proposalIds.every(
+      (id, index) => id === discussionSelection.proposalIds[index],
+    )
+  ) {
+    return failedRequest;
+  }
+  return failedSelection.kind === "defer" &&
+    discussionSelection.kind === "defer"
+    ? failedRequest
+    : null;
 }
 
 /** 日本語名: 意見交換開始に必要な確定済み入力を API 契約の形へ整える。 */

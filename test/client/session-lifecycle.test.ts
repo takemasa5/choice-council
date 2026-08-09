@@ -235,6 +235,40 @@ test("復元時は案選択と選択済み案IDの完全一致を要求する", 
   );
 });
 
+test("選択途中の案は検討フェーズへ復元し、初回コメントを維持する", () => {
+  const stored = {
+    request: { consultation: "相談内容" },
+    response: {
+      ...facilitatorResponse,
+      current_phase: "deliberation" as const,
+    } as never,
+    responseHistory: {
+      expert_selection: {
+        ...facilitatorResponse,
+        current_phase: "expert_selection" as const,
+      } as never,
+      deliberation: {
+        ...facilitatorResponse,
+        current_phase: "deliberation" as const,
+      } as never,
+    },
+    currentPhase: "deliberation" as const,
+    confirmedExperts: [facilitatorResponse.expert_requests[0]],
+    expertComments: [expertComment],
+    selectedProposalIds: ["proposal-1"],
+  };
+
+  const proposalState = getRestoredProposalState(stored);
+  const restored = restoreStoredSessionState(stored);
+
+  assert.equal(proposalState.isValid, true);
+  assert.equal(proposalState.discussionSelection, null);
+  assert.deepEqual(proposalState.selectedProposalIds, ["proposal-1"]);
+  assert.deepEqual(proposalState.expertComments, [expertComment]);
+  assert.equal(restored.currentPhase, "deliberation");
+  assert.equal(restored.response?.current_phase, "deliberation");
+});
+
 test("案選択はセッションへ保存できる", () => {
   const state = createInitialSessionState();
   const stored = createStoredSession({
