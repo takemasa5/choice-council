@@ -154,6 +154,182 @@ test("熟議を経由して専門家選定へ戻っても編集済みdraftを維
   assert.equal(restoredProvenance, candidateKey);
 });
 
+test("検討から専門家選定へ戻った後、同じ候補でこのまま進めるとコメントを再生成する", async () => {
+  const expert: ExpertRequest = {
+    role_name: "家計アドバイザー",
+    viewpoint: "予算",
+    request: "費用を整理してください",
+  };
+  const returnedDraft = {
+    ...expert,
+    role_name: " 家計アドバイザー ",
+    viewpoint: " 予算 ",
+    request: " 費用を整理してください ",
+  };
+  const expertComment: ExpertComment = {
+    role_name: expert.role_name,
+    viewpoint: expert.viewpoint,
+    summary: "予算上限を先に決めるべきです。",
+    proposal: {
+      id: "proposal-budget",
+      name: "予算を守る案",
+      content: "予算上限を決めて候補を絞ります。",
+      benefits: ["支出を管理しやすい"],
+      sacrifices: ["候補が減る"],
+      conditions: ["予算上限を決める"],
+    },
+    key_point: "予算上限",
+    concern: "追加費用が不明です。",
+    question_to_user: "なし",
+    confidence: "medium",
+    needs_research: false,
+  };
+  const updatedMemo: SessionMemo = {
+    theme: "家族旅行",
+    status: "in_progress",
+    facts: [],
+    values: [],
+    concerns: [],
+    options: [],
+    decision_axes: [],
+    expert_summaries: [],
+    conflicts: [],
+    open_questions: [],
+    next_actions: [],
+  };
+  const originalFetch = globalThis.fetch;
+  const requestedPaths: string[] = [];
+  const confirmed: ExpertRequest[][] = [];
+  let completedMemo: SessionMemo | null = null;
+  let generation: Promise<void> | void = undefined;
+
+  globalThis.fetch = async (input) => {
+    requestedPaths.push(String(input));
+    if (String(input) === "/api/expert/comment") {
+      return new Response(JSON.stringify(expertComment), { status: 200 });
+    }
+    if (String(input) === "/api/session-memo/update") {
+      return new Response(JSON.stringify(updatedMemo), { status: 200 });
+    }
+    throw new Error(`Unexpected request: ${String(input)}`);
+  };
+
+  try {
+    function HookHarness() {
+      const selection = useExpertSelectionPhase({
+        getContext: () => ({
+          consultation: "相談内容",
+          currentPhase: "expert_selection" as const,
+          memo: null,
+        }),
+        getRequiredQuestionMessage: () => "",
+        isInteractionDisabled: () => false,
+        onConfirmed: (experts) => confirmed.push(experts),
+        onGenerationStarted: () => undefined,
+        onCommentsGenerated: (memo) => {
+          completedMemo = memo;
+        },
+      });
+      const [step, setStep] = useState(0);
+
+      if (step === 0) {
+        selection.restoreForPhase({
+          initialCandidates: [expert],
+          confirmedCandidates: [expert],
+          comments: [],
+          drafts: [{ ...returnedDraft, draftId: "expert-draft-1" }],
+          draftProvenanceKey: JSON.stringify([expert]),
+        });
+        setStep(1);
+      } else if (step === 1) {
+        generation = selection.confirmDrafts();
+        setStep(2);
+      }
+
+      return null;
+    }
+
+    renderToStaticMarkup(createElement(HookHarness));
+    await generation;
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(confirmed, [[expert]]);
+  assert.deepEqual(requestedPaths, [
+    "/api/expert/comment",
+    "/api/session-memo/update",
+  ]);
+  assert.deepEqual(completedMemo, updatedMemo);
+});
+
+test("戻った後に候補を編集して元へ戻した場合はコメントを自動再生成しない", () => {
+  const expert: ExpertRequest = {
+    role_name: "家計アドバイザー",
+    viewpoint: "予算",
+    request: "費用を整理してください",
+  };
+  const originalFetch = globalThis.fetch;
+  const requestedPaths: string[] = [];
+  const confirmed: ExpertRequest[][] = [];
+  let confirmedAfterEdit: ExpertRequest[] = [];
+
+  globalThis.fetch = async (input) => {
+    requestedPaths.push(String(input));
+    return new Response(JSON.stringify({}), { status: 500 });
+  };
+
+  try {
+    function HookHarness() {
+      const selection = useExpertSelectionPhase({
+        getContext: () => ({
+          consultation: "相談内容",
+          currentPhase: "expert_selection" as const,
+          memo: null,
+        }),
+        getRequiredQuestionMessage: () => "",
+        isInteractionDisabled: () => false,
+        onConfirmed: (experts) => confirmed.push(experts),
+        onGenerationStarted: () => undefined,
+        onCommentsGenerated: () => undefined,
+      });
+      const [step, setStep] = useState(0);
+
+      if (step === 0) {
+        selection.restoreForPhase({
+          initialCandidates: [expert],
+          confirmedCandidates: [expert],
+          comments: [],
+          drafts: [{ ...expert, draftId: "expert-draft-1" }],
+          draftProvenanceKey: JSON.stringify([expert]),
+        });
+        setStep(1);
+      } else if (step === 1) {
+        selection.updateExpertDraft(0, "viewpoint", "家族の満足度");
+        setStep(2);
+      } else if (step === 2) {
+        selection.updateExpertDraft(0, "viewpoint", expert.viewpoint);
+        setStep(3);
+      } else if (step === 3) {
+        selection.confirmDrafts();
+        setStep(4);
+      } else {
+        confirmedAfterEdit = selection.confirmedExperts;
+      }
+
+      return null;
+    }
+
+    renderToStaticMarkup(createElement(HookHarness));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requestedPaths, []);
+  assert.deepEqual(confirmed, [[expert]]);
+  assert.deepEqual(confirmedAfterEdit, [expert]);
+});
+
 test("前提整理へ戻った後は新しい候補からdraftを同期する", () => {
   const previousCandidate = {
     role_name: "家計アドバイザー",
@@ -235,6 +411,14 @@ test("全専門家コメントの成功後に更新済みメモを渡して検�
     role_name: expert.role_name,
     viewpoint: expert.viewpoint,
     summary: "予算上限を先に決めるべきです。",
+    proposal: {
+      id: "proposal-budget",
+      name: "予算を守る案",
+      content: "予算上限を決めて候補を絞ります。",
+      benefits: ["支出を管理しやすい"],
+      sacrifices: ["候補が減る"],
+      conditions: ["予算上限を決める"],
+    },
     key_point: "予算上限",
     concern: "追加費用が不明です。",
     question_to_user: "なし",
@@ -329,7 +513,12 @@ test("全専門家コメントの成功後に更新済みメモを渡して検�
         consultation: "相談内容",
         currentPhase: "expert_selection",
         previousMemo,
-        expertComments: [expertComment],
+        expertComments: [
+          {
+            ...expertComment,
+            proposal: { ...expertComment.proposal, id: "proposal-1" },
+          },
+        ],
       },
     },
   ]);
@@ -346,6 +535,14 @@ test("メモ更新が失敗した場合は検討へ進めない", async () => {
     role_name: expert.role_name,
     viewpoint: expert.viewpoint,
     summary: "予算上限を先に決めるべきです。",
+    proposal: {
+      id: "proposal-budget",
+      name: "予算を守る案",
+      content: "予算上限を決めて候補を絞ります。",
+      benefits: ["支出を管理しやすい"],
+      sacrifices: ["候補が減る"],
+      conditions: ["予算上限を決める"],
+    },
     key_point: "予算上限",
     concern: "追加費用が不明です。",
     question_to_user: "なし",

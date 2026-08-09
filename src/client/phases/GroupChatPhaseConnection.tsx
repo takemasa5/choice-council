@@ -1,6 +1,7 @@
 import type {
   ExpertComment,
   ExpertRequest,
+  DiscussionSelection,
   FinalMemoStatus,
   GroupChatMessage,
   FacilitatorTurn,
@@ -13,6 +14,8 @@ type GroupChatContext = {
   consultation: string;
   memo: SessionMemo | null;
   confirmedExperts: ExpertRequest[];
+  discussionSelection: DiscussionSelection | null;
+  expertComments: ExpertComment[];
 };
 
 /** 日本語名: 意見交換の送信・再試行・終了メモ操作を画面コンポーネントへ接続する。 */

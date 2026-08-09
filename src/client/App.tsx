@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConsultationStartRequest,
+  DiscussionSelection,
   ExpertRequest,
   FacilitatorTurn,
   FacilitatorResponse,
@@ -34,6 +35,8 @@ import {
   createStoredSession,
   getAvailableReturnPhases,
   getCurrentSessionMemo,
+  getRestoredProposalState,
+  isStoredProposalStateComplete,
   proceedToExpertSelection as proceedSessionToExpertSelection,
   restoreGroupChatAfterFinalMemoFailure as restoreSessionGroupChatAfterFinalMemoFailure,
   restoreStoredSessionState,
@@ -49,6 +52,7 @@ import { AppPhaseRouter } from "./phases/AppPhaseRouter";
 import { createPhaseContent } from "./phases/create-phase-content";
 import { FinalMemoPhaseConnection } from "./phases/FinalMemoPhaseConnection";
 import { MemoView } from "./MemoView";
+import { NetworkActivityIndicator } from "./NetworkActivityIndicator";
 import "./styles.css";
 
 const storageKey = "choice-council-session";
@@ -80,6 +84,9 @@ export function App() {
     changeExpectedOutcome,
   } = useConsultationPhase();
   const [sessionState, setSessionState] = useState(createInitialSessionState);
+  const [discussionSelection, setDiscussionSelection] =
+    useState<DiscussionSelection | null>(null);
+  const [selectedProposalIds, setSelectedProposalIds] = useState<string[]>([]);
   const { startedConsultation, response, responseHistory, currentPhase } =
     sessionState;
   const [isMobileMemoOpen, setIsMobileMemoOpen] = useState(false);
@@ -142,6 +149,7 @@ export function App() {
     onConfirmed: saveConfirmedExpertDrafts,
     onGenerationStarted: () => {
       finalMemoPhase.clear();
+      clearDiscussionSelection();
     },
     onCommentsGenerated: settleExpertCommentsMemo,
   });
@@ -172,6 +180,11 @@ export function App() {
     errorMessage: finalMarkdownErrorMessage,
   } = finalMemoPhase;
   const isGroupChatBusy = isStartingGroupChat || deliberationFlow.isStarting;
+  const isNetworkActive =
+    isLoading ||
+    isGeneratingExperts ||
+    isGroupChatBusy ||
+    isGeneratingFinalMarkdown;
   const isExpertInteractionDisabled =
     isExpertDraftEditingDisabled(isGeneratingExperts) || isGroupChatBusy;
   const expertRequestKey = useMemo(() => {
@@ -221,6 +234,8 @@ export function App() {
       groupChatNextTurnRetryPending,
       initialExpertRequests,
       finalMarkdown,
+      discussionSelection,
+      selectedProposalIds,
       selectedQuestionOption,
       otherQuestionAnswer,
     ],
@@ -230,7 +245,18 @@ export function App() {
   function restoreSession(parsed: StoredSession | null) {
     if (!parsed) return;
 
+    const restoredProposalState = getRestoredProposalState(parsed);
     const restoredSessionState = restoreStoredSessionState(parsed);
+    const storedProposalPhase =
+      parsed.currentPhase ?? parsed.response?.current_phase;
+    const isProposalRecovery =
+      (storedProposalPhase === "deliberation" ||
+        storedProposalPhase === "group_chat" ||
+        storedProposalPhase === "final_memo") &&
+      !isStoredProposalStateComplete(
+        storedProposalPhase,
+        restoredProposalState,
+      );
 
     changeConsultation(parsed.request.consultation);
     changeFacts(parsed.request.facts ?? "");
@@ -247,7 +273,7 @@ export function App() {
         restoredSessionState.response,
       ),
       confirmedCandidates: restoredExperts,
-      comments: parsed.expertComments ?? [],
+      comments: restoredProposalState.expertComments,
       drafts: parsed.expertDrafts,
       restoredDraftProvenanceKey: parsed.expertDraftProvenanceKey,
     });
@@ -258,14 +284,21 @@ export function App() {
       JSON.stringify(restoredCandidates),
     );
     shouldSkipRestoredCandidateSyncRef.current = true;
-    groupChatPhase.restore({
-      messages: parsed.groupChatMessages ?? [],
-      turn: parsed.groupChatTurn ?? null,
-      contextSummary: parsed.groupChatContextSummary ?? "",
-      expertRepliesSinceUser: parsed.groupChatExpertRepliesSinceUser ?? 0,
-      isNextTurnRetryPending: parsed.groupChatNextTurnRetryPending ?? false,
-    });
-    finalMemoPhase.restore(parsed.finalMarkdown ?? "");
+    if (isProposalRecovery) {
+      groupChatPhase.reset();
+      finalMemoPhase.clear();
+    } else {
+      groupChatPhase.restore({
+        messages: parsed.groupChatMessages ?? [],
+        turn: parsed.groupChatTurn ?? null,
+        contextSummary: parsed.groupChatContextSummary ?? "",
+        expertRepliesSinceUser: parsed.groupChatExpertRepliesSinceUser ?? 0,
+        isNextTurnRetryPending: parsed.groupChatNextTurnRetryPending ?? false,
+      });
+      finalMemoPhase.restore(parsed.finalMarkdown ?? "");
+    }
+    setDiscussionSelection(restoredProposalState.discussionSelection);
+    setSelectedProposalIds(restoredProposalState.selectedProposalIds);
     restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
   }
 
@@ -296,6 +329,7 @@ export function App() {
     setSessionState(createInitialSessionState());
     resetSelectionState();
     groupChatPhase.reset();
+    clearDiscussionSelection();
     deliberationFlow.clearFailure();
     finalMemoPhase.clear();
   }
@@ -363,6 +397,7 @@ export function App() {
     clearQuestionAnswer();
     resetSelectionState();
     groupChatPhase.reset();
+    clearDiscussionSelection();
     deliberationFlow.clearFailure();
     finalMemoPhase.clear();
   }
@@ -414,6 +449,13 @@ export function App() {
     });
     if (targetPhase !== "group_chat") {
       groupChatPhase.reset();
+    }
+    if (
+      targetPhase === "consultation_input" ||
+      targetPhase === "premise" ||
+      targetPhase === "expert_selection"
+    ) {
+      clearDiscussionSelection();
     }
     deliberationFlow.clearFailure();
     finalMemoPhase.clear();
@@ -512,12 +554,57 @@ export function App() {
       groupChatNextTurnRetryPending: groupChatNextTurnRetryPending || undefined,
       initialExpertRequests,
       finalMarkdown,
+      discussionSelection: discussionSelection ?? undefined,
+      selectedProposalIds,
     });
   }
 
   function saveConfirmedExpertDrafts(experts: ExpertRequest[]) {
     facilitatorFlow.clearFailure();
+    clearDiscussionSelection();
     setSessionState((state) => saveConfirmedExperts(state, experts));
+  }
+
+  function clearDiscussionSelection() {
+    setDiscussionSelection(null);
+    setSelectedProposalIds([]);
+  }
+
+  function toggleProposalSelection(proposalId: string) {
+    if (isGroupChatBusy) return;
+    setDiscussionSelection(null);
+    setSelectedProposalIds((current) =>
+      current.includes(proposalId)
+        ? current.filter((id) => id !== proposalId)
+        : [...current, proposalId],
+    );
+  }
+
+  function selectProposalForDeepDive() {
+    if (selectedProposalIds.length !== 1) return;
+    setDiscussionSelection({
+      kind: "deep_dive",
+      proposalId: selectedProposalIds[0] as string,
+    });
+    deliberationFlow.clearFailure();
+  }
+
+  function selectProposalsForComparison() {
+    if (selectedProposalIds.length !== 2) return;
+    setDiscussionSelection({
+      kind: "compare",
+      proposalIds: [
+        selectedProposalIds[0] as string,
+        selectedProposalIds[1] as string,
+      ],
+    });
+    deliberationFlow.clearFailure();
+  }
+
+  function deferProposalSelection() {
+    setDiscussionSelection({ kind: "defer" });
+    setSelectedProposalIds([]);
+    deliberationFlow.clearFailure();
   }
 
   const phaseContent = createPhaseContent(
@@ -580,9 +667,15 @@ export function App() {
       memo,
       confirmedExperts,
       expertComments,
+      discussionSelection,
+      selectedProposalIds,
       isStarting: deliberationFlow.isStarting,
       expertErrorMessage,
       startErrorMessage: deliberationFlow.errorMessage,
+      toggleProposal: toggleProposalSelection,
+      selectDeepDive: selectProposalForDeepDive,
+      selectComparison: selectProposalsForComparison,
+      selectDefer: deferProposalSelection,
       start: deliberationFlow.start,
       retryStart: deliberationFlow.retry,
     },
@@ -597,6 +690,8 @@ export function App() {
         consultation: sessionConsultation,
         memo,
         confirmedExperts,
+        discussionSelection,
+        expertComments,
       },
       expertComments,
       contextSummary: groupChatContextSummary,
@@ -616,7 +711,12 @@ export function App() {
           <p className="eyebrow">Choice Council</p>
           <h1>複数の視点で、決めきれない相談を整理する</h1>
         </div>
-        <div className="phase-pill">{phaseLabels[currentPhase]}</div>
+        <div className="top-bar-status">
+          {currentPhase !== "group_chat" && (
+            <NetworkActivityIndicator isActive={isNetworkActive} />
+          )}
+          <div className="phase-pill">{phaseLabels[currentPhase]}</div>
+        </div>
       </section>
       {isMemoUpdateNoticeVisible && (
         <p aria-live="polite" className="notice" role="status">

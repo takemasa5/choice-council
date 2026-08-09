@@ -4,6 +4,7 @@ import type {
   ExpertRequest,
   FacilitatorTurn,
   GroupChatStartRequest,
+  DiscussionSelection,
   SessionMemo,
 } from "../../shared/schemas/session";
 import { requestGroupChatStart } from "../group-chat-start";
@@ -26,11 +27,13 @@ export function useDeliberationPhaseFlow({
     memo,
     confirmedExperts,
     expertComments,
+    discussionSelection,
   }: {
     consultation: string;
     memo: SessionMemo | null;
     confirmedExperts: ExpertRequest[];
     expertComments: ExpertComment[];
+    discussionSelection: DiscussionSelection | null;
   }) {
     if (isStarting) return;
     const request = createGroupChatStartRequest({
@@ -38,6 +41,7 @@ export function useDeliberationPhaseFlow({
       memo,
       confirmedExperts,
       expertComments,
+      discussionSelection,
     });
     if (!request) {
       setErrorMessage(
@@ -117,16 +121,33 @@ export function createGroupChatStartRequest({
   memo,
   confirmedExperts,
   expertComments,
+  discussionSelection,
 }: {
   consultation: string;
   memo: SessionMemo | null;
   confirmedExperts: ExpertRequest[];
   expertComments: ExpertComment[];
+  discussionSelection: DiscussionSelection | null;
 }): GroupChatStartRequest | null {
   if (
     !memo ||
+    !discussionSelection ||
     confirmedExperts.length === 0 ||
     confirmedExperts.length !== expertComments.length
+  ) {
+    return null;
+  }
+
+  const proposalIds = expertComments.map((comment) => comment.proposal.id);
+  const selectedProposalIds =
+    discussionSelection.kind === "deep_dive"
+      ? [discussionSelection.proposalId]
+      : discussionSelection.kind === "compare"
+        ? discussionSelection.proposalIds
+        : [];
+  if (
+    new Set(proposalIds).size !== proposalIds.length ||
+    selectedProposalIds.some((id) => !proposalIds.includes(id))
   ) {
     return null;
   }
@@ -140,5 +161,6 @@ export function createGroupChatStartRequest({
       participantId: `expert-${index + 1}`,
     })),
     initialExpertComments: expertComments,
+    discussionSelection,
   };
 }

@@ -1,7 +1,10 @@
 import { useReducer, useState } from "react";
 import type {
+  DiscussionSelection,
+  ExpertComment,
   ExpertRequest,
   FacilitatorTurn,
+  GroupChatDiscussionContext,
   GroupChatMessage,
   GroupChatStartRequest,
   SessionMemo,
@@ -10,7 +13,10 @@ import {
   FacilitatorTurnSchema,
   GroupChatMessageSchema,
 } from "../../shared/schemas/session";
-import { getRecentGroupChatMessages } from "../group-chat-context";
+import {
+  createGroupChatDiscussionContext,
+  getRecentGroupChatMessages,
+} from "../group-chat-context";
 import {
   groupChatReducer,
   initialGroupChatState,
@@ -90,6 +96,17 @@ export function useGroupChatPhase({
     const message = createFacilitatorMessage(turn);
     const nextMemo = turn.memoUpdate ?? request.memo;
     const nextContextSummary = turn.contextSummaryUpdate ?? turn.message;
+    const discussionContext = createGroupChatDiscussionContext(
+      request.discussionSelection,
+      request.initialExpertComments,
+      request.confirmedExperts,
+    );
+    if (!discussionContext) {
+      setErrorMessage(
+        "案の選択を確認できませんでした。専門家選定へ戻ってください。",
+      );
+      return;
+    }
 
     setErrorMessage("");
     onInitialTurn(turn);
@@ -108,6 +125,7 @@ export function useGroupChatPhase({
         messages: [message],
         memo: nextMemo,
         contextSummary: nextContextSummary,
+        discussionContext,
       });
     }
   }
@@ -117,18 +135,30 @@ export function useGroupChatPhase({
     consultation,
     memo,
     confirmedExperts,
+    discussionSelection,
+    expertComments,
   }: {
     consultation: string;
     memo: SessionMemo | null;
     confirmedExperts: ExpertRequest[];
+    discussionSelection: DiscussionSelection | null;
+    expertComments: ExpertComment[];
   }) {
     if (
       isLoading ||
       !state.turn ||
       state.turn.requestedSpeaker.speakerType !== "expert" ||
-      !memo
+      !memo ||
+      !discussionSelection
     )
       return;
+    const experts = addParticipantIds(confirmedExperts);
+    const discussionContext = createGroupChatDiscussionContext(
+      discussionSelection,
+      expertComments,
+      experts,
+    );
+    if (!discussionContext) return;
 
     setIsLoading(true);
     setErrorMessage("");
@@ -136,11 +166,12 @@ export function useGroupChatPhase({
       await requestExpertReply({
         consultation,
         turn: state.turn,
-        experts: addParticipantIds(confirmedExperts),
+        experts,
         messages: state.messages,
         expertRepliesSinceUser: state.expertRepliesSinceUser,
         memo,
         contextSummary: state.contextSummary || state.turn.message,
+        discussionContext,
       });
     } catch (error) {
       setErrorMessage(getGroupChatErrorMessage(error));
@@ -154,13 +185,30 @@ export function useGroupChatPhase({
     consultation,
     memo,
     confirmedExperts,
+    discussionSelection,
+    expertComments,
   }: {
     consultation: string;
     memo: SessionMemo | null;
     confirmedExperts: ExpertRequest[];
+    discussionSelection: DiscussionSelection | null;
+    expertComments: ExpertComment[];
   }) {
-    if (isLoading || !state.isNextTurnRetryPending || !state.turn || !memo)
+    if (
+      isLoading ||
+      !state.isNextTurnRetryPending ||
+      !state.turn ||
+      !memo ||
+      !discussionSelection
+    )
       return;
+    const experts = addParticipantIds(confirmedExperts);
+    const discussionContext = createGroupChatDiscussionContext(
+      discussionSelection,
+      expertComments,
+      experts,
+    );
+    if (!discussionContext) return;
 
     setIsLoading(true);
     setErrorMessage("");
@@ -168,10 +216,11 @@ export function useGroupChatPhase({
       await requestNextTurn({
         consultation,
         messages: state.messages,
-        experts: addParticipantIds(confirmedExperts),
+        experts,
         expertRepliesSinceUser: state.expertRepliesSinceUser,
         memo,
         contextSummary: state.contextSummary || state.turn.message,
+        discussionContext,
       });
     } catch (error) {
       setErrorMessage(getGroupChatErrorMessage(error));
@@ -186,13 +235,31 @@ export function useGroupChatPhase({
     consultation,
     memo,
     confirmedExperts,
+    discussionSelection,
+    expertComments,
   }: {
     answer: string;
     consultation: string;
     memo: SessionMemo | null;
     confirmedExperts: ExpertRequest[];
+    discussionSelection: DiscussionSelection | null;
+    expertComments: ExpertComment[];
   }) {
-    if (isLoading || !state.turn || !memo || !answer.trim()) return;
+    if (
+      isLoading ||
+      !state.turn ||
+      !memo ||
+      !discussionSelection ||
+      !answer.trim()
+    )
+      return;
+    const experts = addParticipantIds(confirmedExperts);
+    const discussionContext = createGroupChatDiscussionContext(
+      discussionSelection,
+      expertComments,
+      experts,
+    );
+    if (!discussionContext) return;
 
     setIsLoading(true);
     setErrorMessage("");
@@ -201,10 +268,11 @@ export function useGroupChatPhase({
       await requestNextTurn({
         consultation,
         messages: [...state.messages, message],
-        experts: addParticipantIds(confirmedExperts),
+        experts,
         expertRepliesSinceUser: 0,
         memo,
         contextSummary: state.turn.contextSummaryUpdate ?? state.contextSummary,
+        discussionContext,
       });
       dispatch({ type: "set_other_answer", value: "" });
     } catch (error) {
@@ -238,6 +306,7 @@ export function useGroupChatPhase({
     messages,
     memo,
     contextSummary,
+    discussionContext,
   }: {
     consultation: string;
     turn: FacilitatorTurn;
@@ -245,6 +314,7 @@ export function useGroupChatPhase({
     messages: GroupChatMessage[];
     memo: SessionMemo;
     contextSummary: string;
+    discussionContext: GroupChatDiscussionContext;
   }) {
     setIsLoading(true);
     try {
@@ -256,6 +326,7 @@ export function useGroupChatPhase({
         expertRepliesSinceUser: 0,
         memo,
         contextSummary,
+        discussionContext,
       });
     } catch (error) {
       setErrorMessage(getGroupChatErrorMessage(error));
@@ -273,6 +344,7 @@ export function useGroupChatPhase({
     expertRepliesSinceUser,
     memo,
     contextSummary,
+    discussionContext,
   }: {
     consultation: string;
     turn: FacilitatorTurn;
@@ -281,6 +353,7 @@ export function useGroupChatPhase({
     expertRepliesSinceUser: number;
     memo: SessionMemo;
     contextSummary: string;
+    discussionContext: GroupChatDiscussionContext;
   }) {
     const expert = experts.find(
       (candidate) =>
@@ -296,6 +369,7 @@ export function useGroupChatPhase({
       recentMessages: getRecentGroupChatMessages(messages),
       expert,
       facilitatorQuestion: turn.question,
+      discussionContext,
     });
     const parsedMessage = GroupChatMessageSchema.safeParse(body);
     if (!parsedMessage.success) {
@@ -316,6 +390,7 @@ export function useGroupChatPhase({
       expertRepliesSinceUser: nextExpertRepliesSinceUser,
       memo,
       contextSummary,
+      discussionContext,
     });
   }
 
@@ -327,6 +402,7 @@ export function useGroupChatPhase({
     expertRepliesSinceUser,
     memo,
     contextSummary,
+    discussionContext,
   }: {
     consultation: string;
     messages: GroupChatMessage[];
@@ -334,6 +410,7 @@ export function useGroupChatPhase({
     expertRepliesSinceUser: number;
     memo: SessionMemo;
     contextSummary: string;
+    discussionContext: GroupChatDiscussionContext;
   }) {
     const body = await postJson("/api/facilitator/group-chat/next", {
       consultation,
@@ -343,6 +420,7 @@ export function useGroupChatPhase({
       recentMessages: getRecentGroupChatMessages(messages),
       confirmedExperts: experts,
       expertRepliesSinceUser,
+      discussionContext,
     });
     const parsedTurn = FacilitatorTurnSchema.safeParse(body);
     if (!parsedTurn.success) {
@@ -374,6 +452,7 @@ export function useGroupChatPhase({
         expertRepliesSinceUser,
         memo: nextMemo,
         contextSummary: nextContextSummary,
+        discussionContext,
       });
     }
   }

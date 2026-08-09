@@ -187,10 +187,24 @@ export const ExpertCommentRequestSchema = z.strictObject({
 
 export type ExpertCommentRequest = z.infer<typeof ExpertCommentRequestSchema>;
 
+/** 初回専門家コメントで提示する、後続の検討対象となる具体案。 */
+export const ExpertProposalSchema = z.strictObject({
+  id: nonEmptyString,
+  name: nonEmptyString,
+  content: nonEmptyString,
+  benefits: nonEmptyStringArray.min(1),
+  sacrifices: nonEmptyStringArray.min(1),
+  conditions: nonEmptyStringArray.min(1),
+});
+
+/** 日本語名: 専門家提案。 */
+export type ExpertProposal = z.infer<typeof ExpertProposalSchema>;
+
 export const ExpertCommentSchema = z.strictObject({
   role_name: nonEmptyString,
   viewpoint: nonEmptyString,
   summary: nonEmptyString,
+  proposal: ExpertProposalSchema,
   key_point: nonEmptyString,
   concern: nonEmptyString,
   question_to_user: nonEmptyString,
@@ -199,6 +213,100 @@ export const ExpertCommentSchema = z.strictObject({
 });
 
 export type ExpertComment = z.infer<typeof ExpertCommentSchema>;
+
+/**
+ * 初回専門家コメント後に、グループチャットの起点としてユーザーが選ぶ案。
+ * 専門家ロールではなく `ExpertProposal.id` を参照する。
+ */
+export const DiscussionSelectionSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("deep_dive"),
+    proposalId: nonEmptyString,
+  }),
+  z
+    .strictObject({
+      kind: z.literal("compare"),
+      proposalIds: z.array(nonEmptyString).length(2),
+    })
+    .superRefine((selection, context) => {
+      if (
+        new Set(selection.proposalIds).size !== selection.proposalIds.length
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "comparison proposalIds must be unique",
+          path: ["proposalIds"],
+        });
+      }
+    }),
+  z.strictObject({ kind: z.literal("defer") }),
+]);
+
+/** 日本語名: 意見交換の案選択。 */
+export type DiscussionSelection = z.infer<typeof DiscussionSelectionSchema>;
+
+/** 初回案と、その案を提示したグループチャット参加者の対応。 */
+export const GroupChatProposalSchema = z.strictObject({
+  participantId: nonEmptyString,
+  roleName: nonEmptyString,
+  proposal: ExpertProposalSchema,
+});
+
+/** 日本語名: 提案者を含むグループチャット用の具体案。 */
+export type GroupChatProposal = z.infer<typeof GroupChatProposalSchema>;
+
+/**
+ * 開始後のグループチャットで維持する、案選択と具体案の完全な文脈。
+ * `defer` でも全案を渡し、早期の案の脱落を防ぐ。
+ */
+export const GroupChatDiscussionContextSchema = z
+  .strictObject({
+    selection: DiscussionSelectionSchema,
+    proposals: z
+      .array(GroupChatProposalSchema)
+      .min(1)
+      .max(maximumExpertRequestCount),
+  })
+  .superRefine((context, issueContext) => {
+    const proposalIds = context.proposals.map(
+      (proposal) => proposal.proposal.id,
+    );
+    if (new Set(proposalIds).size !== proposalIds.length) {
+      issueContext.addIssue({
+        code: "custom",
+        message: "discussionContext proposal IDs must be unique",
+        path: ["proposals"],
+      });
+    }
+    if (
+      new Set(context.proposals.map((proposal) => proposal.participantId))
+        .size !== context.proposals.length
+    ) {
+      issueContext.addIssue({
+        code: "custom",
+        message: "discussionContext participant IDs must be unique",
+        path: ["proposals"],
+      });
+    }
+    const selectedProposalIds =
+      context.selection.kind === "deep_dive"
+        ? [context.selection.proposalId]
+        : context.selection.kind === "compare"
+          ? context.selection.proposalIds
+          : [];
+    if (selectedProposalIds.some((id) => !proposalIds.includes(id))) {
+      issueContext.addIssue({
+        code: "custom",
+        message: "discussionContext selection must reference proposals",
+        path: ["selection"],
+      });
+    }
+  });
+
+/** 日本語名: グループチャットの案検討文脈。 */
+export type GroupChatDiscussionContext = z.infer<
+  typeof GroupChatDiscussionContextSchema
+>;
 
 /**
  * グループチャットの専門家を一意に識別する確定済みロール。
@@ -326,6 +434,7 @@ export const GroupChatStartRequestSchema = z
       .min(1)
       .max(maximumExpertRequestCount),
     initialExpertComments: z.array(ExpertCommentSchema),
+    discussionSelection: DiscussionSelectionSchema,
   })
   .superRefine((request, context) => {
     if (
@@ -361,23 +470,63 @@ export const GroupChatStartRequestSchema = z
         });
       }
     }
+    const proposalIds = request.initialExpertComments.map(
+      (comment) => comment.proposal.id,
+    );
+    if (new Set(proposalIds).size !== proposalIds.length) {
+      context.addIssue({
+        code: "custom",
+        message: "initialExpertComments proposal IDs must be unique",
+        path: ["initialExpertComments"],
+      });
+    }
+    const selectedProposalIds =
+      request.discussionSelection.kind === "deep_dive"
+        ? [request.discussionSelection.proposalId]
+        : request.discussionSelection.kind === "compare"
+          ? request.discussionSelection.proposalIds
+          : [];
+    if (selectedProposalIds.some((id) => !proposalIds.includes(id))) {
+      context.addIssue({
+        code: "custom",
+        message: "discussionSelection must reference initial proposals",
+        path: ["discussionSelection"],
+      });
+    }
   });
 
 /** 日本語名: グループチャット開始リクエスト。 */
 export type GroupChatStartRequest = z.infer<typeof GroupChatStartRequestSchema>;
 
 /** グループチャットで専門家が回答する API の入力契約。仕様対応: `docs/api/schemas.md#グループチャット`。 */
-export const GroupChatExpertReplyRequestSchema = z.strictObject({
-  consultation: nonEmptyString,
-  currentPhase: z.literal("group_chat"),
-  memo: SessionMemoSchema,
-  contextSummary: nonEmptyString,
-  recentMessages: z
-    .array(GroupChatMessageSchema)
-    .max(recentGroupChatMessageLimit),
-  expert: GroupChatExpertSchema,
-  facilitatorQuestion: nonEmptyString,
-});
+export const GroupChatExpertReplyRequestSchema = z
+  .strictObject({
+    consultation: nonEmptyString,
+    currentPhase: z.literal("group_chat"),
+    memo: SessionMemoSchema,
+    contextSummary: nonEmptyString,
+    recentMessages: z
+      .array(GroupChatMessageSchema)
+      .max(recentGroupChatMessageLimit),
+    expert: GroupChatExpertSchema,
+    facilitatorQuestion: nonEmptyString,
+    discussionContext: GroupChatDiscussionContextSchema,
+  })
+  .superRefine((request, context) => {
+    if (
+      !request.discussionContext.proposals.some(
+        (proposal) =>
+          proposal.participantId === request.expert.participantId &&
+          proposal.roleName === request.expert.role_name,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "discussionContext must include the requested expert proposal",
+        path: ["discussionContext", "proposals"],
+      });
+    }
+  });
 
 export type GroupChatExpertReplyRequest = z.infer<
   typeof GroupChatExpertReplyRequestSchema
@@ -398,6 +547,7 @@ export const GroupChatNextRequestSchema = z
       .min(1)
       .max(maximumExpertRequestCount),
     expertRepliesSinceUser: z.number().int().min(0).max(2),
+    discussionContext: GroupChatDiscussionContextSchema,
   })
   .superRefine((request, context) => {
     if (
@@ -408,6 +558,23 @@ export const GroupChatNextRequestSchema = z
         code: "custom",
         message: "confirmedExperts participantId must be unique",
         path: ["confirmedExperts"],
+      });
+    }
+    if (
+      request.discussionContext.proposals.length !==
+        request.confirmedExperts.length ||
+      request.discussionContext.proposals.some(
+        (proposal, index) =>
+          proposal.participantId !==
+            request.confirmedExperts[index]?.participantId ||
+          proposal.roleName !== request.confirmedExperts[index]?.role_name,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "discussionContext proposals must match confirmedExperts in order",
+        path: ["discussionContext", "proposals"],
       });
     }
   });

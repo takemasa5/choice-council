@@ -1,4 +1,5 @@
 import type {
+  DiscussionSelection,
   ExpertComment,
   ExpertRequest,
   SessionMemo,
@@ -11,9 +12,15 @@ export function DeliberationPhaseConnection({
   memo,
   confirmedExperts,
   expertComments,
+  discussionSelection,
+  selectedProposalIds,
   isStarting,
   expertErrorMessage,
   startErrorMessage,
+  toggleProposal,
+  selectDeepDive,
+  selectComparison,
+  selectDefer,
   start,
   retryStart,
 }: {
@@ -21,25 +28,44 @@ export function DeliberationPhaseConnection({
   memo: SessionMemo | null;
   confirmedExperts: ExpertRequest[];
   expertComments: ExpertComment[];
+  discussionSelection: DiscussionSelection | null;
+  selectedProposalIds: string[];
   isStarting: boolean;
   expertErrorMessage: string;
   startErrorMessage: string;
+  toggleProposal: (proposalId: string) => void;
+  selectDeepDive: () => void;
+  selectComparison: () => void;
+  selectDefer: () => void;
   start: (input: {
     consultation: string;
     memo: SessionMemo | null;
     confirmedExperts: ExpertRequest[];
     expertComments: ExpertComment[];
+    discussionSelection: DiscussionSelection | null;
   }) => Promise<void>;
   retryStart: () => Promise<void>;
 }) {
   return (
     <DeliberationPhase
       expertComments={expertComments}
+      discussionSelection={discussionSelection}
+      selectedProposalIds={selectedProposalIds}
       isStarting={isStarting}
       errorMessage={expertErrorMessage}
       startErrorMessage={startErrorMessage}
+      onToggleProposal={toggleProposal}
+      onSelectDeepDive={selectDeepDive}
+      onSelectComparison={selectComparison}
+      onSelectDefer={selectDefer}
       onStart={() =>
-        void start({ consultation, memo, confirmedExperts, expertComments })
+        void start({
+          consultation,
+          memo,
+          confirmedExperts,
+          expertComments,
+          discussionSelection,
+        })
       }
       onRetryStart={() => void retryStart()}
     />
