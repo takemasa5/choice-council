@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import {
   FinalMarkdownRequestSchema,
   FinalMarkdownSchema,
+  getFinalMarkdownHeading,
   type FinalMarkdown,
   type FinalMemoStatus,
 } from "../../src/shared/schemas/session";
@@ -100,12 +101,14 @@ function createFinalMarkdownValidator(
  */
 function getMarkdownSection(markdown: string, heading: string): string {
   const lines = markdown.split(/\r?\n/);
-  const startIndex = lines.findIndex((line) => line.trim() === heading);
+  const startIndex = lines.findIndex(
+    (line) => getFinalMarkdownHeading(line) === heading,
+  );
   if (startIndex === -1) return "";
 
   const sectionLines: string[] = [];
   for (const line of lines.slice(startIndex + 1)) {
-    if (/^#{1,2}\s/.test(line.trim())) break;
+    if (getFinalMarkdownHeading(line) !== null) break;
     sectionLines.push(line);
   }
   return sectionLines.join("\n");

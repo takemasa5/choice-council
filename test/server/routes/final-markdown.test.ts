@@ -91,6 +91,63 @@ test("POST /api/final-markdown/generate は会話文脈を終了メモ生成へ�
   );
 });
 
+test("POST /api/final-markdown/generate は区切り空白または先頭空白付きの状態見出しを再生成せず受理する", async () => {
+  for (const sectionHeading of [
+    "##\t現時点の状態",
+    "##   現時点の状態",
+    "   ## 現時点の状態",
+  ]) {
+    let generateCount = 0;
+    const markdown = validMarkdown.replace("## 現時点の状態", sectionHeading);
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, true);
+    const response = await requestJson(
+      createTestApp({ markdown }, "test-api-key", () => {
+        generateCount += 1;
+      }),
+      "/api/final-markdown/generate",
+      {
+        consultation: "相談内容",
+        memo: { ...memo, status: "tentative_conclusion" },
+        contextSummary: "費用の上限を確認している。",
+        recentMessages: [],
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(generateCount, 1);
+  }
+});
+
+test("POST /api/final-markdown/generate は次セクションの状態ラベルでは再生成する", async () => {
+  let generateCount = 0;
+  const markdownWithoutStatusInCurrentSection = validMarkdown.replace(
+    "## 現時点の状態\n暫定結論\n\n## 重視した価値観\n価値観",
+    "## 現時点の状態\n状態ラベルなし\n\n## 重視した価値観\n暫定結論\n価値観",
+  );
+  const response = await requestJson(
+    createTestApp(
+      [
+        { markdown: markdownWithoutStatusInCurrentSection },
+        { markdown: validMarkdown },
+      ],
+      "test-api-key",
+      () => {
+        generateCount += 1;
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(generateCount, 2);
+});
+
 test("POST /api/final-markdown/generate は上限を超える直近発言を拒否する", async () => {
   const recentMessages = Array.from({ length: 9 }, (_, index) => ({
     id: `message-${index + 1}`,
@@ -130,6 +187,15 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     "## 相談テーマ\n相談内容\n\n## 現時点の状態\n暫定結論",
     "## 現時点の状態\n暫定結論\n\n## 相談テーマ\n相談内容",
   );
+  const markdownWithAdditionalH1 = validMarkdown.replace(
+    "# 意思決定メモ",
+    "# 意思決定メモ\n\n# 補足\n補足内容",
+  );
+  const markdownWithAdditionalH2 = `${validMarkdown}\n\n## 補足\n補足内容`;
+  const markdownWithDuplicateRequiredH2 = validMarkdown.replace(
+    "## 次アクション\n次の行動",
+    "## 次アクション\n次の行動\n\n## 次アクション\n追加の行動",
+  );
 
   for (const markdown of [
     `${validMarkdown}\n\n### 許可しない見出し`,
@@ -141,6 +207,9 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     `${validMarkdown}\n\n${"あ".repeat(3001)}`,
     headingsOnlyInParagraph,
     headingsOutOfOrder,
+    markdownWithAdditionalH1,
+    markdownWithAdditionalH2,
+    markdownWithDuplicateRequiredH2,
   ]) {
     assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, false);
   }

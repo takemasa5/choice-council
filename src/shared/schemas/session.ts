@@ -31,10 +31,6 @@ const finalMarkdownRequiredHeadings = [
   "## 次アクション",
   "## セッションログ要約",
 ] as const;
-const finalMarkdownRequiredHeadingSet = new Set<string>(
-  finalMarkdownRequiredHeadings,
-);
-
 const finalMemoStatusLabels = [
   "暫定結論",
   "判断保留",
@@ -798,10 +794,11 @@ export const FinalMarkdownSchema = z
       });
     }
 
-    if (!usesRequiredFinalMarkdownHeadings(output.markdown)) {
+    if (!usesExactFinalMarkdownHeadings(output.markdown)) {
       context.addIssue({
         code: "custom",
-        message: "markdown must contain required H1/H2 headings in order",
+        message:
+          "markdown must contain exactly the required H1/H2 headings in order",
         path: ["markdown"],
       });
     }
@@ -838,24 +835,21 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
 }
 
 /** 許可済みの先頭0〜3空白付きH1/H2を、必須見出し照合用に正規化する。 */
-function getFinalMarkdownHeading(line: string) {
+export function getFinalMarkdownHeading(line: string) {
   const match = line.match(/^ {0,3}(#{1,2})[ \t]+(.+?)[ \t]*$/);
   return match ? `${match[1]} ${match[2]}` : null;
 }
 
-/** 必須見出しが独立行として仕様順に一度ずつ現れるかを判定する。 */
-function usesRequiredFinalMarkdownHeadings(markdown: string) {
-  const requiredHeadings = markdown
+/** 認識済みのH1/H2が、必須見出しと仕様順・件数とも完全一致するかを判定する。 */
+function usesExactFinalMarkdownHeadings(markdown: string) {
+  const headings = markdown
     .split(/\r?\n/)
     .map(getFinalMarkdownHeading)
-    .filter(
-      (heading): heading is string =>
-        heading !== null && finalMarkdownRequiredHeadingSet.has(heading),
-    );
+    .filter((heading): heading is string => heading !== null);
 
   return (
-    requiredHeadings.length === finalMarkdownRequiredHeadings.length &&
-    requiredHeadings.every(
+    headings.length === finalMarkdownRequiredHeadings.length &&
+    headings.every(
       (heading, index) => heading === finalMarkdownRequiredHeadings[index],
     )
   );
