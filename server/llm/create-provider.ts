@@ -1,4 +1,5 @@
 import { GeminiLlmProvider } from "./gemini-provider";
+import { GroqLlmProvider } from "./groq-provider";
 import { OpenAiLlmProvider } from "./openai-provider";
 import {
   MissingLlmApiKeyError,
@@ -19,6 +20,10 @@ export function createLlmProviderFromEnvironment(
 
   if (provider === "gemini") {
     return createGeminiProvider(environment);
+  }
+
+  if (provider === "groq") {
+    return createGroqProvider(environment);
   }
 
   throw new UnsupportedLlmProviderError(provider);
@@ -46,7 +51,18 @@ function createGeminiProvider(environment: NodeJS.ProcessEnv): LlmProvider {
   );
 }
 
+/** Groq 用のAPIキーとモデル名を検証してプロバイダーを生成する。 */
+function createGroqProvider(environment: NodeJS.ProcessEnv): LlmProvider {
+  const apiKey = environment.GROQ_API_KEY;
+  if (!apiKey) throw new MissingLlmApiKeyError("groq");
+
+  return new GroqLlmProvider(
+    apiKey,
+    environment.GROQ_MODEL ?? "openai/gpt-oss-120b",
+  );
+}
+
 /** 指定値が対応する LLM プロバイダー名か判定する。 */
 export function isLlmProviderName(value: string): value is LlmProviderName {
-  return value === "openai" || value === "gemini";
+  return value === "openai" || value === "gemini" || value === "groq";
 }

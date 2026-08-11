@@ -378,14 +378,17 @@ Markdown 内では、断定できないことを断定しない。未確認事�
 
 ## モデル構成
 
-MVP では、環境変数で選択した単一の LLM プロバイダーを複数ロールとして使う。選択肢は `openai` と `gemini` であり、`LLM_PROVIDER` を省略した場合は `openai` とする。
+MVP では、環境変数で選択した単一の LLM プロバイダーを複数ロールとして使う。選択肢は `openai`、`gemini`、`groq` であり、`LLM_PROVIDER` を省略した場合は `openai` とする。
 
 プロバイダーごとの設定は次のとおりとする。APIキーとモデル名はバックエンドだけが読み取り、ブラウザへ渡さない。
 
-| プロバイダー | APIキー          | モデル指定     | 既定モデル         |
-| ------------ | ---------------- | -------------- | ------------------ |
-| `openai`     | `OPENAI_API_KEY` | `OPENAI_MODEL` | `gpt-5-mini`       |
-| `gemini`     | `GEMINI_API_KEY` | `GEMINI_MODEL` | `gemini-2.5-flash` |
+| プロバイダー | APIキー          | モデル指定     | 既定モデル            |
+| ------------ | ---------------- | -------------- | --------------------- |
+| `openai`     | `OPENAI_API_KEY` | `OPENAI_MODEL` | `gpt-5-mini`          |
+| `gemini`     | `GEMINI_API_KEY` | `GEMINI_MODEL` | `gemini-2.5-flash`    |
+| `groq`       | `GROQ_API_KEY`   | `GROQ_MODEL`   | `openai/gpt-oss-120b` |
+
+`groq` は GPT-OSS 120B を対象とし、Qwen は対象外とする。Groq の構造化出力は JSON Schema の strict structured output を用い、`reasoning_effort` は `low` に固定する。
 
 ロールごとのプロバイダー・モデル選択は MVP の対象外とする。
 

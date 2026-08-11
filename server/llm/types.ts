@@ -1,7 +1,7 @@
 import type { z } from "zod";
 
 /** LLM プロバイダーとして選択できる識別子。 */
-export type LlmProviderName = "openai" | "gemini";
+export type LlmProviderName = "openai" | "gemini" | "groq";
 
 /** 構造化出力を生成する際にプロバイダーへ渡す共通入力。 */
 export interface StructuredOutputRequest<T> {
@@ -11,7 +11,7 @@ export interface StructuredOutputRequest<T> {
   schemaName: string;
 }
 
-/** OpenAI と Gemini のSDK差異を隠蔽する構造化出力インターフェース。 */
+/** OpenAI、Gemini、Groq のSDK差異を隠蔽する構造化出力インターフェース。 */
 export interface LlmProvider {
   generateStructuredOutput<T>(
     request: StructuredOutputRequest<T>,

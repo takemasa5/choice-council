@@ -60,7 +60,9 @@ export function sendMissingLlmApiKey(
     message:
       error.provider === "openai"
         ? "OPENAI_API_KEY が設定されていません。"
-        : "GEMINI_API_KEY が設定されていません。",
+        : error.provider === "gemini"
+          ? "GEMINI_API_KEY が設定されていません。"
+          : "GROQ_API_KEY が設定されていません。",
   });
 }
 
@@ -92,7 +94,8 @@ export function sendLlmRequestFailed(
     logLlmRequestFailure(request, response, 500, getSafeLlmErrorDetails(error));
     response.status(500).json({
       error: "unsupported_llm_provider",
-      message: "LLM_PROVIDER には openai または gemini を指定してください。",
+      message:
+        "LLM_PROVIDER には openai、gemini、または groq を指定してください。",
     });
     return;
   }

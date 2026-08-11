@@ -6,7 +6,7 @@ Choice Council は、複数の専門家ロールとファシリテーターを�
 
 - Frontend: TypeScript + React + Vite
 - Backend: TypeScript + Node.js + Express
-- LLM: OpenAI API / Gemini API（環境変数で選択）
+- LLM: OpenAI API / Gemini API / Groq API（環境変数で選択）
 
 ## 開発方針
 
@@ -26,10 +26,13 @@ GitHub Actions で以下を確認します。
 
 `LLM_PROVIDER` でアプリ全体のLLMを選択し、対応するAPIキーを環境変数として設定してから起動します。`LLM_PROVIDER` を省略した場合は `openai` を使用します。
 
-| `LLM_PROVIDER` | 必須のAPIキー    | 任意のモデル指定 | 既定モデル         |
-| -------------- | ---------------- | ---------------- | ------------------ |
-| `openai`       | `OPENAI_API_KEY` | `OPENAI_MODEL`   | `gpt-5-mini`       |
-| `gemini`       | `GEMINI_API_KEY` | `GEMINI_MODEL`   | `gemini-2.5-flash` |
+| `LLM_PROVIDER` | 必須のAPIキー    | 任意のモデル指定 | 既定モデル            |
+| -------------- | ---------------- | ---------------- | --------------------- |
+| `openai`       | `OPENAI_API_KEY` | `OPENAI_MODEL`   | `gpt-5-mini`          |
+| `gemini`       | `GEMINI_API_KEY` | `GEMINI_MODEL`   | `gemini-2.5-flash`    |
+| `groq`         | `GROQ_API_KEY`   | `GROQ_MODEL`     | `openai/gpt-oss-120b` |
+
+`groq` は GPT-OSS 120B を対象とし、Qwen は対象外です。Groq 利用時は JSON Schema の strict structured output と `reasoning_effort=low` を使用します。
 
 ```bash
 npm install
