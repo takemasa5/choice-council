@@ -30,6 +30,17 @@ test("先頭3空白までのH1とH2を見出しとして描画する", () => {
   assert.doesNotMatch(markup, /<p> {1,3}#{1,2} /);
 });
 
+test("タブまたは複数空白で区切ったH1とH2を見出しとして描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "#\tタブ付きH1\n\n##   複数空白付きH2",
+    }),
+  );
+
+  assert.match(markup, /<h1>タブ付きH1<\/h1>/);
+  assert.match(markup, /<h2>複数空白付きH2<\/h2>/);
+});
+
 test("先頭1〜3空白の順不同リストを描画し、4空白は段落として扱う", () => {
   const markup = renderToStaticMarkup(
     createElement(MarkdownDocument, {
@@ -74,4 +85,17 @@ test("許可外の見出しは段落の通常テキストとして表示する",
 
   assert.doesNotMatch(markup, /<h3>/);
   assert.match(markup, /<p>### 許可外の見出し\n本文<\/p>/);
+});
+
+test("H3以上、4空白インデント、区切り空白なしは見出しとして描画しない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "###\t許可外H3\n\n    # 4空白H1\n\n#空白なしH1",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<h[12]>/);
+  assert.match(markup, /<p>###\t許可外H3<\/p>/);
+  assert.match(markup, /<p> {4}# 4空白H1<\/p>/);
+  assert.match(markup, /<p>#空白なしH1<\/p>/);
 });

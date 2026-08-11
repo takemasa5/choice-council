@@ -131,7 +131,7 @@ function plainText(maximumLength: number) {
     .refine(
       (value) =>
         !/[\r\n]/.test(value) &&
-        !/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```)/.test(value) &&
+        !/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```|>[ \t]?)/.test(value) &&
         !containsInlineMarkdown(value),
       "Markdown syntax is not allowed in session memo text",
     );
