@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createApp } from "../../../server/app";
+import { StructuredOutputValidationError } from "../../../server/llm/types";
 import { FacilitatorRespondResponseSchema } from "../../../src/shared/schemas/session";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
 
@@ -100,6 +102,52 @@ test("POST /api/facilitator/respond は追加質問を禁止する専用schema�
       user_question: initialQuestionResponse.user_question,
     }).success,
     false,
+  );
+});
+
+test("POST /api/facilitator/start はGroq由来のschema検証失敗時に理由付きで再生成する", async () => {
+  const structuredRequests: Array<{
+    repairInstruction?: string;
+  }> = [];
+  const response = await requestJson(
+    createApp({
+      createLlmProvider: () =>
+        ({
+          generateStructuredOutput: async (request: {
+            repairInstruction?: string;
+          }) => {
+            structuredRequests.push(request);
+            if (structuredRequests.length === 1) {
+              throw new StructuredOutputValidationError({
+                schemaName: "facilitator_response",
+                classification: "schema_validation",
+                finishReason: "stop",
+                issues: [
+                  {
+                    path: ["facilitator_message"],
+                    code: "too_small",
+                  },
+                ],
+              });
+            }
+            return initialQuestionResponse;
+          },
+        }) as never,
+    }),
+    "/api/facilitator/start",
+    { consultation: "相談内容" },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, initialQuestionResponse);
+  assert.equal(structuredRequests.length, 2);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /failure_classification=schema_validation/,
+  );
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=facilitator_message,code=too_small/,
   );
 });
 

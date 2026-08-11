@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createLlmProviderFromEnvironment } from "../../../server/llm/create-provider";
 import { GroqLlmProvider } from "../../../server/llm/groq-provider";
+import { StructuredOutputValidationError } from "../../../server/llm/types";
 import { z } from "zod";
 
 /** Groq SDKを呼び出さずにChat Completionsリクエストを確認する最小クライアント。 */
-function createGroqClient(content: string | null) {
+function createGroqClient(
+  content: string | null,
+  finishReason: string | null = "stop",
+) {
   let request: unknown;
 
   return {
@@ -14,7 +18,9 @@ function createGroqClient(content: string | null) {
         completions: {
           create: async (value: unknown) => {
             request = value;
-            return { choices: [{ message: { content } }] };
+            return {
+              choices: [{ message: { content }, finish_reason: finishReason }],
+            };
           },
         },
       },
@@ -61,6 +67,7 @@ test("Groqプロバイダーはstrict JSON Schemaで構造化出力を要求し�
     },
     max_completion_tokens: 1200,
     reasoning_effort: "low",
+    temperature: 0.6,
   });
 });
 
@@ -111,22 +118,32 @@ test("Groqプロバイダーはネストした文字列と配列の未対応制�
   }
 });
 
-test("Groqプロバイダーはcontentがない場合にnullを返す", async () => {
-  const fakeClient = createGroqClient(null);
+test("Groqプロバイダーはcontent欠損を安全な検証エラーとして伝える", async () => {
+  const fakeClient = createGroqClient(null, "length");
   const provider = new GroqLlmProvider(
     "test-api-key",
     "groq-test",
     fakeClient.client as never,
   );
 
-  const output = await provider.generateStructuredOutput({
-    systemPrompt: "prompt",
-    userInput: {},
-    schema: z.strictObject({ answer: z.string() }),
-    schemaName: "answer",
-  });
-
-  assert.equal(output, null);
+  await assert.rejects(
+    () =>
+      provider.generateStructuredOutput({
+        systemPrompt: "prompt",
+        userInput: {},
+        schema: z.strictObject({ answer: z.string() }),
+        schemaName: "answer",
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof StructuredOutputValidationError);
+      assert.equal(error.schemaName, "answer");
+      assert.equal(error.classification, "empty_content");
+      assert.equal(error.finishReason, "length");
+      assert.deepEqual(error.issues, []);
+      assert.doesNotMatch(JSON.stringify(error), /prompt|question/);
+      return true;
+    },
+  );
 });
 
 test("GROQ_MODEL未指定時はGPT-OSS 120Bを指定してGroqへリクエストする", async () => {
@@ -205,9 +222,9 @@ test("GROQ_MAX_OUTPUT_TOKENSの有効な値をGroqリクエストへ反映する
   }
 });
 
-test("Groqプロバイダーは不正なJSONをrejectし、Zod schema違反をnullとして扱う", async () => {
-  const malformedClient = createGroqClient("not-json");
-  const invalidOutputClient = createGroqClient('{"answer":""}');
+test("GroqプロバイダーはJSON解析失敗とZod検証失敗を安全な検証エラーとして伝える", async () => {
+  const malformedClient = createGroqClient("not-json", "stop");
+  const invalidOutputClient = createGroqClient('{"answer":""}', "stop");
   const schema = z.strictObject({ answer: z.string().min(1) });
   const malformedProvider = new GroqLlmProvider(
     "test-api-key",
@@ -220,21 +237,37 @@ test("Groqプロバイダーは不正なJSONをrejectし、Zod schema違反をnu
     invalidOutputClient.client as never,
   );
 
-  await assert.rejects(() =>
-    malformedProvider.generateStructuredOutput({
-      systemPrompt: "prompt",
-      userInput: {},
-      schema,
-      schemaName: "answer",
-    }),
+  await assert.rejects(
+    () =>
+      malformedProvider.generateStructuredOutput({
+        systemPrompt: "prompt",
+        userInput: { secret: "must-not-leak" },
+        schema,
+        schemaName: "answer",
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof StructuredOutputValidationError);
+      assert.equal(error.classification, "invalid_json");
+      assert.equal(error.schemaName, "answer");
+      assert.deepEqual(error.issues, []);
+      assert.doesNotMatch(JSON.stringify(error), /not-json|must-not-leak/);
+      return true;
+    },
   );
-  assert.equal(
-    await invalidOutputProvider.generateStructuredOutput({
-      systemPrompt: "prompt",
-      userInput: {},
-      schema,
-      schemaName: "answer",
-    }),
-    null,
+  await assert.rejects(
+    () =>
+      invalidOutputProvider.generateStructuredOutput({
+        systemPrompt: "prompt",
+        userInput: {},
+        schema,
+        schemaName: "answer",
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof StructuredOutputValidationError);
+      assert.equal(error.classification, "schema_validation");
+      assert.deepEqual(error.issues, [{ path: ["answer"], code: "too_small" }]);
+      assert.doesNotMatch(JSON.stringify(error), /"answer":""/);
+      return true;
+    },
   );
 });

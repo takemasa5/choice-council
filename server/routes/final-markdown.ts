@@ -6,6 +6,7 @@ import {
   type FinalMemoStatus,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
@@ -48,18 +49,26 @@ export function createFinalMarkdownHandler(
       const expectedStatusLabel =
         finalMemoStatusLabels[parsedRequest.data.memo.status];
       const output = await parseStructuredOutputOnceWithRetry<FinalMarkdown>(
-        () =>
+        (attempt) =>
           provider.generateStructuredOutput({
             systemPrompt: finalMarkdownDeveloperPrompt,
             userInput: parsedRequest.data,
             schema: FinalMarkdownSchema,
             schemaName: "final_markdown",
+            repairInstruction: attempt?.repairInstruction,
           }),
         (modelResponse) =>
           getMarkdownSection(
             modelResponse.markdown,
             "## 現時点の状態",
           ).includes(expectedStatusLabel),
+        (failure) =>
+          logStructuredOutputFailure(
+            request,
+            response,
+            "final_markdown",
+            failure,
+          ),
       );
 
       if (!output) {

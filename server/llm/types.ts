@@ -9,6 +9,50 @@ export interface StructuredOutputRequest<T> {
   userInput: unknown;
   schema: z.ZodType<T>;
   schemaName: string;
+  repairInstruction?: string;
+}
+
+/** 構造化出力の検証失敗を分類する安全な識別子。 */
+export type StructuredOutputFailureClassification =
+  "empty_content" | "invalid_json" | "schema_validation" | "post_validation";
+
+/** Zod検証失敗から安全に記録できる情報。 */
+export interface StructuredOutputIssue {
+  path: Array<string | number>;
+  code: string;
+}
+
+/** 構造化出力の検証失敗を、安全な診断情報だけで伝えるエラー。 */
+export class StructuredOutputValidationError extends Error {
+  constructor({
+    schemaName,
+    classification,
+    finishReason,
+    issues = [],
+  }: {
+    schemaName: string;
+    classification: StructuredOutputFailureClassification;
+    finishReason?: string | null;
+    issues?: StructuredOutputIssue[];
+  }) {
+    super("Structured output validation failed.");
+    this.name = "StructuredOutputValidationError";
+    this.schemaName = schemaName;
+    this.classification = classification;
+    this.finishReason = finishReason;
+    this.issues = issues.map((issue) => ({
+      path: issue.path.filter(
+        (segment): segment is string | number =>
+          typeof segment === "string" || typeof segment === "number",
+      ),
+      code: issue.code,
+    }));
+  }
+
+  readonly schemaName: string;
+  readonly classification: StructuredOutputFailureClassification;
+  readonly finishReason: string | null | undefined;
+  readonly issues: StructuredOutputIssue[];
 }
 
 /** OpenAI、Gemini、Groq のSDK差異を隠蔽する構造化出力インターフェース。 */

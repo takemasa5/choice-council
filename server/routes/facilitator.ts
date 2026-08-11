@@ -8,6 +8,7 @@ import {
   type FacilitatorResponse,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
@@ -74,14 +75,17 @@ function createM2FacilitatorHandler<Response extends FacilitatorResponse>(
     try {
       const provider = dependencies.createLlmProvider();
       const output = await parseStructuredOutputOnceWithRetry<Response>(
-        () =>
+        (attempt) =>
           provider.generateStructuredOutput({
             systemPrompt: facilitatorDeveloperPrompt,
             userInput: parsedRequest.data,
             schema: responseSchema,
             schemaName,
+            repairInstruction: attempt?.repairInstruction,
           }),
         isAcceptedResponse,
+        (failure) =>
+          logStructuredOutputFailure(request, response, schemaName, failure),
       );
 
       if (!output) {

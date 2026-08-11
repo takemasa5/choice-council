@@ -3,6 +3,9 @@ import { ZodError } from "zod";
 import {
   InvalidLlmConfigurationError,
   MissingLlmApiKeyError,
+  StructuredOutputValidationError,
+  type StructuredOutputFailureClassification,
+  type StructuredOutputIssue,
   UnsupportedLlmProviderError,
 } from "../llm/types";
 import {
@@ -26,24 +29,141 @@ export const invalidModelResponseMessage =
  * 不正な構造化出力の扱い。
  */
 export async function parseStructuredOutputOnceWithRetry<T>(
-  request: () => Promise<T | null>,
+  request: (attempt?: StructuredOutputAttempt) => Promise<T | null>,
   isValid: (output: T) => boolean = () => true,
+  onFailure?: StructuredOutputFailureCallback,
 ) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await request().catch((error: unknown) => {
-      if (error instanceof SyntaxError || error instanceof ZodError) {
-        return null;
-      }
+  let repairInstruction: string | undefined;
 
-      throw error;
-    });
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    let result: T | null = null;
+    let failure: Omit<
+      StructuredOutputFailure,
+      "attempt" | "terminationReason"
+    > | null = null;
 
-    if (result && isValid(result)) {
-      return result;
+    try {
+      result = await request({ attempt, repairInstruction });
+    } catch (error) {
+      failure = toStructuredOutputFailure(error);
+      if (!failure) throw error;
     }
+
+    if (!failure) {
+      failure =
+        result === null
+          ? { classification: "empty_content", issues: [] }
+          : isValid(result)
+            ? null
+            : { classification: "post_validation", issues: [] };
+    }
+
+    if (!failure) return result;
+
+    const safeFailure: StructuredOutputFailure = {
+      ...failure,
+      attempt,
+      terminationReason: attempt === 2 ? "max_attempts" : "retry",
+    };
+    onFailure?.(safeFailure);
+    repairInstruction = createRepairInstruction(safeFailure);
   }
 
   return null;
+}
+
+/** 構造化出力の失敗を再生成・記録に使える安全な情報へ正規化する。 */
+export interface StructuredOutputFailure {
+  schemaName?: string;
+  classification: StructuredOutputFailureClassification;
+  finishReason?: string | null;
+  issues: StructuredOutputIssue[];
+  attempt: number;
+  terminationReason: "retry" | "max_attempts";
+}
+
+/** 生成の再試行時に渡す安全な失敗通知。 */
+export interface StructuredOutputAttempt {
+  attempt: number;
+  repairInstruction?: string;
+}
+
+/** 失敗本文・入力を受け取らない安全な失敗通知コールバック。 */
+export type StructuredOutputFailureCallback = (
+  failure: StructuredOutputFailure,
+) => void;
+
+/** 構造化出力の失敗を、本文を含まない運用ログとして記録する。 */
+export function logStructuredOutputFailure(
+  request: Request,
+  response: Response,
+  schemaName: string,
+  failure: StructuredOutputFailure,
+) {
+  const context = getRequestObservabilityContext(response);
+  if (!context) return;
+
+  context.logger.error({
+    event: "llm_structured_output_failed",
+    route: getSafeApiRoute(request.path),
+    schemaName,
+    attempt: failure.attempt,
+    classification: failure.classification,
+    terminationReason: failure.terminationReason,
+    finishReason: failure.finishReason,
+    issues: failure.issues.map((issue) => ({
+      path: issue.path,
+      code: issue.code,
+    })),
+  });
+}
+
+/** 既知の検証エラーだけを、安全な失敗分類へ変換する。 */
+function toStructuredOutputFailure(
+  error: unknown,
+): Omit<StructuredOutputFailure, "attempt" | "terminationReason"> | null {
+  if (error instanceof StructuredOutputValidationError) {
+    return {
+      schemaName: error.schemaName,
+      classification: error.classification,
+      finishReason: error.finishReason,
+      issues: error.issues,
+    };
+  }
+
+  if (error instanceof SyntaxError) {
+    return { classification: "invalid_json", issues: [] };
+  }
+
+  if (error instanceof ZodError) {
+    return {
+      classification: "schema_validation",
+      issues: error.issues.map((issue) => ({
+        path: issue.path.filter(
+          (segment): segment is string | number =>
+            typeof segment === "string" || typeof segment === "number",
+        ),
+        code: issue.code,
+      })),
+    };
+  }
+
+  return null;
+}
+
+/** 失敗分類とfield path/codeだけを渡してJSON再生成を求める。 */
+function createRepairInstruction(failure: StructuredOutputFailure): string {
+  const issues = failure.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "$";
+      return `path=${path},code=${issue.code}`;
+    })
+    .join("; ");
+  const details = issues
+    ? ` failure_classification=${failure.classification}; ${issues}.`
+    : ` failure_classification=${failure.classification}.`;
+
+  return `指定schemaを満たすJSONだけを再生成してください。説明文やMarkdownは出力しないでください。${details}`;
 }
 
 /** 日本語名: 入力不正レスポンスを返す関数。 */

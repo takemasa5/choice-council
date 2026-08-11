@@ -5,6 +5,7 @@ import {
   type SessionMemo,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
@@ -30,13 +31,23 @@ export function createSessionMemoHandler(
 
     try {
       const provider = dependencies.createLlmProvider();
-      const output = await parseStructuredOutputOnceWithRetry<SessionMemo>(() =>
-        provider.generateStructuredOutput({
-          systemPrompt: sessionMemoDeveloperPrompt,
-          userInput: parsedRequest.data,
-          schema: SessionMemoSchema,
-          schemaName: "session_memo",
-        }),
+      const output = await parseStructuredOutputOnceWithRetry<SessionMemo>(
+        (attempt) =>
+          provider.generateStructuredOutput({
+            systemPrompt: sessionMemoDeveloperPrompt,
+            userInput: parsedRequest.data,
+            schema: SessionMemoSchema,
+            schemaName: "session_memo",
+            repairInstruction: attempt?.repairInstruction,
+          }),
+        () => true,
+        (failure) =>
+          logStructuredOutputFailure(
+            request,
+            response,
+            "session_memo",
+            failure,
+          ),
       );
 
       if (!output) {

@@ -18,9 +18,10 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 - 必須文字列は trim 後に空文字であってはならない。
 - 配列要素の文字列は trim 後に空文字であってはならない。
 - 必須配列は空配列を許容する。ただし、要素を含む場合は有効な値だけを含める。
-- 失敗時は1回だけ再生成する。
-- 再生成しても失敗した場合は、ユーザーに再生成可能な失敗表示を出す。
-- 選択したプロバイダーのAPIキー未設定時は `missing_llm_api_key`、未対応の `LLM_PROVIDER` 指定時は `unsupported_llm_provider`、外部LLM API呼び出し失敗時は `llm_request_failed` を返す。
+- 生成要求は最大2回とする。初回の構造化出力が失敗した場合だけ、失敗分類と必要最小限の field path を含む安全な失敗要約を使い、JSONを再生成するよう2回目の要求へ指示を加える。
+- 2回目も失敗した場合は、`invalid_model_response` とユーザー向けの汎用文言を返す。応答本文にモデル出力、入力、内部例外を含めない。
+- `invalid_model_response` のログには応答本文や入力を含めず、route名、schema名、再試行回数、失敗分類、終了理由、Zod issue の path と code だけを記録する。失敗分類は `empty_content`、`invalid_json`、`schema_validation`、`post_validation` のいずれかとする。
+- 選択したプロバイダーのAPIキー未設定時は `missing_llm_api_key`、不正なLLM設定時は `invalid_llm_configuration`、未対応の `LLM_PROVIDER` 指定時は `unsupported_llm_provider`、外部LLM API呼び出し失敗時は `llm_request_failed` を返す。
 
 表示文言:
 
@@ -399,9 +400,11 @@ MVP では、環境変数で選択した単一の LLM プロバイダーを複�
 | `gemini`     | `GEMINI_API_KEY` | `GEMINI_MODEL` | `gemini-2.5-flash`    |
 | `groq`       | `GROQ_API_KEY`   | `GROQ_MODEL`   | `openai/gpt-oss-120b` |
 
-`groq` は GPT-OSS 120B を対象とし、Qwen は対象外とする。Groq の構造化出力は JSON Schema の strict structured output を用い、`reasoning_effort` は `low` に固定する。
+`groq` は GPT-OSS 120B を対象とし、Qwen は対象外とする。Groq の構造化出力は、Groq strict structured output で受理できる制約だけを含む送信用 JSON Schema を用い、`reasoning_effort` は `low`、`temperature` は `0.6` に固定する。
 
-`GROQ_MAX_OUTPUT_TOKENS` は `groq` 利用時の最大出力トークン数であり、1 以上 65536 以下の整数だけを許可する。未指定時は `1200` とし、Groq API の最大出力トークン数として渡す。
+Groq の出力は、送信用 JSON Schema とアプリ側の Zod 検証による二層構成とする。送信用 schema で構造を強制し、アプリ側の Zod で文字数、配列数、フィールド間の相関条件を含む完全な契約を検証する。
+
+`GROQ_MAX_OUTPUT_TOKENS` は `groq` 利用時の生成トークン上限であり、文字数上限ではない。1 以上 65536 以下の整数だけを許可し、未指定時は `1200` とする。Groq API の最大出力トークン数として渡す。
 
 ロールごとのプロバイダー・モデル選択は MVP の対象外とする。
 

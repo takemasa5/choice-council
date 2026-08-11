@@ -8,6 +8,7 @@ import {
   type FacilitatorTurn,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
@@ -63,12 +64,13 @@ function createGroupChatHandler<Turn extends FacilitatorTurn>(
     }
     try {
       const output = await parseStructuredOutputOnceWithRetry<Turn>(
-        () =>
+        (attempt) =>
           dependencies.createLlmProvider().generateStructuredOutput({
             systemPrompt,
             userInput: parsedRequest.data,
             schema: responseSchema,
             schemaName,
+            repairInstruction: attempt?.repairInstruction,
           }),
         (turn) =>
           isAcceptedGroupChatTurn(
@@ -82,6 +84,8 @@ function createGroupChatHandler<Turn extends FacilitatorTurn>(
               }>;
             },
           ),
+        (failure) =>
+          logStructuredOutputFailure(request, response, schemaName, failure),
       );
       if (!output) {
         sendInvalidModelResponse(request, response);

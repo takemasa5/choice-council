@@ -1,4 +1,8 @@
 import type { RequestHandler } from "express";
+import type {
+  StructuredOutputFailureClassification,
+  StructuredOutputIssue,
+} from "../llm/types";
 
 /** API 呼び出しの開始・完了を表す安全なログイベント。 */
 export interface ApiRequestLogEvent {
@@ -21,10 +25,24 @@ export interface LlmRequestFailureLogEvent {
   upstreamStatus?: number;
 }
 
+/** 構造化出力の検証失敗を表す安全なログイベント。 */
+export interface StructuredOutputFailureLogEvent {
+  event: "llm_structured_output_failed";
+  route: string;
+  schemaName: string;
+  attempt: number;
+  classification: StructuredOutputFailureClassification;
+  terminationReason: "retry" | "max_attempts";
+  finishReason?: string | null;
+  issues: StructuredOutputIssue[];
+}
+
 /** API の構造化ログを書き込むインターフェース。 */
 export interface ApiLogger {
   info(event: ApiRequestLogEvent): void;
-  error(event: LlmRequestFailureLogEvent): void;
+  error(
+    event: LlmRequestFailureLogEvent | StructuredOutputFailureLogEvent,
+  ): void;
 }
 
 /** リクエスト単位で共有する観測用の情報。 */

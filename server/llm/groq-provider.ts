@@ -1,6 +1,10 @@
 import OpenAI from "openai";
 import { z } from "zod";
-import type { LlmProvider, StructuredOutputRequest } from "./types";
+import {
+  StructuredOutputValidationError,
+  type LlmProvider,
+  type StructuredOutputRequest,
+} from "./types";
 
 const groqBaseUrl = "https://api.groq.com/openai/v1";
 
@@ -19,11 +23,17 @@ export class GroqLlmProvider implements LlmProvider {
     userInput,
     schema,
     schemaName,
+    repairInstruction,
   }: StructuredOutputRequest<T>): Promise<T | null> {
     const result = await this.client.chat.completions.create({
       model: this.model,
       messages: [
-        { role: "developer", content: systemPrompt },
+        {
+          role: "developer",
+          content: repairInstruction
+            ? `${systemPrompt}\n\n${repairInstruction}`
+            : systemPrompt,
+        },
         { role: "user", content: JSON.stringify(userInput, null, 2) },
       ],
       response_format: {
@@ -31,34 +41,65 @@ export class GroqLlmProvider implements LlmProvider {
         json_schema: {
           name: schemaName,
           strict: true,
-          schema: toGroqJsonSchema(schema),
+          schema: toGroqStrictTransportSchema(schema),
         },
       },
       max_completion_tokens: this.maxCompletionTokens,
       reasoning_effort: "low",
+      temperature: 0.6,
     });
 
     const content = result.choices[0]?.message.content;
-    if (!content) return null;
+    const finishReason = result.choices[0]?.finish_reason;
+    if (!content) {
+      throw new StructuredOutputValidationError({
+        schemaName,
+        classification: "empty_content",
+        finishReason,
+      });
+    }
 
-    const parsedJson: unknown = JSON.parse(content);
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(content);
+    } catch {
+      throw new StructuredOutputValidationError({
+        schemaName,
+        classification: "invalid_json",
+        finishReason,
+      });
+    }
     const parsedOutput = schema.safeParse(parsedJson);
-    return parsedOutput.success ? parsedOutput.data : null;
+    if (parsedOutput.success) return parsedOutput.data;
+
+    throw new StructuredOutputValidationError({
+      schemaName,
+      classification: "schema_validation",
+      finishReason,
+      issues: parsedOutput.error.issues.map((issue) => ({
+        path: issue.path.filter(
+          (segment): segment is string | number =>
+            typeof segment === "string" || typeof segment === "number",
+        ),
+        code: issue.code,
+      })),
+    });
   }
 }
 
-/** ZodのJSON SchemaからGroq strict structured outputで未対応の制約を除外する。 */
-function toGroqJsonSchema(schema: z.ZodType): Record<string, unknown> {
-  return removeUnsupportedGroqSchemaKeywords(z.toJSONSchema(schema)) as Record<
-    string,
-    unknown
-  >;
+/** Zod schema をGroq strict structured output向けの送信用schemaへ変換する。 */
+function toGroqStrictTransportSchema(
+  schema: z.ZodType,
+): Record<string, unknown> {
+  return removeUnsupportedGroqTransportKeywords(
+    z.toJSONSchema(schema),
+  ) as Record<string, unknown>;
 }
 
 /** Groqが受理しない制約だけを再帰的に除外し、JSON Schemaの構造は維持する。 */
-function removeUnsupportedGroqSchemaKeywords(value: unknown): unknown {
+function removeUnsupportedGroqTransportKeywords(value: unknown): unknown {
   if (Array.isArray(value)) {
-    return value.map(removeUnsupportedGroqSchemaKeywords);
+    return value.map(removeUnsupportedGroqTransportKeywords);
   }
 
   if (!isRecord(value)) return value;
@@ -73,7 +114,10 @@ function removeUnsupportedGroqSchemaKeywords(value: unknown): unknown {
           key !== "minItems" &&
           key !== "maxItems",
       )
-      .map(([key, child]) => [key, removeUnsupportedGroqSchemaKeywords(child)]),
+      .map(([key, child]) => [
+        key,
+        removeUnsupportedGroqTransportKeywords(child),
+      ]),
   );
 }
 

@@ -32,9 +32,9 @@ GitHub Actions で以下を確認します。
 | `gemini`       | `GEMINI_API_KEY` | `GEMINI_MODEL`   | `gemini-2.5-flash`    |
 | `groq`         | `GROQ_API_KEY`   | `GROQ_MODEL`     | `openai/gpt-oss-120b` |
 
-`groq` は GPT-OSS 120B を対象とし、Qwen は対象外です。Groq 利用時は JSON Schema の strict structured output と `reasoning_effort=low` を使用します。
+`groq` は GPT-OSS 120B を対象とし、Qwen は対象外です。Groq 利用時は strict structured output 用の送信用 JSON Schema、`reasoning_effort=low`、`temperature=0.6` を使用し、アプリ側の Zod で完全な出力契約を検証します。
 
-Groq の最大出力トークン数は `GROQ_MAX_OUTPUT_TOKENS` で指定できます。`groq` を選択した場合だけ使用し、1 以上 65536 以下の整数を指定します。未指定時は `1200` で、Groq API に渡す最大出力トークン数です。
+Groq の生成トークン上限は `GROQ_MAX_OUTPUT_TOKENS` で指定できます。`groq` を選択した場合だけ使用し、1 以上 65536 以下の整数を指定します。未指定時は `1200` で、Groq API に渡す最大出力トークン数です。文字数上限ではありません。
 
 ```bash
 npm install

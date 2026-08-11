@@ -5,6 +5,7 @@ import {
   type GroupChatMessage,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
@@ -29,16 +30,24 @@ export function createGroupChatExpertReplyHandler(
     );
     try {
       const output = await parseStructuredOutputOnceWithRetry<GroupChatMessage>(
-        () =>
+        (attempt) =>
           dependencies.createLlmProvider().generateStructuredOutput({
             systemPrompt: groupChatExpertPrompt,
             userInput: parsedRequest.data,
             schema: GroupChatMessageSchema,
             schemaName: "group_chat_message",
+            repairInstruction: attempt?.repairInstruction,
           }),
         (message) =>
           GroupChatMessageSchema.safeParse(message).success &&
           !existingMessageIds.has(message.id),
+        (failure) =>
+          logStructuredOutputFailure(
+            request,
+            response,
+            "group_chat_message",
+            failure,
+          ),
       );
       if (!output) {
         sendInvalidModelResponse(request, response);

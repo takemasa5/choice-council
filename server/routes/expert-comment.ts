@@ -5,6 +5,7 @@ import {
   type ExpertComment,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
@@ -31,13 +32,22 @@ export function createExpertCommentHandler(
     try {
       const provider = dependencies.createLlmProvider();
       const output = await parseStructuredOutputOnceWithRetry<ExpertComment>(
-        () =>
+        (attempt) =>
           provider.generateStructuredOutput({
             systemPrompt: expertDeveloperPrompt,
             userInput: parsedRequest.data,
             schema: ExpertCommentSchema,
             schemaName: "expert_comment",
+            repairInstruction: attempt?.repairInstruction,
           }),
+        () => true,
+        (failure) =>
+          logStructuredOutputFailure(
+            request,
+            response,
+            "expert_comment",
+            failure,
+          ),
       );
 
       if (!output) {
