@@ -93,3 +93,38 @@ test("nullと後続検証失敗を安全な分類として通知する", async (
     ],
   );
 });
+
+test("後続検証のpathとcodeを再生成指示へ渡す", async () => {
+  const attempts: Array<{ attempt?: number; repairInstruction?: string }> = [];
+  const failures: StructuredOutputFailure[] = [];
+
+  const output = await parseStructuredOutputOnceWithRetry(
+    async (attempt) => {
+      attempts.push(attempt ?? {});
+      return attempt?.attempt === 1
+        ? { answer: "invalid" }
+        : { answer: "valid" };
+    },
+    (value) =>
+      value.answer === "valid"
+        ? true
+        : { path: ["answer"], code: "invalid_answer" },
+    (failure) => failures.push(failure),
+  );
+
+  assert.deepEqual(output, { answer: "valid" });
+  assert.deepEqual(failures, [
+    {
+      schemaName: "post_validation",
+      classification: "post_validation",
+      finishReason: undefined,
+      issues: [{ path: ["answer"], code: "invalid_answer" }],
+      attempt: 1,
+      terminationReason: "retry",
+    },
+  ]);
+  assert.match(
+    attempts[1]?.repairInstruction ?? "",
+    /path=answer,code=invalid_answer/,
+  );
+});

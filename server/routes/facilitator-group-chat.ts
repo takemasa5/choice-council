@@ -110,14 +110,22 @@ function isAcceptedGroupChatTurn(
     }>;
   },
 ) {
-  if (!FacilitatorTurnSchema.safeParse(turn).success) return false;
+  if (!FacilitatorTurnSchema.safeParse(turn).success) {
+    return {
+      path: ["requestedSpeaker", "speakerType"],
+      code: "invalid_requested_speaker",
+    };
+  }
   if (
     turn.requestedSpeaker.speakerType === "expert" &&
     !request.confirmedExperts?.some(
       (expert) => expert.participantId === turn.requestedSpeaker.participantId,
     )
   ) {
-    return false;
+    return {
+      path: ["requestedSpeaker", "participantId"],
+      code: "unconfirmed_expert_speaker",
+    };
   }
   const lastParticipantMessage = [...(request.recentMessages ?? [])]
     .reverse()
@@ -129,12 +137,21 @@ function isAcceptedGroupChatTurn(
     lastParticipantMessage?.speakerType === "expert" &&
     lastParticipantMessage.participantId === turn.requestedSpeaker.participantId
   ) {
-    return false;
+    return {
+      path: ["requestedSpeaker", "participantId"],
+      code: "repeated_expert_speaker",
+    };
   }
-  return !(
+  if (
     request.expertRepliesSinceUser === 2 &&
     turn.requestedSpeaker.speakerType === "expert"
-  );
+  ) {
+    return {
+      path: ["requestedSpeaker", "speakerType"],
+      code: "expert_reply_limit_reached",
+    };
+  }
+  return true;
 }
 
 /** グループチャット開始用プロンプト。 */

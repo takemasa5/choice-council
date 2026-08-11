@@ -152,7 +152,12 @@ test("後続検証失敗は入力とモデル応答を含めずに構造化ロ�
       classification: "post_validation",
       terminationReason: "retry",
       finishReason: undefined,
-      issues: [],
+      issues: [
+        {
+          path: ["user_question"],
+          code: "missing_required_question",
+        },
+      ],
     },
     {
       event: "llm_structured_output_failed",
@@ -162,7 +167,12 @@ test("後続検証失敗は入力とモデル応答を含めずに構造化ロ�
       classification: "post_validation",
       terminationReason: "max_attempts",
       finishReason: undefined,
-      issues: [],
+      issues: [
+        {
+          path: ["user_question"],
+          code: "missing_required_question",
+        },
+      ],
     },
   ]);
   assert.doesNotMatch(JSON.stringify(events), /入力の非公開情報/);

@@ -13,6 +13,7 @@ import {
   sendInvalidModelResponse,
   sendInvalidRequest,
   sendLlmRequestFailed,
+  type StructuredOutputPostValidator,
 } from "./response-utils";
 import type { AppDependencies } from "./types";
 
@@ -62,7 +63,7 @@ function createM2FacilitatorHandler<Response extends FacilitatorResponse>(
   requestSchema: z.ZodType,
   responseSchema: z.ZodType<Response>,
   schemaName: string,
-  isAcceptedResponse: (response: Response) => boolean,
+  isAcceptedResponse: StructuredOutputPostValidator<Response>,
 ): RequestHandler {
   return async (request, response) => {
     const parsedRequest = requestSchema.safeParse(request.body);
@@ -107,17 +108,31 @@ function createM2FacilitatorHandler<Response extends FacilitatorResponse>(
  */
 function isAcceptedM2StartResponse(modelResponse: FacilitatorResponse) {
   const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);
-  if (!parsedResponse.success) return false;
+  if (!parsedResponse.success) {
+    return { path: [], code: "invalid_facilitator_response" };
+  }
 
   const response = parsedResponse.data;
-  if (response.current_phase !== "premise") return false;
+  if (response.current_phase !== "premise") {
+    return { path: ["current_phase"], code: "invalid_start_phase" };
+  }
+  if (response.user_question === null) {
+    return { path: ["user_question"], code: "missing_required_question" };
+  }
+  if (!response.user_question.required) {
+    return {
+      path: ["user_question", "required"],
+      code: "question_not_required",
+    };
+  }
+  if (response.next_action !== "wait_user") {
+    return { path: ["next_action"], code: "invalid_start_next_action" };
+  }
+  if (response.expert_requests.length !== 0) {
+    return { path: ["expert_requests"], code: "unexpected_expert_requests" };
+  }
 
-  return (
-    response.user_question !== null &&
-    response.user_question.required &&
-    response.next_action === "wait_user" &&
-    response.expert_requests.length === 0
-  );
+  return true;
 }
 
 /**
@@ -127,15 +142,25 @@ function isAcceptedM2StartResponse(modelResponse: FacilitatorResponse) {
  */
 function isAcceptedM2RespondResponse(modelResponse: FacilitatorResponse) {
   const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);
-  if (!parsedResponse.success) return false;
+  if (!parsedResponse.success) {
+    return { path: [], code: "invalid_facilitator_response" };
+  }
 
   const response = parsedResponse.data;
-  return (
-    response.current_phase === "premise" &&
-    response.user_question === null &&
-    response.next_action === "request_experts" &&
-    response.expert_requests.length > 0
-  );
+  if (response.current_phase !== "premise") {
+    return { path: ["current_phase"], code: "invalid_respond_phase" };
+  }
+  if (response.user_question !== null) {
+    return { path: ["user_question"], code: "unexpected_user_question" };
+  }
+  if (response.next_action !== "request_experts") {
+    return { path: ["next_action"], code: "invalid_respond_next_action" };
+  }
+  if (response.expert_requests.length === 0) {
+    return { path: ["expert_requests"], code: "missing_expert_requests" };
+  }
+
+  return true;
 }
 
 /**

@@ -30,7 +30,7 @@ export const invalidModelResponseMessage =
  */
 export async function parseStructuredOutputOnceWithRetry<T>(
   request: (attempt?: StructuredOutputAttempt) => Promise<T | null>,
-  isValid: (output: T) => boolean = () => true,
+  isValid: StructuredOutputPostValidator<T> = () => true,
   onFailure?: StructuredOutputFailureCallback,
 ) {
   let repairInstruction: string | undefined;
@@ -50,12 +50,20 @@ export async function parseStructuredOutputOnceWithRetry<T>(
     }
 
     if (!failure) {
-      failure =
-        result === null
-          ? { classification: "empty_content", issues: [] }
-          : isValid(result)
-            ? null
-            : { classification: "post_validation", issues: [] };
+      if (result === null) {
+        failure = { classification: "empty_content", issues: [] };
+      } else {
+        const validationResult = isValid(result);
+        if (validationResult !== true) {
+          failure = toStructuredOutputFailure(
+            new StructuredOutputValidationError({
+              schemaName: "post_validation",
+              classification: "post_validation",
+              issues: validationResult === false ? [] : [validationResult],
+            }),
+          );
+        }
+      }
     }
 
     if (!failure) return result;
@@ -92,6 +100,11 @@ export interface StructuredOutputAttempt {
 export type StructuredOutputFailureCallback = (
   failure: StructuredOutputFailure,
 ) => void;
+
+/** 後続検証の失敗理由を、本文を含めずに再生成へ渡す。 */
+export type StructuredOutputPostValidator<T> = (
+  output: T,
+) => boolean | StructuredOutputIssue;
 
 /** 構造化出力の失敗を、本文を含まない運用ログとして記録する。 */
 export function logStructuredOutputFailure(

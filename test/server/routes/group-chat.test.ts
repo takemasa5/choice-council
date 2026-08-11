@@ -272,6 +272,39 @@ test("POST /api/facilitator/group-chat/next は無効な発言者種別を再試
   assert.equal(response.status, 502);
 });
 
+test("POST /api/facilitator/group-chat/next は不正な発話者の理由を付けて再生成する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const invalidTurn = {
+    ...turn,
+    requestedSpeaker: { ...turn.requestedSpeaker, speakerType: "facilitator" },
+  };
+  const response = await requestJson(
+    createTestApp([invalidTurn, turn], "test-api-key", (request) => {
+      structuredRequests.push(request as { repairInstruction?: string });
+    }),
+    "/api/facilitator/group-chat/next",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages: [],
+      confirmedExperts: [expert],
+      expertRepliesSinceUser: 1,
+      discussionContext: {
+        selection: { kind: "defer" },
+        proposals: [discussionProposal],
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=requestedSpeaker.speakerType,code=invalid_requested_speaker/,
+  );
+});
+
 test("POST /api/facilitator/group-chat/next は専門家の連続3回目を拒否する", async () => {
   const response = await requestJson(
     createTestApp([turn, turn]),
@@ -542,8 +575,11 @@ test("POST /api/expert/group-chat は重複IDを再生成して新しい発言�
   };
   const retriedReply = { ...duplicateReply, id: "reply-2" };
 
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const response = await requestJson(
-    createTestApp([duplicateReply, retriedReply]),
+    createTestApp([duplicateReply, retriedReply], "test-api-key", (request) => {
+      structuredRequests.push(request as { repairInstruction?: string });
+    }),
     "/api/expert/group-chat",
     {
       consultation: "相談内容",
@@ -562,4 +598,8 @@ test("POST /api/expert/group-chat は重複IDを再生成して新しい発言�
 
   assert.equal(response.status, 200);
   assert.equal((response.body as { id: string }).id, retriedReply.id);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=id,code=duplicate_message_id/,
+  );
 });

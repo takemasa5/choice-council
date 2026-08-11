@@ -10,6 +10,7 @@ import {
   sendInvalidModelResponse,
   sendInvalidRequest,
   sendLlmRequestFailed,
+  type StructuredOutputPostValidator,
 } from "./response-utils";
 import type { AppDependencies } from "./types";
 
@@ -38,9 +39,7 @@ export function createGroupChatExpertReplyHandler(
             schemaName: "group_chat_message",
             repairInstruction: attempt?.repairInstruction,
           }),
-        (message) =>
-          GroupChatMessageSchema.safeParse(message).success &&
-          !existingMessageIds.has(message.id),
+        createGroupChatMessageValidator(existingMessageIds),
         (failure) =>
           logStructuredOutputFailure(
             request,
@@ -62,6 +61,21 @@ export function createGroupChatExpertReplyHandler(
     } catch (error) {
       sendLlmRequestFailed(request, response, error);
     }
+  };
+}
+
+/** 既存メッセージとのID重複を、再生成可能な安全な理由として返す。 */
+function createGroupChatMessageValidator(
+  existingMessageIds: Set<string>,
+): StructuredOutputPostValidator<GroupChatMessage> {
+  return (message) => {
+    if (!GroupChatMessageSchema.safeParse(message).success) {
+      return { path: [], code: "invalid_group_chat_message" };
+    }
+    if (existingMessageIds.has(message.id)) {
+      return { path: ["id"], code: "duplicate_message_id" };
+    }
+    return true;
   };
 }
 

@@ -18,6 +18,18 @@ test("許可したMarkdownブロックを見出し、段落、順不同リスト
   assert.match(markup, /<ul><li>候補A<\/li><li>候補B<\/li><\/ul>/);
 });
 
+test("先頭3空白までのH1とH2を見出しとして描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: " # 空白付きH1\n\n   ## 空白付きH2",
+    }),
+  );
+
+  assert.match(markup, /<h1>空白付きH1<\/h1>/);
+  assert.match(markup, /<h2>空白付きH2<\/h2>/);
+  assert.doesNotMatch(markup, /<p> {1,3}#{1,2} /);
+});
+
 test("HTMLは要素化せずテキストとしてエスケープする", () => {
   const markup = renderToStaticMarkup(
     createElement(MarkdownDocument, {

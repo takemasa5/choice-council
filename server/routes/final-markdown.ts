@@ -11,6 +11,7 @@ import {
   sendInvalidModelResponse,
   sendInvalidRequest,
   sendLlmRequestFailed,
+  type StructuredOutputPostValidator,
 } from "./response-utils";
 import type { AppDependencies } from "./types";
 
@@ -57,11 +58,7 @@ export function createFinalMarkdownHandler(
             schemaName: "final_markdown",
             repairInstruction: attempt?.repairInstruction,
           }),
-        (modelResponse) =>
-          getMarkdownSection(
-            modelResponse.markdown,
-            "## 現時点の状態",
-          ).includes(expectedStatusLabel),
+        createFinalMarkdownValidator(expectedStatusLabel),
         (failure) =>
           logStructuredOutputFailure(
             request,
@@ -81,6 +78,18 @@ export function createFinalMarkdownHandler(
       sendLlmRequestFailed(request, response, error);
     }
   };
+}
+
+/** 終了状態ラベルの不足を、本文を含まない再生成理由として返す。 */
+function createFinalMarkdownValidator(
+  expectedStatusLabel: string,
+): StructuredOutputPostValidator<FinalMarkdown> {
+  return (modelResponse) =>
+    getMarkdownSection(modelResponse.markdown, "## 現時点の状態").includes(
+      expectedStatusLabel,
+    )
+      ? true
+      : { path: ["markdown"], code: "missing_expected_status_label" };
 }
 
 /**

@@ -89,10 +89,10 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
 function getHeading(
   line: string,
 ): Extract<MarkdownBlock, { type: "heading1" | "heading2" }> | null {
-  const heading1 = line.match(/^# (.+)$/);
+  const heading1 = line.match(/^ {0,3}# (.+)$/);
   if (heading1) return { type: "heading1", text: heading1[1] };
 
-  const heading2 = line.match(/^## (.+)$/);
+  const heading2 = line.match(/^ {0,3}## (.+)$/);
   if (heading2) return { type: "heading2", text: heading2[1] };
 
   return null;

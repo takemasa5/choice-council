@@ -187,3 +187,30 @@ test("POST /api/final-markdown/generate はMarkdown違反を理由付きで再�
     /path=markdown,code=custom/,
   );
 });
+
+test("POST /api/final-markdown/generate は状態ラベル不足を理由付きで再生成する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const invalidMarkdown = validMarkdown.replace("暫定結論", "判断保留");
+  const response = await requestJson(
+    createTestApp(
+      [{ markdown: invalidMarkdown }, { markdown: validMarkdown }],
+      "test-api-key",
+      (request) => {
+        structuredRequests.push(request as { repairInstruction?: string });
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=markdown,code=missing_expected_status_label/,
+  );
+});

@@ -11,7 +11,10 @@ import {
   settleFinalMemo,
   startSession,
 } from "../../src/client/session-lifecycle";
-import { SessionMemoSchema } from "../../src/shared/schemas/session";
+import {
+  ConsultationRequestSchema,
+  SessionMemoSchema,
+} from "../../src/shared/schemas/session";
 import { memo } from "../../test-support/server";
 
 const facilitatorResponse = {
@@ -189,6 +192,53 @@ test("旧形式のメモを正規化して復元後もAPI入力として継続�
     restored.responseHistory.premise?.memo_updates,
     restoredMemo,
   );
+});
+
+test("旧メモのinline Markdownを平文化して有効なセッション状態を復元する", () => {
+  const oldMemo = {
+    ...memo,
+    theme:
+      "**相談テーマ** と `条件`を [確認資料](https://example.com) で整理する",
+    facts: ["**重要な事実**", "`確認コード`", "[参考資料](/reference)"],
+    values: ["![図の説明](https://example.com/image.png)"],
+  };
+  const restored = restoreStoredSessionState({
+    request: { consultation: "相談内容", memo: oldMemo } as never,
+    response: {
+      ...facilitatorResponse,
+      current_phase: "premise" as const,
+      memo_updates: oldMemo,
+    } as never,
+    responseHistory: {
+      premise: {
+        ...facilitatorResponse,
+        current_phase: "premise" as const,
+        memo_updates: oldMemo,
+      } as never,
+    },
+    currentPhase: "premise",
+  });
+
+  const restoredMemo = restored.response?.memo_updates;
+  assert.ok(restoredMemo);
+  assert.equal(restoredMemo.theme, "相談テーマ と 条件を 確認資料 で整理する");
+  assert.deepEqual(restoredMemo.facts, [
+    "重要な事実",
+    "確認コード",
+    "参考資料",
+  ]);
+  assert.deepEqual(restoredMemo.values, ["図の説明"]);
+  assert.ok(SessionMemoSchema.safeParse(restoredMemo).success);
+
+  const continuationRequest = createSessionRequest({
+    consultation: "相談内容",
+    facts: "",
+    values: "",
+    concerns: "",
+    expectedOutcome: "",
+    state: restored,
+  });
+  assert.ok(ConsultationRequestSchema.safeParse(continuationRequest).success);
 });
 
 test("旧形式または参照不整合の案保存値は専門家選定へ安全に戻す", () => {

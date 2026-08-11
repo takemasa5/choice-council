@@ -13,6 +13,7 @@ import type {
 import {
   DiscussionSelectionSchema,
   ExpertCommentSchema,
+  SessionMemoSchema,
 } from "../shared/schemas/session";
 import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
 import {
@@ -165,15 +166,47 @@ function normalizeSessionMemo(memo: unknown): SessionMemo {
 function normalizeMemoText(value: unknown, maximumLength: number) {
   if (typeof value !== "string") return "";
 
-  return value
+  const normalized = value
     .replace(/[\r\n]+/g, " ")
     .trim()
     .replace(
       /^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|`{3,}[ \t]*)/,
       "",
     )
+    .replace(
+      /!?\[([^\]\r\n]+)\]\(\s*(?:(?:[a-z][a-z\d+.-]*:|\/|www\.)[^)\r\n]*)\)/gi,
+      "$1",
+    )
+    .replace(
+      /\*\*([^*\r\n]+)\*\*|__([^_\r\n]+)__/g,
+      (_match, bold, underline) => bold ?? underline,
+    )
+    .replace(/`([^`\r\n]+)`/g, "$1")
     .trim()
     .slice(0, maximumLength);
+
+  return isValidNormalizedMemoText(normalized, maximumLength) ? normalized : "";
+}
+
+/** 現行schemaに通らない旧メモ文字列は、APIへ送らず安全に除外する。 */
+function isValidNormalizedMemoText(value: string, maximumLength: number) {
+  if (!value) return false;
+
+  const candidate: SessionMemo = {
+    theme: maximumLength === 120 ? value : "未設定",
+    status: "in_progress",
+    facts: maximumLength === 80 ? [value] : [],
+    values: [],
+    concerns: [],
+    options: [],
+    decision_axes: [],
+    expert_summaries: [],
+    conflicts: [],
+    open_questions: [],
+    next_actions: [],
+  };
+
+  return SessionMemoSchema.safeParse(candidate).success;
 }
 
 /** 配列は空要素を除外し、現行上限の先頭3件だけを残す。 */

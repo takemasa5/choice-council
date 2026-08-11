@@ -52,8 +52,11 @@ test("POST /api/facilitator/start は必須確認質問を返す", async () => {
 });
 
 test("POST /api/facilitator/start は確認質問なしの応答を拒否する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const response = await requestJson(
-    createTestApp(expertResponse),
+    createTestApp(expertResponse, "test-api-key", (request) => {
+      structuredRequests.push(request as { repairInstruction?: string });
+    }),
     "/api/facilitator/start",
     { consultation: "相談内容" },
   );
@@ -62,6 +65,10 @@ test("POST /api/facilitator/start は確認質問なしの応答を拒否する"
     error: "invalid_model_response",
     message: "この発言の生成に失敗しました。再生成できます。",
   });
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=user_question,code=missing_required_question/,
+  );
 });
 
 test("POST /api/facilitator/respond は追加の確認質問を拒否する", async () => {
