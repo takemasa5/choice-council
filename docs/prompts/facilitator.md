@@ -33,6 +33,8 @@
 
 出力は `docs/api/schemas.md#ファシリテーター出力` に従う。フェーズ遷移は提案に留め、アプリ側の状態機械を上書きしない。
 
+通常フローで画面に表示する文言、質問、指名理由は、Markdown や改行を含まないプレーンテキストで各 150 字以内とする。グループチャットの `message`、`question`、`requestReason` は各 200 字以内とする。
+
 `/api/facilitator/start` と `/api/facilitator/respond` では、出力の `current_phase` を `premise` に固定する。
 
 - `/api/facilitator/start` では、必須質問を1問、`next_action: wait_user`、空の `expert_requests` として返す。相談内容が十分に具体的でも、前提を確認・補足できる質問を返す。

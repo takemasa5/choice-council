@@ -65,4 +65,5 @@ const groupChatExpertPrompt = `
 - input.discussionContext.selection を回答の起点にし、input.discussionContext.proposals の participantId、roleName、案名、内容、利点、犠牲にする点、成立条件を具体的に参照する。deep_dive では、自分の participantId が提案者なら根拠を擁護し、別の participantId が提案者なら具体的な反論・代替・成立条件を述べる。compare では2案のトレードオフを述べる。defer では全案を脱落させず比較軸を整理する。
 - 初回コメントを言い換えるだけで終わらせず、ファシリテーターの質問に沿って議論を前進させる。
 - 自分の指定観点を越えて結論を決めず、他の専門家の指名や次の進行は行わない。
+- content は Markdown や改行を含まないプレーンテキストで200字以内にする。
 `;

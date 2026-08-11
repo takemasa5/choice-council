@@ -59,6 +59,7 @@ test("Groqプロバイダーはstrict JSON Schemaで構造化出力を要求し�
         },
       },
     },
+    max_completion_tokens: 1200,
     reasoning_effort: "low",
   });
 });
@@ -84,10 +85,13 @@ test("Groqプロバイダーはcontentがない場合にnullを返す", async ()
 test("GROQ_MODEL未指定時はGPT-OSS 120Bを指定してGroqへリクエストする", async () => {
   const originalFetch = globalThis.fetch;
   let requestedModel: unknown;
+  let requestedMaxCompletionTokens: unknown;
 
   globalThis.fetch = async (_input, init) => {
     const body = typeof init?.body === "string" ? init.body : "";
-    requestedModel = JSON.parse(body).model;
+    const request = JSON.parse(body) as Record<string, unknown>;
+    requestedModel = request.model;
+    requestedMaxCompletionTokens = request.max_completion_tokens;
 
     return new Response(
       JSON.stringify({
@@ -111,6 +115,44 @@ test("GROQ_MODEL未指定時はGPT-OSS 120Bを指定してGroqへリクエスト
     });
 
     assert.equal(requestedModel, "openai/gpt-oss-120b");
+    assert.equal(requestedMaxCompletionTokens, 1200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("GROQ_MAX_OUTPUT_TOKENSの有効な値をGroqリクエストへ反映する", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedMaxCompletionTokens: unknown;
+
+  globalThis.fetch = async (_input, init) => {
+    const body = typeof init?.body === "string" ? init.body : "";
+    requestedMaxCompletionTokens = (JSON.parse(body) as Record<string, unknown>)
+      .max_completion_tokens;
+
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: '{"answer":"回答"}' } }],
+      }),
+      { headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const provider = createLlmProviderFromEnvironment({
+      LLM_PROVIDER: "groq",
+      GROQ_API_KEY: "test-api-key",
+      GROQ_MAX_OUTPUT_TOKENS: "4096",
+    });
+
+    await provider.generateStructuredOutput({
+      systemPrompt: "prompt",
+      userInput: {},
+      schema: z.strictObject({ answer: z.string() }),
+      schemaName: "answer",
+    });
+
+    assert.equal(requestedMaxCompletionTokens, 4096);
   } finally {
     globalThis.fetch = originalFetch;
   }

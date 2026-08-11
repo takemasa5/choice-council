@@ -70,5 +70,6 @@ const sessionMemoDeveloperPrompt = `
 - userAction がある場合は、ユーザー操作として次アクションや未確認事項へ必要な範囲で反映する。
 - 外部調査は実施できない。必要な情報は未確認事項として残す。
 - 医療、法律、投資、生命安全、虐待、DVなどの高リスク領域では、断定的助言ではなく判断材料の整理と相談準備に留める。
+- theme は Markdown や改行を含まないプレーンテキストで120字以内にする。facts、values、concerns、options、decision_axes、expert_summaries、conflicts、open_questions、next_actions は各最大3件とし、各要素を Markdown や改行を含まないプレーンテキストで80字以内にする。
 - 出力は指定 schema に厳密に従う。
 `;

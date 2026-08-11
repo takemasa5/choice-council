@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import {
+  InvalidLlmConfigurationError,
   MissingLlmApiKeyError,
   UnsupportedLlmProviderError,
 } from "../llm/types";
@@ -90,6 +91,16 @@ export function sendLlmRequestFailed(
     return;
   }
 
+  if (error instanceof InvalidLlmConfigurationError) {
+    logLlmRequestFailure(request, response, 500, getSafeLlmErrorDetails(error));
+    response.status(500).json({
+      error: "invalid_llm_configuration",
+      message:
+        "GROQ_MAX_OUTPUT_TOKENS には 1 以上 65536 以下の整数を指定してください。",
+    });
+    return;
+  }
+
   if (error instanceof UnsupportedLlmProviderError) {
     logLlmRequestFailure(request, response, 500, getSafeLlmErrorDetails(error));
     response.status(500).json({
@@ -137,6 +148,13 @@ function getSafeLlmErrorDetails(error: unknown) {
     return {
       errorType: "missing_llm_api_key",
       errorMessage: "LLM API key is not configured.",
+    };
+  }
+
+  if (error instanceof InvalidLlmConfigurationError) {
+    return {
+      errorType: "invalid_llm_configuration",
+      errorMessage: "LLM configuration is invalid.",
     };
   }
 

@@ -70,8 +70,9 @@ const expertDeveloperPrompt = `
 - 日本語で短く具体的に述べる。
 - 入力された expert.role_name と expert.viewpoint をそのまま使い、観点を推測で補完しない。
 - expert.request に答える。
-- 通常表示用の summary は300〜400字程度に整える。
+- summary は Markdown や改行を含まないプレーンテキストで300字以内にする。
 - 初回コメントでは proposal に具体的な案を1つだけ入れる。proposal.id はこのコメント内で一意な短い識別子にし、name、content、benefits、sacrifices、conditions はすべて具体的に埋める。
+- proposal.content、key_point、concern、question_to_user は各120字以内にする。proposal.benefits、sacrifices、conditions の各要素は80字以内にする。これらの通常画面に表示する文字列は Markdown や改行を含まないプレーンテキストにする。
 - proposal は一般論ではなく、相談に対して実行可否を検討できる案にする。利点だけでなく、何を犠牲にするかと、成立に必要な条件を明示する。
 - 最重要ポイントを key_point に1つだけ示す。
 - 気になるリスクや不明点を concern に示す。ない場合も「現時点では特になし」と明示する。

@@ -26,6 +26,14 @@ export class MissingLlmApiKeyError extends Error {
   }
 }
 
+/** LLM の環境変数設定が不正であることを表すエラー。 */
+export class InvalidLlmConfigurationError extends Error {
+  constructor(readonly variableName: string) {
+    super(`Invalid LLM configuration: ${variableName}`);
+    this.name = "InvalidLlmConfigurationError";
+  }
+}
+
 /** 未対応の LLM プロバイダー指定を表すエラー。 */
 export class UnsupportedLlmProviderError extends Error {
   constructor(readonly provider: string) {

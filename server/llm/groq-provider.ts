@@ -10,6 +10,7 @@ export class GroqLlmProvider implements LlmProvider {
     apiKey: string,
     private readonly model: string,
     private readonly client = new OpenAI({ apiKey, baseURL: groqBaseUrl }),
+    private readonly maxCompletionTokens = 1200,
   ) {}
 
   /** Groq の開発者・ユーザーメッセージとJSON Schemaを使って構造化出力を取得する。 */
@@ -33,6 +34,7 @@ export class GroqLlmProvider implements LlmProvider {
           schema: toGroqJsonSchema(schema),
         },
       },
+      max_completion_tokens: this.maxCompletionTokens,
       reasoning_effort: "low",
     });
 

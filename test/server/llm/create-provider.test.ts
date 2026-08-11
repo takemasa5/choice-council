@@ -5,6 +5,7 @@ import { GeminiLlmProvider } from "../../../server/llm/gemini-provider";
 import { GroqLlmProvider } from "../../../server/llm/groq-provider";
 import { OpenAiLlmProvider } from "../../../server/llm/openai-provider";
 import {
+  InvalidLlmConfigurationError,
   MissingLlmApiKeyError,
   UnsupportedLlmProviderError,
 } from "../../../server/llm/types";
@@ -49,6 +50,22 @@ test("Groq指定でGROQ_API_KEYがない場合は設定エラーにする", () =
     (error: unknown) =>
       error instanceof MissingLlmApiKeyError && error.provider === "groq",
   );
+});
+
+test("Groqの最大出力トークン数が無効な場合は設定エラーにする", () => {
+  for (const value of ["0", "65537", "1.5", "not-a-number"]) {
+    assert.throws(
+      () =>
+        createLlmProviderFromEnvironment({
+          LLM_PROVIDER: "groq",
+          GROQ_API_KEY: "test-api-key",
+          GROQ_MAX_OUTPUT_TOKENS: value,
+        }),
+      (error: unknown) =>
+        error instanceof InvalidLlmConfigurationError &&
+        error.variableName === "GROQ_MAX_OUTPUT_TOKENS",
+    );
+  }
 });
 
 test("未対応のLLM_PROVIDERは設定エラーにする", () => {

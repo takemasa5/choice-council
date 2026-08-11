@@ -1,0 +1,53 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { MarkdownDocument } from "../../src/client/MarkdownDocument";
+
+test("許可したMarkdownブロックを見出し、段落、順不同リストとして描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown:
+        "# 意思決定メモ\n\n## 相談テーマ\n\n旅行先を決めます。\n予算を確認します。\n\n- 候補A\n* 候補B",
+    }),
+  );
+
+  assert.match(markup, /<h1>意思決定メモ<\/h1>/);
+  assert.match(markup, /<h2>相談テーマ<\/h2>/);
+  assert.match(markup, /<p>旅行先を決めます。\n予算を確認します。<\/p>/);
+  assert.match(markup, /<ul><li>候補A<\/li><li>候補B<\/li><\/ul>/);
+});
+
+test("HTMLは要素化せずテキストとしてエスケープする", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "<script>alert('unsafe')</script>",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<script>/);
+  assert.match(markup, /&lt;script&gt;alert/);
+});
+
+test("対応外のMarkdownは通常テキストとして表示する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "1. 番号付き項目\n2. 次の項目\n\n```\nconst value = 1;\n```",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<ol>|<code>|<pre>/);
+  assert.match(markup, /<p>1\. 番号付き項目\n2\. 次の項目<\/p>/);
+  assert.match(markup, /<p>```\nconst value = 1;\n```<\/p>/);
+});
+
+test("許可外の見出しは段落の通常テキストとして表示する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "### 許可外の見出し\n本文",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<h3>/);
+  assert.match(markup, /<p>### 許可外の見出し\n本文<\/p>/);
+});

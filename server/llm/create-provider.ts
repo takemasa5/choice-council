@@ -2,6 +2,7 @@ import { GeminiLlmProvider } from "./gemini-provider";
 import { GroqLlmProvider } from "./groq-provider";
 import { OpenAiLlmProvider } from "./openai-provider";
 import {
+  InvalidLlmConfigurationError,
   MissingLlmApiKeyError,
   type LlmProvider,
   type LlmProviderName,
@@ -59,7 +60,25 @@ function createGroqProvider(environment: NodeJS.ProcessEnv): LlmProvider {
   return new GroqLlmProvider(
     apiKey,
     environment.GROQ_MODEL ?? "openai/gpt-oss-120b",
+    undefined,
+    getGroqMaxOutputTokens(environment.GROQ_MAX_OUTPUT_TOKENS),
   );
+}
+
+/** Groq の最大出力トークン数を環境変数から取得する。 */
+function getGroqMaxOutputTokens(value: string | undefined): number {
+  if (value === undefined) return 1200;
+
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    throw new InvalidLlmConfigurationError("GROQ_MAX_OUTPUT_TOKENS");
+  }
+
+  const maxOutputTokens = Number(value);
+  if (maxOutputTokens > 65536) {
+    throw new InvalidLlmConfigurationError("GROQ_MAX_OUTPUT_TOKENS");
+  }
+
+  return maxOutputTokens;
 }
 
 /** 指定値が対応する LLM プロバイダー名か判定する。 */
