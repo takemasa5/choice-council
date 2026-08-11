@@ -215,7 +215,7 @@ function normalizeLegacyPlainText(value: unknown, maximumLength: number) {
     .replace(/[\r\n]+/g, " ")
     .trim()
     .replace(
-      /^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|`{3,}[ \t]*)/,
+      /^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|`{3,}[ \t]*|>[ \t]?)/,
       "",
     )
     .replace(/!?\[([^\]\r\n]+)\]\(\s*[^)\r\n]+\)/g, "$1")

@@ -485,6 +485,48 @@ test("旧ターンのその他は除外し自由入力可能なユーザータ�
   assert.doesNotMatch(markup, /その他/);
 });
 
+test("ブロック引用を含む旧グループチャットターンを平文化して表示する", () => {
+  const normalized = normalizeStoredSession({
+    request: { consultation: "相談内容" },
+    response: null,
+    groupChatTurn: {
+      message: "  > 専門家へ質問します。",
+      requestedSpeaker: {
+        speakerType: "expert",
+        speakerName: "家計アドバイザー",
+        participantId: "expert-1",
+      },
+      requestReason: "費用 > 予算を確認するためです。",
+      question: "> 予算の上限を教えてください。",
+      userOptions: null,
+      memoUpdate: null,
+      contextSummaryUpdate: null,
+    },
+  } as never);
+  const turn = normalized.groupChatTurn;
+  const markup = renderToStaticMarkup(
+    createElement(GroupChatPhase, {
+      turn: turn ?? null,
+      messages: [],
+      otherAnswer: "",
+      isLoading: false,
+      errorMessage: "",
+      onOtherAnswerChange: () => undefined,
+      onUserAnswer: () => undefined,
+      onRetryExpertReply: () => undefined,
+      finishErrorMessage: "",
+      onFinish: () => undefined,
+    }),
+  );
+
+  assert.ok(FacilitatorTurnSchema.safeParse(turn).success);
+  assert.equal(turn?.message, "専門家へ質問します。");
+  assert.equal(turn?.question, "予算の上限を教えてください。");
+  assert.equal(turn?.requestReason, "費用 > 予算を確認するためです。");
+  assert.match(markup, /予算の上限を教えてください。/);
+  assert.doesNotMatch(markup, /&gt; 予算の上限/);
+});
+
 test("復元不能な通常画面応答は相談入力へ安全に戻す", () => {
   const restored = restoreStoredSessionState({
     request: { consultation: "相談内容" },
