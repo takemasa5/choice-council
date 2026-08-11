@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   FacilitatorTurnSchema,
   DiscussionSelectionSchema,
+  GroupChatMessageSchema,
   GroupChatStartTurnSchema,
 } from "../../../src/shared/schemas/session";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
@@ -70,6 +71,45 @@ const userTurn = {
   },
   userOptions: ["費用を優先して検討したい", "そのまま意見交換を続けて"],
 } as const;
+
+test("グループチャット出力は通常画面用の文字数とMarkdownを制限する", () => {
+  const message = {
+    id: "message-1",
+    speakerType: "expert",
+    speakerName: "専門家",
+    participantId: "expert-1",
+    content: "専門家の通常文です。# は許可する。",
+    createdAt: "2026-08-11T00:00:00.000Z",
+  } as const;
+
+  assert.ok(GroupChatMessageSchema.safeParse(message).success);
+  assert.equal(
+    GroupChatMessageSchema.safeParse({ ...message, content: "あ".repeat(201) })
+      .success,
+    false,
+  );
+  assert.equal(
+    GroupChatMessageSchema.safeParse({ ...message, content: "- 箇条書き" })
+      .success,
+    false,
+  );
+
+  assert.ok(FacilitatorTurnSchema.safeParse(turn).success);
+  for (const invalidTurn of [
+    { ...turn, message: "あ".repeat(201) },
+    { ...turn, requestReason: "# 見出し" },
+    { ...turn, question: "1行目\n2行目" },
+  ]) {
+    assert.equal(FacilitatorTurnSchema.safeParse(invalidTurn).success, false);
+  }
+  assert.equal(
+    GroupChatStartTurnSchema.safeParse({
+      ...turn,
+      message: "```コードフェンス",
+    }).success,
+    false,
+  );
+});
 
 test("POST /api/facilitator/group-chat/start は厳密なターンを返す", async () => {
   let structuredRequest: unknown;

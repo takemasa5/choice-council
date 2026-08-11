@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../../../server/app";
-import { StructuredOutputValidationError } from "../../../server/llm/types";
-import { FacilitatorRespondResponseSchema } from "../../../src/shared/schemas/session";
+import {
+  StructuredOutputValidationError,
+  type StructuredOutputRequest,
+} from "../../../server/llm/types";
+import {
+  ExpertRequestSchema,
+  FacilitatorResponseRequestSchema,
+  FacilitatorResponseSchema,
+  FacilitatorRespondResponseSchema,
+} from "../../../src/shared/schemas/session";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
 
 const expertResponse = {
@@ -105,32 +113,111 @@ test("POST /api/facilitator/respond は追加質問を禁止する専用schema�
   );
 });
 
-test("POST /api/facilitator/start はGroq由来のschema検証失敗時に理由付きで再生成する", async () => {
+test("ファシリテーター出力は通常画面用の文字数とMarkdownを制限する", () => {
+  assert.ok(
+    FacilitatorResponseSchema.safeParse(initialQuestionResponse).success,
+  );
+  assert.ok(
+    FacilitatorResponseSchema.safeParse({
+      ...initialQuestionResponse,
+      facilitator_message: "通常文中の # は許可する。",
+    }).success,
+  );
+
+  const outputWithExpertRequest = { ...expertResponse };
+  for (const invalidOutput of [
+    { ...initialQuestionResponse, current_phase_label: "あ".repeat(151) },
+    { ...initialQuestionResponse, phase_goal: "1行目\n2行目" },
+    { ...initialQuestionResponse, facilitator_message: "# 見出し" },
+    {
+      ...outputWithExpertRequest,
+      expert_requests: [
+        {
+          ...outputWithExpertRequest.expert_requests[0],
+          request: "あ".repeat(151),
+        },
+      ],
+    },
+    {
+      ...initialQuestionResponse,
+      user_question: {
+        ...initialQuestionResponse.user_question,
+        question: "あ".repeat(151),
+      },
+    },
+    {
+      ...initialQuestionResponse,
+      user_question: {
+        ...initialQuestionResponse.user_question,
+        options: ["- 箇条書き", "その他"],
+      },
+    },
+  ]) {
+    assert.equal(
+      FacilitatorResponseSchema.safeParse(invalidOutput).success,
+      false,
+    );
+  }
+
+  assert.ok(
+    ExpertRequestSchema.safeParse({
+      role_name: "# 入力用ロール",
+      viewpoint: "あ".repeat(151),
+      request: "入力に含まれる文面",
+    }).success,
+  );
+  assert.ok(
+    FacilitatorResponseRequestSchema.safeParse({
+      consultation: "相談内容",
+      currentPhase: "premise",
+      userQuestion: {
+        question: "あ".repeat(151),
+        options: ["- 入力用の選択肢", "その他"],
+        required: true,
+      },
+      userQuestionAnswer: "回答",
+      memo,
+    }).success,
+  );
+});
+
+test("POST /api/facilitator/start はMarkdown違反のGroq出力を理由付きで再生成する", async () => {
   const structuredRequests: Array<{
     repairInstruction?: string;
   }> = [];
+  const outputs = [
+    { ...initialQuestionResponse, facilitator_message: "# Markdown見出し" },
+    initialQuestionResponse,
+  ];
   const response = await requestJson(
     createApp({
       createLlmProvider: () =>
         ({
-          generateStructuredOutput: async (request: {
-            repairInstruction?: string;
-          }) => {
-            structuredRequests.push(request);
-            if (structuredRequests.length === 1) {
+          generateStructuredOutput: async <T>(
+            request: StructuredOutputRequest<T>,
+          ) => {
+            const output =
+              outputs[structuredRequests.length] ?? initialQuestionResponse;
+            structuredRequests.push({
+              repairInstruction: request.repairInstruction,
+            });
+            const parsedOutput = request.schema.safeParse(output);
+            if (!parsedOutput.success) {
               throw new StructuredOutputValidationError({
-                schemaName: "facilitator_response",
+                schemaName: request.schemaName,
                 classification: "schema_validation",
                 finishReason: "stop",
-                issues: [
-                  {
-                    path: ["facilitator_message"],
-                    code: "too_small",
-                  },
-                ],
+                issues: parsedOutput.error.issues.map((issue) => ({
+                  path: issue.path.filter(
+                    (segment): segment is string | number =>
+                      typeof segment === "string" ||
+                      typeof segment === "number",
+                  ),
+                  code: issue.code,
+                })),
               });
             }
-            return initialQuestionResponse;
+            return parsedOutput.data;
           },
         }) as never,
     }),
@@ -147,7 +234,7 @@ test("POST /api/facilitator/start はGroq由来のschema検証失敗時に理由
   );
   assert.match(
     structuredRequests[1]?.repairInstruction ?? "",
-    /path=facilitator_message,code=too_small/,
+    /path=facilitator_message,code=custom/,
   );
 });
 
