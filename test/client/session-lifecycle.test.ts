@@ -5,6 +5,7 @@ import {
   createInitialSessionState,
   createStoredSession,
   getRestoredProposalState,
+  normalizeStoredSession,
   proceedToExpertSelection,
   restoreStoredSessionState,
   returnToPhase,
@@ -14,6 +15,9 @@ import {
 import {
   ConsultationRequestSchema,
   ExpertCommentSchema,
+  FacilitatorResponseSchema,
+  FacilitatorTurnSchema,
+  GroupChatMessageSchema,
   GroupChatNextRequestSchema,
   SessionMemoSchema,
 } from "../../src/shared/schemas/session";
@@ -21,6 +25,8 @@ import { memo } from "../../test-support/server";
 
 const facilitatorResponse = {
   current_phase: "premise" as const,
+  current_phase_label: "前提整理",
+  phase_goal: "前提を整理する",
   facilitator_message: "前提を確認します。",
   next_action: "wait_user" as const,
   memo_updates: memo,
@@ -31,6 +37,7 @@ const facilitatorResponse = {
       request: "整理してください",
     },
   ],
+  user_question: null,
 };
 
 const expertComment = {
@@ -321,6 +328,98 @@ test("旧形式の専門家コメントを正規化して意見交換フェー�
       },
     }).success,
   );
+});
+
+test("旧形式の通常画面出力を平文化して意見交換状態を復元する", () => {
+  const legacyResponse = {
+    ...facilitatorResponse,
+    current_phase: "group_chat" as const,
+    current_phase_label: `**${"進".repeat(151)}**\n`,
+    phase_goal: `\`${"目".repeat(151)}\``,
+    facilitator_message: `- **${"案内".repeat(80)}**`,
+  };
+  const legacyMessage = {
+    id: "message-1",
+    speakerType: "expert" as const,
+    speakerName: "専門家",
+    participantId: "expert-1",
+    content: `**${"発言".repeat(101)}**\n補足`,
+    createdAt: "2026-08-11T00:00:00.000Z",
+  };
+  const legacyTurn = {
+    message: `**${"進行".repeat(101)}**`,
+    requestedSpeaker: {
+      speakerType: "expert" as const,
+      speakerName: "専門家",
+      participantId: "expert-1",
+    },
+    requestReason: "`理由`\n補足",
+    question: "[質問](relative)",
+    userOptions: null,
+    memoUpdate: null,
+    contextSummaryUpdate: "検討中です。",
+  };
+  const confirmedExpert = {
+    ...facilitatorResponse.expert_requests[0],
+    participantId: "expert-1",
+  };
+  const stored = {
+    request: { consultation: "相談内容" },
+    response: legacyResponse,
+    responseHistory: { group_chat: legacyResponse },
+    currentPhase: "group_chat" as const,
+    confirmedExperts: [confirmedExpert],
+    expertComments: [expertComment],
+    groupChatMessages: [legacyMessage],
+    groupChatTurn: legacyTurn,
+    discussionSelection: {
+      kind: "deep_dive" as const,
+      proposalId: "proposal-1",
+    },
+    selectedProposalIds: ["proposal-1"],
+  };
+
+  const normalized = normalizeStoredSession(stored as never);
+  const restored = restoreStoredSessionState(stored as never);
+  const [message] = normalized.groupChatMessages ?? [];
+
+  assert.ok(FacilitatorResponseSchema.safeParse(normalized.response).success);
+  assert.ok(
+    FacilitatorResponseSchema.safeParse(normalized.responseHistory?.group_chat)
+      .success,
+  );
+  assert.ok(GroupChatMessageSchema.safeParse(message).success);
+  assert.ok(FacilitatorTurnSchema.safeParse(normalized.groupChatTurn).success);
+  assert.ok(normalized.response);
+  assert.doesNotMatch(
+    [
+      normalized.response.current_phase_label,
+      normalized.response.phase_goal,
+      normalized.response.facilitator_message,
+      message?.content,
+      normalized.groupChatTurn?.message,
+      normalized.groupChatTurn?.requestReason,
+      normalized.groupChatTurn?.question,
+    ].join(" "),
+    /[\r\n*`]|\[[^\]]+\]\(/,
+  );
+  assert.equal(restored.currentPhase, "group_chat");
+  assert.equal(restored.response?.current_phase, "group_chat");
+});
+
+test("復元不能な通常画面応答は相談入力へ安全に戻す", () => {
+  const restored = restoreStoredSessionState({
+    request: { consultation: "相談内容" },
+    response: {
+      current_phase: "group_chat",
+      facilitator_message: "**不完全な応答**",
+    },
+    currentPhase: "group_chat",
+  } as never);
+
+  assert.equal(restored.currentPhase, "consultation_input");
+  assert.equal(restored.response, null);
+  assert.deepEqual(restored.responseHistory, {});
 });
 
 test("旧形式または参照不整合の案保存値は専門家選定へ安全に戻す", () => {

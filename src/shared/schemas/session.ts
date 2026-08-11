@@ -429,7 +429,7 @@ export const FacilitatorTurnSchema = z
     requestedSpeaker: RequestedSpeakerSchema,
     requestReason: plainText(200),
     question: plainText(200),
-    userOptions: nonEmptyStringArray.nullable(),
+    userOptions: z.array(plainText(200)).nullable(),
     memoUpdate: SessionMemoSchema.nullable(),
     contextSummaryUpdate: nonEmptyString.nullable(),
   })

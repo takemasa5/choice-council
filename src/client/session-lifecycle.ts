@@ -13,6 +13,10 @@ import type {
 import {
   DiscussionSelectionSchema,
   ExpertCommentSchema,
+  FacilitatorResponseSchema,
+  FacilitatorTurnSchema,
+  GroupChatMessageSchema,
+  maximumExpertRequestCount,
   SessionMemoSchema,
 } from "../shared/schemas/session";
 import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
@@ -75,7 +79,12 @@ export function createInitialSessionState(): SessionState {
 
 /** 保存済みのフェーズ横断状態を復元し、生成中断した終了メモも復旧する。 */
 export function restoreStoredSessionState(parsed: StoredSession): SessionState {
-  const normalizedSession = normalizeStoredSessionMemos(parsed);
+  const normalizedSession = normalizeStoredSession(parsed);
+
+  if (!normalizedSession.response) {
+    return createInitialSessionState();
+  }
+
   const restoredPhase = restoreSessionPhase(
     normalizedSession.currentPhase,
     normalizedSession.response?.current_phase,
@@ -110,36 +119,64 @@ export function restoreStoredSessionState(parsed: StoredSession): SessionState {
   return restoredState;
 }
 
-/** 旧保存形式のメモを、現行のAPI入力として送信可能な形へ正規化する。 */
-function normalizeStoredSessionMemos(session: StoredSession): StoredSession {
+/** 旧保存形式の通常画面出力を、現行の表示・後続入力として安全に正規化する。 */
+export function normalizeStoredSession(session: StoredSession): StoredSession {
   return {
     ...session,
     request: session.request.memo
       ? { ...session.request, memo: normalizeSessionMemo(session.request.memo) }
       : session.request,
-    response: normalizeResponseMemo(session.response),
+    response: normalizeStoredFacilitatorResponse(session.response),
     responseHistory: session.responseHistory
       ? normalizeResponseHistory(session.responseHistory)
       : undefined,
+    expertComments: normalizeStoredExpertComments(session.expertComments),
+    groupChatMessages: normalizeStoredGroupChatMessages(
+      session.groupChatMessages,
+    ),
+    groupChatTurn: normalizeStoredFacilitatorTurn(session.groupChatTurn),
   };
 }
 
-/** 保存済み応答のメモだけを、応答本体の復元安全性を変えずに置き換える。 */
-function normalizeResponseMemo(
-  response: FacilitatorResponse | null,
+/** 保存済みファシリテーター応答を、現行表示schemaに適合する場合だけ復元する。 */
+function normalizeStoredFacilitatorResponse(
+  response: unknown,
 ): FacilitatorResponse | null {
-  return response
-    ? { ...response, memo_updates: normalizeSessionMemo(response.memo_updates) }
-    : null;
+  if (response === null) return null;
+
+  const currentResponse = FacilitatorResponseSchema.safeParse(response);
+  if (currentResponse.success) return currentResponse.data;
+
+  const record = isRecord(response) ? response : {};
+  const userQuestion = normalizeStoredFacilitatorUserQuestion(
+    record.user_question,
+  );
+  const expertRequests = userQuestion
+    ? []
+    : normalizeStoredFacilitatorExpertRequests(record.expert_requests);
+  const normalizedResponse = {
+    current_phase: record.current_phase,
+    current_phase_label: normalizeFacilitatorText(record.current_phase_label),
+    phase_goal: normalizeFacilitatorText(record.phase_goal),
+    facilitator_message: normalizeFacilitatorText(record.facilitator_message),
+    expert_requests: expertRequests,
+    user_question: userQuestion,
+    memo_updates: normalizeSessionMemo(record.memo_updates),
+    next_action: record.next_action,
+  };
+  const parsedResponse =
+    FacilitatorResponseSchema.safeParse(normalizedResponse);
+
+  return parsedResponse.success ? parsedResponse.data : null;
 }
 
 /** 保存済み履歴中のすべてのメモを現行制約へ正規化する。 */
 function normalizeResponseHistory(responseHistory: ResponseHistory) {
   return Object.fromEntries(
-    Object.entries(responseHistory).map(([phase, response]) => [
-      phase,
-      normalizeResponseMemo(response),
-    ]),
+    Object.entries(responseHistory).flatMap(([phase, response]) => {
+      const normalizedResponse = normalizeStoredFacilitatorResponse(response);
+      return normalizedResponse ? [[phase, normalizedResponse]] : [];
+    }),
   ) as ResponseHistory;
 }
 
@@ -190,6 +227,155 @@ function normalizeLegacyPlainText(value: unknown, maximumLength: number) {
     .replace(/~~([^~\r\n]+)~~/g, "$1")
     .trim()
     .slice(0, maximumLength);
+}
+
+/** ファシリテーターの通常画面文言を、現行の150字プレーンテキストへ収める。 */
+function normalizeFacilitatorText(value: unknown) {
+  const normalized = normalizeLegacyPlainText(value, 150);
+  if (!normalized) return "";
+
+  const candidate = {
+    current_phase: "premise",
+    current_phase_label: normalized,
+    phase_goal: normalized,
+    facilitator_message: normalized,
+    expert_requests: [],
+    user_question: null,
+    memo_updates: normalizeSessionMemo({}),
+    next_action: "wait_user",
+  };
+
+  return FacilitatorResponseSchema.safeParse(candidate).success
+    ? normalized
+    : "";
+}
+
+/** 旧保存済みの専門家候補を、現行の通常画面制約へ収める。 */
+function normalizeStoredFacilitatorExpertRequests(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .slice(0, maximumExpertRequestCount)
+    .map((expert) => {
+      const record = isRecord(expert) ? expert : {};
+      return {
+        role_name: normalizeFacilitatorText(record.role_name),
+        viewpoint: normalizeFacilitatorText(record.viewpoint),
+        request: normalizeFacilitatorText(record.request),
+      };
+    })
+    .filter(
+      (expert) =>
+        expert.role_name.length > 0 &&
+        expert.viewpoint.length > 0 &&
+        expert.request.length > 0,
+    );
+}
+
+/** 旧保存済みの確認質問を、復元可能なときだけ現行形式へ収める。 */
+function normalizeStoredFacilitatorUserQuestion(value: unknown) {
+  if (value === null || !isRecord(value)) return null;
+  if (!Array.isArray(value.options) || typeof value.required !== "boolean") {
+    return null;
+  }
+
+  const question = normalizeFacilitatorText(value.question);
+  const options = value.options
+    .map((option) => normalizeFacilitatorText(option))
+    .filter((option) => option.length > 0);
+
+  return question && options.length >= 2 && options.includes("その他")
+    ? { question, options, required: value.required }
+    : null;
+}
+
+/** グループチャットの通常画面文言を、現行の200字プレーンテキストへ収める。 */
+function normalizeGroupChatText(value: unknown) {
+  const normalized = normalizeLegacyPlainText(value, 200);
+  if (!normalized) return "";
+
+  const candidate = {
+    id: "message",
+    speakerType: "expert",
+    speakerName: "専門家",
+    participantId: "expert",
+    content: normalized,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  return GroupChatMessageSchema.safeParse(candidate).success ? normalized : "";
+}
+
+/** 旧保存済み発言を、現行の表示schemaに適合するものだけ復元する。 */
+function normalizeStoredGroupChatMessages(value: unknown): GroupChatMessage[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map(normalizeStoredGroupChatMessage)
+    .filter((message): message is GroupChatMessage => message !== null);
+}
+
+function normalizeStoredGroupChatMessage(
+  value: unknown,
+): GroupChatMessage | null {
+  const currentMessage = GroupChatMessageSchema.safeParse(value);
+  if (currentMessage.success) return currentMessage.data;
+
+  const record = isRecord(value) ? value : {};
+  const normalizedMessage = {
+    id: normalizeRequiredText(record.id),
+    speakerType: record.speakerType,
+    speakerName: normalizeRequiredText(record.speakerName),
+    participantId: normalizeRequiredText(record.participantId),
+    content: normalizeGroupChatText(record.content),
+    createdAt: normalizeRequiredText(record.createdAt),
+  };
+  const parsedMessage = GroupChatMessageSchema.safeParse(normalizedMessage);
+
+  return parsedMessage.success ? parsedMessage.data : null;
+}
+
+/** 旧保存済み進行ターンを、現行の表示・後続入力schemaに適合するものだけ復元する。 */
+function normalizeStoredFacilitatorTurn(
+  value: unknown,
+): FacilitatorTurn | undefined {
+  if (value === undefined) return undefined;
+
+  const currentTurn = FacilitatorTurnSchema.safeParse(value);
+  if (currentTurn.success) return currentTurn.data;
+
+  const record = isRecord(value) ? value : {};
+  const requestedSpeaker = isRecord(record.requestedSpeaker)
+    ? record.requestedSpeaker
+    : {};
+  const userOptions = Array.isArray(record.userOptions)
+    ? record.userOptions
+        .map((option) => normalizeRequiredText(option))
+        .filter((option) => option.length > 0)
+    : record.userOptions;
+  const normalizedTurn = {
+    message: normalizeGroupChatText(record.message),
+    requestedSpeaker: {
+      speakerType: requestedSpeaker.speakerType,
+      speakerName: normalizeRequiredText(requestedSpeaker.speakerName),
+      participantId: normalizeRequiredText(requestedSpeaker.participantId),
+    },
+    requestReason: normalizeGroupChatText(record.requestReason),
+    question: normalizeGroupChatText(record.question),
+    userOptions,
+    memoUpdate:
+      record.memoUpdate === null
+        ? null
+        : normalizeSessionMemo(record.memoUpdate),
+    contextSummaryUpdate:
+      record.contextSummaryUpdate === null ||
+      record.contextSummaryUpdate === undefined
+        ? null
+        : normalizeRequiredText(record.contextSummaryUpdate),
+  };
+  const parsedTurn = FacilitatorTurnSchema.safeParse(normalizedTurn);
+
+  return parsedTurn.success ? parsedTurn.data : undefined;
 }
 
 /** 現行schemaに通らない旧メモ文字列は、APIへ送らず安全に除外する。 */

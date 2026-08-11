@@ -95,10 +95,27 @@ test("グループチャット出力は通常画面用の文字数とMarkdownを
   );
 
   assert.ok(FacilitatorTurnSchema.safeParse(turn).success);
+  assert.ok(FacilitatorTurnSchema.safeParse(userTurn).success);
   for (const invalidTurn of [
     { ...turn, message: "あ".repeat(201) },
     { ...turn, requestReason: "# 見出し" },
     { ...turn, question: "1行目\n2行目" },
+    {
+      ...userTurn,
+      userOptions: ["費用を優先して\n検討したい", "そのまま意見交換を続けて"],
+    },
+    {
+      ...userTurn,
+      userOptions: ["**費用を優先して検討したい**", "そのまま意見交換を続けて"],
+    },
+    {
+      ...userTurn,
+      userOptions: ["```費用を優先して検討したい", "そのまま意見交換を続けて"],
+    },
+    {
+      ...userTurn,
+      userOptions: ["あ".repeat(201), "そのまま意見交換を続けて"],
+    },
   ]) {
     assert.equal(FacilitatorTurnSchema.safeParse(invalidTurn).success, false);
   }
@@ -399,6 +416,40 @@ test("POST /api/facilitator/group-chat/next は条件を満たすユーザータ
     userTurn.userOptions,
   );
   assert.equal(FacilitatorTurnSchema.safeParse(userTurn).success, true);
+});
+
+test("POST /api/facilitator/group-chat/next はMarkdownの選択肢を理由に再生成する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const invalidUserTurn = {
+    ...userTurn,
+    userOptions: ["**費用を優先して検討したい**", "そのまま意見交換を続けて"],
+  };
+  const response = await requestJson(
+    createTestApp([invalidUserTurn, userTurn], "test-api-key", (request) => {
+      structuredRequests.push(request as { repairInstruction?: string });
+    }),
+    "/api/facilitator/group-chat/next",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages: [],
+      confirmedExperts: [expert],
+      expertRepliesSinceUser: 2,
+      discussionContext: {
+        selection: { kind: "defer" },
+        proposals: [discussionProposal],
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(structuredRequests.length, 2);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /failure_classification=post_validation/,
+  );
 });
 
 test("POST /api/facilitator/group-chat/next はその他を含むユーザーターンを再試行後に拒否する", async () => {
