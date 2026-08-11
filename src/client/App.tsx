@@ -37,6 +37,7 @@ import {
   getCurrentSessionMemo,
   getRestoredProposalState,
   isStoredProposalStateComplete,
+  normalizeStoredSession,
   proceedToExpertSelection as proceedSessionToExpertSelection,
   restoreGroupChatAfterFinalMemoFailure as restoreSessionGroupChatAfterFinalMemoFailure,
   restoreStoredSessionState,
@@ -245,10 +246,12 @@ export function App() {
   function restoreSession(parsed: StoredSession | null) {
     if (!parsed) return;
 
-    const restoredProposalState = getRestoredProposalState(parsed);
-    const restoredSessionState = restoreStoredSessionState(parsed);
+    const normalizedSession = normalizeStoredSession(parsed);
+    const restoredProposalState = getRestoredProposalState(normalizedSession);
+    const restoredSessionState = restoreStoredSessionState(normalizedSession);
     const storedProposalPhase =
-      parsed.currentPhase ?? parsed.response?.current_phase;
+      normalizedSession.currentPhase ??
+      normalizedSession.response?.current_phase;
     const isProposalRecovery =
       (storedProposalPhase === "deliberation" ||
         storedProposalPhase === "group_chat" ||
@@ -258,24 +261,26 @@ export function App() {
         restoredProposalState,
       );
 
-    changeConsultation(parsed.request.consultation);
-    changeFacts(parsed.request.facts ?? "");
-    changeValues(parsed.request.values ?? "");
-    changeConcerns(parsed.request.concerns ?? "");
-    changeExpectedOutcome(parsed.request.expectedOutcome ?? "");
+    changeConsultation(normalizedSession.request.consultation);
+    changeFacts(normalizedSession.request.facts ?? "");
+    changeValues(normalizedSession.request.values ?? "");
+    changeConcerns(normalizedSession.request.concerns ?? "");
+    changeExpectedOutcome(normalizedSession.request.expectedOutcome ?? "");
     setSessionState(restoredSessionState);
     const restoredExperts =
-      parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
+      normalizedSession.confirmedExperts ??
+      normalizedSession.response?.expert_requests ??
+      [];
     restoreSelection({
       initialCandidates: getInitialExpertRequests(
-        parsed.initialExpertRequests,
+        normalizedSession.initialExpertRequests,
         restoredSessionState.currentPhase,
         restoredSessionState.response,
       ),
       confirmedCandidates: restoredExperts,
       comments: restoredProposalState.expertComments,
-      drafts: parsed.expertDrafts,
-      restoredDraftProvenanceKey: parsed.expertDraftProvenanceKey,
+      drafts: normalizedSession.expertDrafts,
+      restoredDraftProvenanceKey: normalizedSession.expertDraftProvenanceKey,
     });
     const restoredCandidates =
       restoredSessionState.response?.expert_requests ?? [];
@@ -289,17 +294,22 @@ export function App() {
       finalMemoPhase.clear();
     } else {
       groupChatPhase.restore({
-        messages: parsed.groupChatMessages ?? [],
-        turn: parsed.groupChatTurn ?? null,
-        contextSummary: parsed.groupChatContextSummary ?? "",
-        expertRepliesSinceUser: parsed.groupChatExpertRepliesSinceUser ?? 0,
-        isNextTurnRetryPending: parsed.groupChatNextTurnRetryPending ?? false,
+        messages: normalizedSession.groupChatMessages ?? [],
+        turn: normalizedSession.groupChatTurn ?? null,
+        contextSummary: normalizedSession.groupChatContextSummary ?? "",
+        expertRepliesSinceUser:
+          normalizedSession.groupChatExpertRepliesSinceUser ?? 0,
+        isNextTurnRetryPending:
+          normalizedSession.groupChatNextTurnRetryPending ?? false,
       });
-      finalMemoPhase.restore(parsed.finalMarkdown ?? "");
+      finalMemoPhase.restore(normalizedSession.finalMarkdown ?? "");
     }
     setDiscussionSelection(restoredProposalState.discussionSelection);
     setSelectedProposalIds(restoredProposalState.selectedProposalIds);
-    restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
+    restoreQuestionAnswer(
+      normalizedSession.request.userQuestionAnswer,
+      normalizedSession.response,
+    );
   }
 
   useEffect(() => {
