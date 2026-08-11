@@ -74,28 +74,32 @@ export function createInitialSessionState(): SessionState {
 
 /** 保存済みのフェーズ横断状態を復元し、生成中断した終了メモも復旧する。 */
 export function restoreStoredSessionState(parsed: StoredSession): SessionState {
+  const normalizedSession = normalizeStoredSessionMemos(parsed);
   const restoredPhase = restoreSessionPhase(
-    parsed.currentPhase,
-    parsed.response?.current_phase,
+    normalizedSession.currentPhase,
+    normalizedSession.response?.current_phase,
   );
   const restoredSession = recoverInterruptedFinalMemo({
     currentPhase: restoredPhase,
-    response: parsed.response,
+    response: normalizedSession.response,
     responseHistory:
-      parsed.responseHistory ?? responseToHistory(parsed.response),
-    finalMarkdown: parsed.finalMarkdown ?? "",
+      normalizedSession.responseHistory ??
+      responseToHistory(normalizedSession.response),
+    finalMarkdown: normalizedSession.finalMarkdown ?? "",
   });
 
   const restoredState = {
     startedConsultation:
-      parsed.startedConsultation ??
-      (parsed.response ? parsed.request.consultation : ""),
+      normalizedSession.startedConsultation ??
+      (normalizedSession.response
+        ? normalizedSession.request.consultation
+        : ""),
     response: restoredSession.response,
     responseHistory: restoredSession.responseHistory,
     currentPhase: restoredSession.currentPhase,
   };
 
-  const proposalState = getRestoredProposalState(parsed);
+  const proposalState = getRestoredProposalState(normalizedSession);
   if (
     !isStoredProposalStateComplete(restoredState.currentPhase, proposalState)
   ) {
@@ -103,6 +107,99 @@ export function restoreStoredSessionState(parsed: StoredSession): SessionState {
   }
 
   return restoredState;
+}
+
+/** 旧保存形式のメモを、現行のAPI入力として送信可能な形へ正規化する。 */
+function normalizeStoredSessionMemos(session: StoredSession): StoredSession {
+  return {
+    ...session,
+    request: session.request.memo
+      ? { ...session.request, memo: normalizeSessionMemo(session.request.memo) }
+      : session.request,
+    response: normalizeResponseMemo(session.response),
+    responseHistory: session.responseHistory
+      ? normalizeResponseHistory(session.responseHistory)
+      : undefined,
+  };
+}
+
+/** 保存済み応答のメモだけを、応答本体の復元安全性を変えずに置き換える。 */
+function normalizeResponseMemo(
+  response: FacilitatorResponse | null,
+): FacilitatorResponse | null {
+  return response
+    ? { ...response, memo_updates: normalizeSessionMemo(response.memo_updates) }
+    : null;
+}
+
+/** 保存済み履歴中のすべてのメモを現行制約へ正規化する。 */
+function normalizeResponseHistory(responseHistory: ResponseHistory) {
+  return Object.fromEntries(
+    Object.entries(responseHistory).map(([phase, response]) => [
+      phase,
+      normalizeResponseMemo(response),
+    ]),
+  ) as ResponseHistory;
+}
+
+/** 現行のSessionMemo制約へ、旧形式のメモ本文だけを安全に収める。 */
+function normalizeSessionMemo(memo: unknown): SessionMemo {
+  const record = isRecord(memo) ? memo : {};
+
+  return {
+    theme: normalizeMemoText(record.theme, 120) || "未設定",
+    status: normalizeMemoStatus(record.status),
+    facts: normalizeMemoItems(record.facts),
+    values: normalizeMemoItems(record.values),
+    concerns: normalizeMemoItems(record.concerns),
+    options: normalizeMemoItems(record.options),
+    decision_axes: normalizeMemoItems(record.decision_axes),
+    expert_summaries: normalizeMemoItems(record.expert_summaries),
+    conflicts: normalizeMemoItems(record.conflicts),
+    open_questions: normalizeMemoItems(record.open_questions),
+    next_actions: normalizeMemoItems(record.next_actions),
+  };
+}
+
+/** 旧メモの表示文字列をトリム・平文化して現行の文字数上限に収める。 */
+function normalizeMemoText(value: unknown, maximumLength: number) {
+  if (typeof value !== "string") return "";
+
+  return value
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .replace(
+      /^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|`{3,}[ \t]*)/,
+      "",
+    )
+    .trim()
+    .slice(0, maximumLength);
+}
+
+/** 配列は空要素を除外し、現行上限の先頭3件だけを残す。 */
+function normalizeMemoItems(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => normalizeMemoText(item, 80))
+    .filter((item) => item.length > 0)
+    .slice(0, 3);
+}
+
+/** 旧保存値の不明なstatusは、継続可能な進行中状態へ戻す。 */
+function normalizeMemoStatus(value: unknown): SessionMemo["status"] {
+  return value === "tentative_conclusion" ||
+    value === "pending_decision" ||
+    value === "pending_research" ||
+    value === "pending_family_discussion" ||
+    value === "action_plan"
+    ? value
+    : "in_progress";
+}
+
+/** unknownを安全にキー参照できるレコードか判定する。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 /** 端末保存値を検証し、画面表示・API送信に安全な案選択だけを返す。 */

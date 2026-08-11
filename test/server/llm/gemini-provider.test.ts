@@ -87,3 +87,45 @@ test("Geminiプロバイダーは不正なJSONまたはZod schema違反を構造
     null,
   );
 });
+
+test("Geminiプロバイダーは再生成指示がある場合だけsystemInstructionへ追記する", async () => {
+  const fakeClient = createGeminiClient('{"answer":"回答"}');
+  const provider = new GeminiLlmProvider(
+    "test-api-key",
+    "gemini-test",
+    fakeClient.client as never,
+  );
+  const schema = z.strictObject({ answer: z.string().min(1) });
+
+  await provider.generateStructuredOutput({
+    systemPrompt: "開発者指示",
+    userInput: { question: "質問" },
+    schema,
+    schemaName: "answer",
+  });
+  assert.equal(
+    (
+      fakeClient.getRequest() as {
+        config: { systemInstruction: string };
+      }
+    ).config.systemInstruction,
+    "開発者指示",
+  );
+
+  await provider.generateStructuredOutput({
+    systemPrompt: "開発者指示",
+    userInput: { question: "質問" },
+    schema,
+    schemaName: "answer",
+    repairInstruction:
+      "指定schemaを満たすJSONだけを再生成してください。 failure_classification=schema_validation.",
+  });
+  assert.equal(
+    (
+      fakeClient.getRequest() as {
+        config: { systemInstruction: string };
+      }
+    ).config.systemInstruction,
+    "開発者指示\n\n指定schemaを満たすJSONだけを再生成してください。 failure_classification=schema_validation.",
+  );
+});

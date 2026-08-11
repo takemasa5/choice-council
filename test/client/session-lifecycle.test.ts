@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createSessionRequest,
   createInitialSessionState,
   createStoredSession,
   getRestoredProposalState,
@@ -10,6 +11,7 @@ import {
   settleFinalMemo,
   startSession,
 } from "../../src/client/session-lifecycle";
+import { SessionMemoSchema } from "../../src/shared/schemas/session";
 import { memo } from "../../test-support/server";
 
 const facilitatorResponse = {
@@ -136,6 +138,57 @@ test("Markdown のない終了メモを保存データから復元すると意�
   assert.equal(restored.currentPhase, "group_chat");
   assert.equal(restored.response?.memo_updates.status, "in_progress");
   assert.equal(restored.responseHistory.final_memo, undefined);
+});
+
+test("旧形式のメモを正規化して復元後もAPI入力として継続できる", () => {
+  const oldMemo = {
+    ...memo,
+    theme: `  # ${"相談テーマ".repeat(30)}\n`,
+    facts: ["- 最初の事実\n補足", "", "1. 2番目の事実", "```", "4番目の事実"],
+    values: ["* 価値観", "あ".repeat(81), "3. 条件", "4. 除外対象"],
+  };
+  const restored = restoreStoredSessionState({
+    request: { consultation: "相談内容", memo: oldMemo } as never,
+    response: {
+      ...facilitatorResponse,
+      current_phase: "premise" as const,
+      memo_updates: oldMemo,
+    } as never,
+    responseHistory: {
+      premise: {
+        ...facilitatorResponse,
+        current_phase: "premise" as const,
+        memo_updates: oldMemo,
+      } as never,
+    },
+    currentPhase: "premise",
+  });
+
+  const restoredMemo = restored.response?.memo_updates;
+  assert.ok(restoredMemo);
+  assert.equal(restoredMemo.theme.length, 120);
+  assert.doesNotMatch(restoredMemo.theme, /^\s*#/);
+  assert.deepEqual(restoredMemo.facts, [
+    "最初の事実 補足",
+    "2番目の事実",
+    "4番目の事実",
+  ]);
+  assert.deepEqual(restoredMemo.values, ["価値観", "あ".repeat(80), "条件"]);
+  assert.ok(SessionMemoSchema.safeParse(restoredMemo).success);
+
+  const continuationRequest = createSessionRequest({
+    consultation: "相談内容",
+    facts: "",
+    values: "",
+    concerns: "",
+    expectedOutcome: "",
+    state: restored,
+  });
+  assert.ok(SessionMemoSchema.safeParse(continuationRequest.memo).success);
+  assert.deepEqual(
+    restored.responseHistory.premise?.memo_updates,
+    restoredMemo,
+  );
 });
 
 test("旧形式または参照不整合の案保存値は専門家選定へ安全に戻す", () => {

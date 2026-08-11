@@ -15,13 +15,16 @@ export class GeminiLlmProvider implements LlmProvider {
     systemPrompt,
     userInput,
     schema,
+    repairInstruction,
   }: StructuredOutputRequest<T>): Promise<T | null> {
     const responseJsonSchema = toGeminiJsonSchema(schema);
     const result = await this.client.models.generateContent({
       model: this.model,
       contents: JSON.stringify(userInput, null, 2),
       config: {
-        systemInstruction: systemPrompt,
+        systemInstruction: repairInstruction
+          ? `${systemPrompt}\n\n${repairInstruction}`
+          : systemPrompt,
         responseMimeType: "application/json",
         responseJsonSchema,
       },
