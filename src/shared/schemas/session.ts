@@ -128,9 +128,17 @@ function plainText(maximumLength: number) {
     .refine(
       (value) =>
         !/[\r\n]/.test(value) &&
-        !/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```)/.test(value),
+        !/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```)/.test(value) &&
+        !containsInlineMarkdown(value),
       "Markdown syntax is not allowed in session memo text",
     );
+}
+
+/** 通常文を壊さず、表示対象では許可しないインラインMarkdownだけを検出する。 */
+function containsInlineMarkdown(value: string) {
+  return /\*\*[^*\r\n]+\*\*|__[^_\r\n]+__|`[^`\r\n]+`|!?\[[^\]\r\n]+\]\(\s*(?:(?:[a-z][a-z\d+.-]*:|\/|www\.)[^)\r\n]*)\)/i.test(
+    value,
+  );
 }
 
 export const FinalSessionMemoSchema = SessionMemoSchema.extend({
@@ -238,7 +246,7 @@ const ExpertProposalInputSchema = z.strictObject({
 
 export const ExpertProposalSchema = z.strictObject({
   id: nonEmptyString,
-  name: nonEmptyString,
+  name: plainText(120),
   content: plainText(120),
   benefits: z.array(plainText(80)).min(1),
   sacrifices: z.array(plainText(80)).min(1),
