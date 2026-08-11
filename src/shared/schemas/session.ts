@@ -2,6 +2,9 @@ import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);
 const nonEmptyStringArray = z.array(nonEmptyString);
+const sessionMemoTheme = plainText(120);
+const sessionMemoItem = plainText(80);
+const sessionMemoArray = z.array(sessionMemoItem).max(3);
 /**
  * 選択・確定できる専門家ロール数の上限。
  *
@@ -86,20 +89,32 @@ export const FinalMemoStatusSchema = z.enum([
 export type FinalMemoStatus = z.infer<typeof FinalMemoStatusSchema>;
 
 export const SessionMemoSchema = z.strictObject({
-  theme: nonEmptyString,
+  theme: sessionMemoTheme,
   status: SessionMemoStatusSchema,
-  facts: nonEmptyStringArray,
-  values: nonEmptyStringArray,
-  concerns: nonEmptyStringArray,
-  options: nonEmptyStringArray,
-  decision_axes: nonEmptyStringArray,
-  expert_summaries: nonEmptyStringArray,
-  conflicts: nonEmptyStringArray,
-  open_questions: nonEmptyStringArray,
-  next_actions: nonEmptyStringArray,
+  facts: sessionMemoArray,
+  values: sessionMemoArray,
+  concerns: sessionMemoArray,
+  options: sessionMemoArray,
+  decision_axes: sessionMemoArray,
+  expert_summaries: sessionMemoArray,
+  conflicts: sessionMemoArray,
+  open_questions: sessionMemoArray,
+  next_actions: sessionMemoArray,
 });
 
 export type SessionMemo = z.infer<typeof SessionMemoSchema>;
+
+/** 通常画面のメモに許可する、Markdown構文を含まない短いプレーンテキスト。 */
+function plainText(maximumLength: number) {
+  return nonEmptyString
+    .max(maximumLength)
+    .refine(
+      (value) =>
+        !/[\r\n]/.test(value) &&
+        !/^(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```)/.test(value),
+      "Markdown syntax is not allowed in session memo text",
+    );
+}
 
 export const FinalSessionMemoSchema = SessionMemoSchema.extend({
   status: FinalMemoStatusSchema,

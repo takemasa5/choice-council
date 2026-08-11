@@ -53,7 +53,7 @@ test("Groqプロバイダーはstrict JSON Schemaで構造化出力を要求し�
         strict: true,
         schema: {
           type: "object",
-          properties: { answer: { type: "string", minLength: 1 } },
+          properties: { answer: { type: "string" } },
           required: ["answer"],
           additionalProperties: false,
         },
@@ -62,6 +62,53 @@ test("Groqプロバイダーはstrict JSON Schemaで構造化出力を要求し�
     max_completion_tokens: 1200,
     reasoning_effort: "low",
   });
+});
+
+test("Groqプロバイダーはネストした文字列と配列の未対応制約をJSON Schemaから除外する", async () => {
+  const fakeClient = createGroqClient(
+    '{"title":"回答","entries":[{"label":"項目","tags":["タグ"]}]}',
+  );
+  const provider = new GroqLlmProvider(
+    "test-api-key",
+    "groq-test",
+    fakeClient.client as never,
+  );
+  const schema = z.strictObject({
+    title: z.string().min(1).max(120),
+    entries: z
+      .array(
+        z.strictObject({
+          label: z.string().min(1).max(80),
+          tags: z.array(z.string().min(1).max(80)).min(1).max(3),
+        }),
+      )
+      .min(1)
+      .max(3),
+  });
+
+  const output = await provider.generateStructuredOutput({
+    systemPrompt: "prompt",
+    userInput: {},
+    schema,
+    schemaName: "nested_output",
+  });
+  const request = fakeClient.getRequest() as {
+    response_format: { json_schema: { schema: Record<string, unknown> } };
+  };
+  const requestSchema = request.response_format.json_schema.schema;
+  const serializedSchema = JSON.stringify(requestSchema);
+
+  assert.deepEqual(output, {
+    title: "回答",
+    entries: [{ label: "項目", tags: ["タグ"] }],
+  });
+  assert.deepEqual(requestSchema.required, ["title", "entries"]);
+  assert.equal(requestSchema.additionalProperties, false);
+  assert.match(serializedSchema, /"properties"/);
+  assert.match(serializedSchema, /"items"/);
+  for (const keyword of ["minLength", "maxLength", "minItems", "maxItems"]) {
+    assert.doesNotMatch(serializedSchema, new RegExp(`"${keyword}"`));
+  }
 });
 
 test("Groqプロバイダーはcontentがない場合にnullを返す", async () => {

@@ -47,9 +47,37 @@ export class GroqLlmProvider implements LlmProvider {
   }
 }
 
-/** ZodのJSON SchemaからGroq APIで不要なスキーマ宣言を除外する。 */
-function toGroqJsonSchema(schema: z.ZodType) {
+/** ZodのJSON SchemaからGroq strict structured outputで未対応の制約を除外する。 */
+function toGroqJsonSchema(schema: z.ZodType): Record<string, unknown> {
+  return removeUnsupportedGroqSchemaKeywords(z.toJSONSchema(schema)) as Record<
+    string,
+    unknown
+  >;
+}
+
+/** Groqが受理しない制約だけを再帰的に除外し、JSON Schemaの構造は維持する。 */
+function removeUnsupportedGroqSchemaKeywords(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(removeUnsupportedGroqSchemaKeywords);
+  }
+
+  if (!isRecord(value)) return value;
+
   return Object.fromEntries(
-    Object.entries(z.toJSONSchema(schema)).filter(([key]) => key !== "$schema"),
+    Object.entries(value)
+      .filter(
+        ([key]) =>
+          key !== "$schema" &&
+          key !== "minLength" &&
+          key !== "maxLength" &&
+          key !== "minItems" &&
+          key !== "maxItems",
+      )
+      .map(([key, child]) => [key, removeUnsupportedGroqSchemaKeywords(child)]),
   );
+}
+
+/** unknown を安全にプロパティ参照できるレコードか判定する。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

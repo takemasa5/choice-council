@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createApp } from "../../../server/app";
+import type { StructuredOutputRequest } from "../../../server/llm/types";
+import { SessionMemoSchema } from "../../../src/shared/schemas/session";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
 
 test("POST /api/session-memo/update returns a validated session memo", async () => {
@@ -11,6 +14,54 @@ test("POST /api/session-memo/update returns a validated session memo", async () 
 
   assert.equal(response.status, 200);
   assert.equal((response.body as { theme: string }).theme, "相談テーマ");
+});
+
+test("セッションメモは文字数、配列数、Markdown構文を制限し通常文を許可する", () => {
+  const validMemo = {
+    ...memo,
+    theme: "通常の相談テーマ",
+    facts: ["費用を確認する。# は見出しではない。"],
+  };
+
+  assert.ok(SessionMemoSchema.safeParse(validMemo).success);
+
+  for (const invalidMemo of [
+    { ...memo, theme: "あ".repeat(121) },
+    { ...memo, facts: ["1", "2", "3", "4"] },
+    { ...memo, facts: ["あ".repeat(81)] },
+    { ...memo, facts: ["1行目\n2行目"] },
+    { ...memo, facts: ["# 見出し"] },
+    { ...memo, facts: ["- 箇条書き"] },
+    { ...memo, facts: ["1. 番号付きリスト"] },
+    { ...memo, facts: ["```コードフェンス"] },
+  ]) {
+    assert.equal(SessionMemoSchema.safeParse(invalidMemo).success, false);
+  }
+});
+
+test("Markdown構文を含むセッションメモ応答は再生成する", async () => {
+  let generationCount = 0;
+  const outputs = [{ ...memo, facts: ["- Markdownの箇条書き"] }, memo];
+  const response = await requestJson(
+    createApp({
+      createLlmProvider: () => ({
+        generateStructuredOutput: async <T>(
+          request: StructuredOutputRequest<T>,
+        ) => {
+          const output = outputs[Math.min(generationCount, outputs.length - 1)];
+          generationCount += 1;
+          const parsedOutput = request.schema.safeParse(output);
+          return parsedOutput.success ? parsedOutput.data : null;
+        },
+      }),
+    }),
+    "/api/session-memo/update",
+    { consultation: "相談内容", currentPhase: "deliberation" },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(generationCount, 2);
+  assert.deepEqual(response.body, memo);
 });
 
 test("POST /api/session-memo/update reports a missing API key", async () => {
