@@ -53,6 +53,68 @@ test("先頭1〜3空白の順不同リストを描画し、4空白は段落と�
   assert.match(markup, /<p> {4}- 4空白の項目<\/p>/);
 });
 
+test("タブまたは複数空白で区切った順不同リストを描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "-\tタブ付き項目\n*   複数空白付き項目",
+    }),
+  );
+
+  assert.match(
+    markup,
+    /<ul><li>タブ付き項目<\/li><li>複数空白付き項目<\/li><\/ul>/,
+  );
+});
+
+test("空のアスタリスク項目を一貫してリストとして描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "*\n  *\n* \n*\t\n*  ",
+    }),
+  );
+
+  assert.match(
+    markup,
+    /<ul><li><\/li><li><\/li><li><\/li><li><\/li><li><\/li><\/ul>/,
+  );
+});
+
+test("空のハイフン項目はリストとして描画しない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "- \n-\t\n-  ",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<ul>|<li>/);
+  assert.match(markup, /<p>- \n-\t\n- {2}<\/p>/);
+});
+
+test("水平線はリストとして描画しない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "* * *\n\n- - -",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<ul>|<li>/);
+  assert.match(markup, /<p>\* \* \*<\/p>/);
+  assert.match(markup, /<p>- - -<\/p>/);
+});
+
+test("4空白、区切り空白なし、対応外マーカーはリストとして描画しない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "    * 4空白項目\n\n-区切りなし項目\n\n+ 対応外項目",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<ul>|<li>/);
+  assert.match(markup, /<p> {4}\* 4空白項目<\/p>/);
+  assert.match(markup, /<p>-区切りなし項目<\/p>/);
+  assert.match(markup, /<p>\+ 対応外項目<\/p>/);
+});
+
 test("HTMLは要素化せずテキストとしてエスケープする", () => {
   const markup = renderToStaticMarkup(
     createElement(MarkdownDocument, {

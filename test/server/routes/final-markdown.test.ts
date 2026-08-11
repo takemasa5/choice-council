@@ -146,6 +146,27 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
   }
 });
 
+test("終了メモ出力の箇条書き区切りと空項目は表示契約どおり検証する", () => {
+  for (const markdown of [
+    `${validMarkdown}\n\n-\tタブ区切り項目`,
+    `${validMarkdown}\n\n*   複数空白区切り項目`,
+    `${validMarkdown}\n\n*`,
+    `${validMarkdown}\n\n   *`,
+    `${validMarkdown}\n\n* `,
+    `${validMarkdown}\n\n*\t`,
+  ]) {
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, true);
+  }
+
+  for (const markdown of [
+    `${validMarkdown}\n\n-`,
+    `${validMarkdown}\n\n- `,
+    `${validMarkdown}\n\n-\t`,
+  ]) {
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, false);
+  }
+});
+
 test("POST /api/final-markdown/generate はMarkdown違反を理由付きで再生成する", async () => {
   const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const outputs = [
