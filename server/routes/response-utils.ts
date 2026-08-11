@@ -32,6 +32,7 @@ export async function parseStructuredOutputOnceWithRetry<T>(
   request: (attempt?: StructuredOutputAttempt) => Promise<T | null>,
   isValid: StructuredOutputPostValidator<T> = () => true,
   onFailure?: StructuredOutputFailureCallback,
+  repairOptions: StructuredOutputRepairOptions = {},
 ) {
   let repairInstruction: string | undefined;
 
@@ -74,7 +75,7 @@ export async function parseStructuredOutputOnceWithRetry<T>(
       terminationReason: attempt === 2 ? "max_attempts" : "retry",
     };
     onFailure?.(safeFailure);
-    repairInstruction = createRepairInstruction(safeFailure);
+    repairInstruction = createRepairInstruction(safeFailure, repairOptions);
   }
 
   return null;
@@ -100,6 +101,11 @@ export interface StructuredOutputAttempt {
 export type StructuredOutputFailureCallback = (
   failure: StructuredOutputFailure,
 ) => void;
+
+/** 再生成する構造化出力の本文形式に合わせた修復指示のオプション。 */
+export interface StructuredOutputRepairOptions {
+  allowMarkdown?: boolean;
+}
 
 /** 後続検証の失敗理由を、本文を含めずに再生成へ渡す。 */
 export type StructuredOutputPostValidator<T> = (
@@ -165,7 +171,10 @@ function toStructuredOutputFailure(
 }
 
 /** 失敗分類とfield path/codeだけを渡してJSON再生成を求める。 */
-function createRepairInstruction(failure: StructuredOutputFailure): string {
+function createRepairInstruction(
+  failure: StructuredOutputFailure,
+  options: StructuredOutputRepairOptions,
+): string {
   const issues = failure.issues
     .map((issue) => {
       const path = issue.path.length > 0 ? issue.path.join(".") : "$";
@@ -176,7 +185,11 @@ function createRepairInstruction(failure: StructuredOutputFailure): string {
     ? ` failure_classification=${failure.classification}; ${issues}.`
     : ` failure_classification=${failure.classification}.`;
 
-  return `指定schemaを満たすJSONだけを再生成してください。説明文やMarkdownは出力しないでください。${details}`;
+  const outputConstraint = options.allowMarkdown
+    ? "JSON外の説明文やコードフェンスは出力せず、指定schemaに従ってください。"
+    : "説明文やMarkdownは出力しないでください。";
+
+  return `指定schemaを満たすJSONだけを再生成してください。${outputConstraint}${details}`;
 }
 
 /** 日本語名: 入力不正レスポンスを返す関数。 */

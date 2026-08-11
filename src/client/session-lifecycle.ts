@@ -164,28 +164,32 @@ function normalizeSessionMemo(memo: unknown): SessionMemo {
 
 /** 旧メモの表示文字列をトリム・平文化して現行の文字数上限に収める。 */
 function normalizeMemoText(value: unknown, maximumLength: number) {
+  const normalized = normalizeLegacyPlainText(value, maximumLength);
+
+  return isValidNormalizedMemoText(normalized, maximumLength) ? normalized : "";
+}
+
+/** 旧保存値の表示テキストから、現行出力で禁止するMarkdownを取り除く。 */
+function normalizeLegacyPlainText(value: unknown, maximumLength: number) {
   if (typeof value !== "string") return "";
 
-  const normalized = value
+  return value
     .replace(/[\r\n]+/g, " ")
     .trim()
     .replace(
       /^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|`{3,}[ \t]*)/,
       "",
     )
+    .replace(/!?\[([^\]\r\n]+)\]\(\s*[^)\r\n]+\)/g, "$1")
     .replace(
-      /!?\[([^\]\r\n]+)\]\(\s*(?:(?:[a-z][a-z\d+.-]*:|\/|www\.)[^)\r\n]*)\)/gi,
-      "$1",
-    )
-    .replace(
-      /\*\*([^*\r\n]+)\*\*|__([^_\r\n]+)__/g,
-      (_match, bold, underline) => bold ?? underline,
+      /\*\*([^*\r\n]+)\*\*|__([^_\r\n]+)__|\*([^*\r\n]+)\*|(?<![\p{L}\p{N}])_([^_\r\n]+)_(?![\p{L}\p{N}])/gu,
+      (_match, bold, underline, emphasis, underscore) =>
+        bold ?? underline ?? emphasis ?? underscore,
     )
     .replace(/`([^`\r\n]+)`/g, "$1")
+    .replace(/~~([^~\r\n]+)~~/g, "$1")
     .trim()
     .slice(0, maximumLength);
-
-  return isValidNormalizedMemoText(normalized, maximumLength) ? normalized : "";
 }
 
 /** 現行schemaに通らない旧メモ文字列は、APIへ送らず安全に除外する。 */
@@ -219,6 +223,86 @@ function normalizeMemoItems(value: unknown) {
     .slice(0, 3);
 }
 
+/** 旧保存コメントを現行の表示・後続入力制約へ正規化する。 */
+function normalizeStoredExpertComments(value: unknown): ExpertComment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map(normalizeStoredExpertComment)
+    .filter((comment): comment is ExpertComment => comment !== null);
+}
+
+/** 現行コメントは維持し、旧形式だけを必要最小限に平文化する。 */
+function normalizeStoredExpertComment(value: unknown): ExpertComment | null {
+  const currentComment = ExpertCommentSchema.safeParse(value);
+  if (currentComment.success) return currentComment.data;
+
+  const record = isRecord(value) ? value : {};
+  const proposal = isRecord(record.proposal) ? record.proposal : {};
+  const normalizedComment = {
+    role_name: normalizeRequiredText(record.role_name),
+    viewpoint: normalizeRequiredText(record.viewpoint),
+    summary: normalizeExpertCommentText(record.summary, 300),
+    proposal: {
+      id: normalizeRequiredText(proposal.id),
+      name: normalizeExpertCommentText(proposal.name, 120),
+      content: normalizeExpertCommentText(proposal.content, 120),
+      benefits: normalizeExpertCommentItems(proposal.benefits),
+      sacrifices: normalizeExpertCommentItems(proposal.sacrifices),
+      conditions: normalizeExpertCommentItems(proposal.conditions),
+    },
+    key_point: normalizeExpertCommentText(record.key_point, 120),
+    concern: normalizeExpertCommentText(record.concern, 120),
+    question_to_user: normalizeExpertCommentText(record.question_to_user, 120),
+    confidence: record.confidence,
+    needs_research: record.needs_research,
+  };
+  const parsedComment = ExpertCommentSchema.safeParse(normalizedComment);
+
+  return parsedComment.success ? parsedComment.data : null;
+}
+
+/** 専門家コメントの表示テキストが現行schemaを満たす場合だけ残す。 */
+function normalizeExpertCommentText(value: unknown, maximumLength: number) {
+  const normalized = normalizeLegacyPlainText(value, maximumLength);
+  if (!normalized) return "";
+
+  const candidate = {
+    role_name: "専門家",
+    viewpoint: "観点",
+    summary: maximumLength === 300 ? normalized : "要約",
+    proposal: {
+      id: "proposal",
+      name: maximumLength === 120 ? normalized : "案",
+      content: maximumLength === 120 ? normalized : "内容",
+      benefits: maximumLength === 80 ? [normalized] : ["利点"],
+      sacrifices: maximumLength === 80 ? [normalized] : ["犠牲"],
+      conditions: maximumLength === 80 ? [normalized] : ["条件"],
+    },
+    key_point: maximumLength === 120 ? normalized : "要点",
+    concern: maximumLength === 120 ? normalized : "懸念",
+    question_to_user: maximumLength === 120 ? normalized : "質問",
+    confidence: "medium" as const,
+    needs_research: false,
+  };
+
+  return ExpertCommentSchema.safeParse(candidate).success ? normalized : "";
+}
+
+/** 配列形式の表示テキストを平文化し、空要素を除外する。 */
+function normalizeExpertCommentItems(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => normalizeExpertCommentText(item, 80))
+    .filter((item) => item.length > 0);
+}
+
+/** 旧保存値の構造識別子を、空白を除いた非空文字列として確認する。 */
+function normalizeRequiredText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 /** 旧保存値の不明なstatusは、継続可能な進行中状態へ戻す。 */
 function normalizeMemoStatus(value: unknown): SessionMemo["status"] {
   return value === "tentative_conclusion" ||
@@ -239,8 +323,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function getRestoredProposalState(
   parsed: StoredSession,
 ): RestoredProposalState {
+  const normalizedExpertComments = normalizeStoredExpertComments(
+    parsed.expertComments,
+  );
   const commentsResult = ExpertCommentSchema.array().safeParse(
-    parsed.expertComments ?? [],
+    normalizedExpertComments,
   );
   const selectionResult = parsed.discussionSelection
     ? DiscussionSelectionSchema.safeParse(parsed.discussionSelection)

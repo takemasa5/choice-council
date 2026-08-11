@@ -13,6 +13,8 @@ import {
 } from "../../src/client/session-lifecycle";
 import {
   ConsultationRequestSchema,
+  ExpertCommentSchema,
+  GroupChatNextRequestSchema,
   SessionMemoSchema,
 } from "../../src/shared/schemas/session";
 import { memo } from "../../test-support/server";
@@ -239,6 +241,86 @@ test("旧メモのinline Markdownを平文化して有効なセッション状�
     state: restored,
   });
   assert.ok(ConsultationRequestSchema.safeParse(continuationRequest).success);
+});
+
+test("旧形式の専門家コメントを正規化して意見交換フェーズを復元する", () => {
+  const oldComment = {
+    ...expertComment,
+    summary: `**${"要".repeat(180)}**\n~~${"約".repeat(180)}~~`,
+    proposal: {
+      ...expertComment.proposal,
+      name: `**${"案".repeat(121)}**`,
+      content: "`内容`\n補足",
+      benefits: ["- **利点**\n補足"],
+      sacrifices: ["~~犠牲~~"],
+      conditions: ["[条件](relative)"],
+    },
+    key_point: "*要点*",
+    concern: "_懸念_",
+    question_to_user: "`質問`",
+  };
+  const confirmedExpert = {
+    ...facilitatorResponse.expert_requests[0],
+    participantId: "expert-1",
+  };
+  const stored = {
+    request: { consultation: "相談内容" },
+    response: {
+      ...facilitatorResponse,
+      current_phase: "group_chat" as const,
+    } as never,
+    responseHistory: {
+      group_chat: {
+        ...facilitatorResponse,
+        current_phase: "group_chat" as const,
+      } as never,
+    },
+    currentPhase: "group_chat" as const,
+    confirmedExperts: [confirmedExpert],
+    expertComments: [oldComment],
+    discussionSelection: {
+      kind: "deep_dive" as const,
+      proposalId: "proposal-1",
+    },
+    selectedProposalIds: ["proposal-1"],
+  };
+
+  const proposalState = getRestoredProposalState(stored as never);
+  const restored = restoreStoredSessionState(stored as never);
+  const [restoredComment] = proposalState.expertComments;
+
+  assert.equal(proposalState.isValid, true);
+  assert.ok(restoredComment);
+  assert.equal(restoredComment.summary.length, 300);
+  assert.doesNotMatch(restoredComment.summary, /[\r\n*~`]/);
+  assert.equal(restoredComment.proposal.name.length, 120);
+  assert.deepEqual(restoredComment.proposal.benefits, ["利点 補足"]);
+  assert.deepEqual(restoredComment.proposal.sacrifices, ["犠牲"]);
+  assert.deepEqual(restoredComment.proposal.conditions, ["条件"]);
+  assert.ok(ExpertCommentSchema.safeParse(restoredComment).success);
+  assert.equal(restored.currentPhase, "group_chat");
+  assert.equal(restored.response?.current_phase, "group_chat");
+  assert.ok(
+    GroupChatNextRequestSchema.safeParse({
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "検討中です。",
+      recentMessages: [],
+      confirmedExperts: [confirmedExpert],
+      expertRepliesSinceUser: 0,
+      discussionContext: {
+        selection: proposalState.discussionSelection,
+        proposals: [
+          {
+            participantId: confirmedExpert.participantId,
+            roleName: confirmedExpert.role_name,
+            proposal: restoredComment.proposal,
+          },
+        ],
+      },
+    }).success,
+  );
 });
 
 test("旧形式または参照不整合の案保存値は専門家選定へ安全に戻す", () => {

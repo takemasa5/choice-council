@@ -207,6 +207,14 @@ test("POST /api/final-markdown/generate はMarkdown違反を理由付きで再�
     structuredRequests[1]?.repairInstruction ?? "",
     /path=markdown,code=custom/,
   );
+  assert.doesNotMatch(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /Markdownは出力しない/,
+  );
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /JSON外の説明文やコードフェンスは出力せず/,
+  );
 });
 
 test("POST /api/final-markdown/generate は状態ラベル不足を理由付きで再生成する", async () => {

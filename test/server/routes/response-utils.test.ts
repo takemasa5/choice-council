@@ -46,6 +46,10 @@ test("構造化出力の再試行には安全な理由付きJSON再生成指示�
     attempts[1].repairInstruction ?? "",
     /path=proposal.content,code=too_big/,
   );
+  assert.match(
+    attempts[1].repairInstruction ?? "",
+    /説明文やMarkdownは出力しないでください。/,
+  );
   assert.doesNotMatch(
     attempts[1].repairInstruction ?? "",
     /expert_comment|再生成結果/,

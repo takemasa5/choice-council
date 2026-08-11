@@ -66,6 +66,7 @@ export function createFinalMarkdownHandler(
             "final_markdown",
             failure,
           ),
+        { allowMarkdown: true },
       );
 
       if (!output) {
