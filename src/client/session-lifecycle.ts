@@ -13,6 +13,7 @@ import type {
 import {
   DiscussionSelectionSchema,
   ExpertCommentSchema,
+  ExpertGroupChatMessageSchema,
   FacilitatorResponseSchema,
   FacilitatorTurnSchema,
   GroupChatMessageSchema,
@@ -303,7 +304,9 @@ function normalizeGroupChatText(value: unknown) {
     createdAt: "2026-01-01T00:00:00.000Z",
   };
 
-  return GroupChatMessageSchema.safeParse(candidate).success ? normalized : "";
+  return ExpertGroupChatMessageSchema.safeParse(candidate).success
+    ? normalized
+    : "";
 }
 
 /** 旧保存済み発言を、現行の表示schemaに適合するものだけ復元する。 */
@@ -319,7 +322,13 @@ function normalizeStoredGroupChatMessage(
   value: unknown,
 ): GroupChatMessage | null {
   const currentMessage = GroupChatMessageSchema.safeParse(value);
-  if (currentMessage.success) return currentMessage.data;
+  if (currentMessage.success) {
+    if (currentMessage.data.speakerType !== "expert") {
+      return currentMessage.data;
+    }
+    const currentExpertMessage = ExpertGroupChatMessageSchema.safeParse(value);
+    if (currentExpertMessage.success) return currentExpertMessage.data;
+  }
 
   const record = isRecord(value) ? value : {};
   const normalizedMessage = {
@@ -327,7 +336,10 @@ function normalizeStoredGroupChatMessage(
     speakerType: record.speakerType,
     speakerName: normalizeRequiredText(record.speakerName),
     participantId: normalizeRequiredText(record.participantId),
-    content: normalizeGroupChatText(record.content),
+    content:
+      record.speakerType === "expert"
+        ? normalizeGroupChatText(record.content)
+        : record.content,
     createdAt: normalizeRequiredText(record.createdAt),
   };
   const parsedMessage = GroupChatMessageSchema.safeParse(normalizedMessage);
@@ -348,11 +360,10 @@ function normalizeStoredFacilitatorTurn(
   const requestedSpeaker = isRecord(record.requestedSpeaker)
     ? record.requestedSpeaker
     : {};
-  const userOptions = Array.isArray(record.userOptions)
-    ? record.userOptions
-        .map((option) => normalizeRequiredText(option))
-        .filter((option) => option.length > 0)
-    : record.userOptions;
+  const userOptions = normalizeStoredTurnUserOptions(
+    record.userOptions,
+    requestedSpeaker.speakerType,
+  );
   const normalizedTurn = {
     message: normalizeGroupChatText(record.message),
     requestedSpeaker: {
@@ -376,6 +387,27 @@ function normalizeStoredFacilitatorTurn(
   const parsedTurn = FacilitatorTurnSchema.safeParse(normalizedTurn);
 
   return parsedTurn.success ? parsedTurn.data : undefined;
+}
+
+/** 旧ターンの「その他」は自由入力へ集約し、ユーザー選択肢を現行仕様へ復元する。 */
+function normalizeStoredTurnUserOptions(value: unknown, speakerType: unknown) {
+  if (speakerType !== "user") return value;
+
+  const options = Array.isArray(value)
+    ? value
+        .map((option) => normalizeGroupChatText(option))
+        .filter((option) => option.length > 0 && option !== "その他")
+    : [];
+  const uniqueOptions = [...new Set(options)];
+
+  if (!uniqueOptions.includes("そのまま意見交換を続けて")) {
+    uniqueOptions.push("そのまま意見交換を続けて");
+  }
+  if (uniqueOptions.length < 2) {
+    uniqueOptions.push("別の考えを自由入力する");
+  }
+
+  return uniqueOptions;
 }
 
 /** 現行schemaに通らない旧メモ文字列は、APIへ送らず安全に除外する。 */

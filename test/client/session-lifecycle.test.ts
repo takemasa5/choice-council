@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { GroupChatPhase } from "../../src/client/phases/GroupChatPhase";
 import {
   createSessionRequest,
   createInitialSessionState,
@@ -405,6 +408,81 @@ test("旧形式の通常画面出力を平文化して意見交換状態を復�
   );
   assert.equal(restored.currentPhase, "group_chat");
   assert.equal(restored.response?.current_phase, "group_chat");
+});
+
+test("保存済みのユーザー発言は復元時に内容を加工しない", () => {
+  const userContent = `**${"ユーザー入力".repeat(40)}**\n補足`;
+  const normalized = normalizeStoredSession({
+    request: { consultation: "相談内容" },
+    response: null,
+    groupChatMessages: [
+      {
+        id: "user-1",
+        speakerType: "user",
+        speakerName: "あなた",
+        participantId: "user",
+        content: userContent,
+        createdAt: "2026-08-11T00:00:00.000Z",
+      },
+    ],
+  } as never);
+
+  assert.equal(normalized.groupChatMessages?.[0]?.content, userContent);
+  assert.ok(
+    GroupChatMessageSchema.safeParse(normalized.groupChatMessages?.[0]).success,
+  );
+});
+
+test("旧ターンのその他は除外し自由入力可能なユーザーターンを復元する", () => {
+  const legacyTurn = {
+    message: "次はユーザーに確認します。",
+    requestedSpeaker: {
+      speakerType: "user" as const,
+      speakerName: "あなた",
+      participantId: "user",
+    },
+    requestReason: "優先順位を確認するためです。",
+    question: "どちらを優先しますか？",
+    userOptions: ["費用を優先して検討したい", "その他"],
+    memoUpdate: null,
+    contextSummaryUpdate: null,
+  };
+  const normalized = normalizeStoredSession({
+    request: { consultation: "相談内容" },
+    response: null,
+    groupChatTurn: legacyTurn,
+  } as never);
+  const turn = normalized.groupChatTurn;
+  const markup = renderToStaticMarkup(
+    createElement(GroupChatPhase, {
+      turn: turn ?? null,
+      messages: [],
+      otherAnswer: "",
+      isLoading: false,
+      errorMessage: "",
+      onOtherAnswerChange: () => undefined,
+      onUserAnswer: () => undefined,
+      onRetryExpertReply: () => undefined,
+      finishErrorMessage: "",
+      onFinish: () => undefined,
+    }),
+  );
+  const currentTurn = {
+    ...legacyTurn,
+    userOptions: ["費用を優先して検討したい", "そのまま意見交換を続けて"],
+  };
+  const current = normalizeStoredSession({
+    request: { consultation: "相談内容" },
+    response: null,
+    groupChatTurn: currentTurn,
+  } as never);
+
+  assert.ok(FacilitatorTurnSchema.safeParse(turn).success);
+  assert.deepEqual(turn?.userOptions, currentTurn.userOptions);
+  assert.deepEqual(current.groupChatTurn, currentTurn);
+  assert.match(markup, /費用を優先して検討したい/);
+  assert.match(markup, /自由入力/);
+  assert.doesNotMatch(markup, /その他/);
 });
 
 test("復元不能な通常画面応答は相談入力へ安全に戻す", () => {

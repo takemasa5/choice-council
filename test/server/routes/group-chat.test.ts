@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ExpertGroupChatMessageSchema,
   FacilitatorTurnSchema,
   DiscussionSelectionSchema,
   GroupChatMessageSchema,
@@ -82,16 +83,27 @@ test("グループチャット出力は通常画面用の文字数とMarkdownを
     createdAt: "2026-08-11T00:00:00.000Z",
   } as const;
 
-  assert.ok(GroupChatMessageSchema.safeParse(message).success);
+  assert.ok(ExpertGroupChatMessageSchema.safeParse(message).success);
   assert.equal(
-    GroupChatMessageSchema.safeParse({ ...message, content: "あ".repeat(201) })
-      .success,
+    ExpertGroupChatMessageSchema.safeParse({
+      ...message,
+      content: "あ".repeat(201),
+    }).success,
     false,
   );
   assert.equal(
-    GroupChatMessageSchema.safeParse({ ...message, content: "- 箇条書き" })
-      .success,
+    ExpertGroupChatMessageSchema.safeParse({
+      ...message,
+      content: "- 箇条書き",
+    }).success,
     false,
+  );
+  assert.ok(
+    GroupChatMessageSchema.safeParse({
+      ...message,
+      speakerType: "user",
+      content: `**${"ユーザー入力".repeat(40)}**\n補足`,
+    }).success,
   );
 
   assert.ok(FacilitatorTurnSchema.safeParse(turn).success);
@@ -560,9 +572,9 @@ test("POST /api/expert/group-chat は専門家として発言を返し未知の�
   let structuredRequest: unknown;
   const reply = {
     id: "reply-1",
-    speakerType: "user",
-    speakerName: "誤り",
-    participantId: "wrong",
+    speakerType: "expert",
+    speakerName: expert.role_name,
+    participantId: expert.participantId,
     content: "予算を確認します。",
     createdAt: "2026-07-18T00:00:00.000Z",
   };
@@ -605,6 +617,55 @@ test("POST /api/expert/group-chat は専門家として発言を返し未知の�
     { ...request, unexpected: true },
   );
   assert.equal(invalidResponse.status, 400);
+});
+
+test("POST /api/expert/group-chat はMarkdownを含む専門家発言を再生成する", async () => {
+  const userContent = `**${"ユーザー入力".repeat(40)}**\n補足`;
+  const invalidReply = {
+    id: "reply-1",
+    speakerType: "expert",
+    speakerName: expert.role_name,
+    participantId: expert.participantId,
+    content: "**予算を確認します。**",
+    createdAt: "2026-07-18T00:00:00.000Z",
+  };
+  const validReply = { ...invalidReply, content: "予算を確認します。" };
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const response = await requestJson(
+    createTestApp([invalidReply, validReply], "test-api-key", (request) => {
+      structuredRequests.push(request as { repairInstruction?: string });
+    }),
+    "/api/expert/group-chat",
+    {
+      consultation: "相談内容",
+      currentPhase: "group_chat",
+      memo,
+      contextSummary: "費用を検討中です。",
+      recentMessages: [
+        {
+          id: "user-1",
+          speakerType: "user",
+          speakerName: "あなた",
+          participantId: "user",
+          content: userContent,
+          createdAt: "2026-07-18T00:00:00.000Z",
+        },
+      ],
+      expert,
+      facilitatorQuestion: "予算の考え方を教えてください。",
+      discussionContext: {
+        selection: { kind: "defer" },
+        proposals: [discussionProposal],
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(structuredRequests.length, 2);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /failure_classification=post_validation/,
+  );
 });
 
 test("POST /api/expert/group-chat は重複IDを再生成して新しい発言を返す", async () => {

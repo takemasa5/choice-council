@@ -1,8 +1,8 @@
 import type { RequestHandler } from "express";
 import {
+  ExpertGroupChatMessageSchema,
   GroupChatExpertReplyRequestSchema,
-  GroupChatMessageSchema,
-  type GroupChatMessage,
+  type ExpertGroupChatMessage,
 } from "../../src/shared/schemas/session";
 import {
   logStructuredOutputFailure,
@@ -30,24 +30,25 @@ export function createGroupChatExpertReplyHandler(
       parsedRequest.data.recentMessages.map((message) => message.id),
     );
     try {
-      const output = await parseStructuredOutputOnceWithRetry<GroupChatMessage>(
-        (attempt) =>
-          dependencies.createLlmProvider().generateStructuredOutput({
-            systemPrompt: groupChatExpertPrompt,
-            userInput: parsedRequest.data,
-            schema: GroupChatMessageSchema,
-            schemaName: "group_chat_message",
-            repairInstruction: attempt?.repairInstruction,
-          }),
-        createGroupChatMessageValidator(existingMessageIds),
-        (failure) =>
-          logStructuredOutputFailure(
-            request,
-            response,
-            "group_chat_message",
-            failure,
-          ),
-      );
+      const output =
+        await parseStructuredOutputOnceWithRetry<ExpertGroupChatMessage>(
+          (attempt) =>
+            dependencies.createLlmProvider().generateStructuredOutput({
+              systemPrompt: groupChatExpertPrompt,
+              userInput: parsedRequest.data,
+              schema: ExpertGroupChatMessageSchema,
+              schemaName: "group_chat_message",
+              repairInstruction: attempt?.repairInstruction,
+            }),
+          createGroupChatMessageValidator(existingMessageIds),
+          (failure) =>
+            logStructuredOutputFailure(
+              request,
+              response,
+              "group_chat_message",
+              failure,
+            ),
+        );
       if (!output) {
         sendInvalidModelResponse(request, response);
         return;
@@ -67,9 +68,9 @@ export function createGroupChatExpertReplyHandler(
 /** 既存メッセージとのID重複を、再生成可能な安全な理由として返す。 */
 function createGroupChatMessageValidator(
   existingMessageIds: Set<string>,
-): StructuredOutputPostValidator<GroupChatMessage> {
+): StructuredOutputPostValidator<ExpertGroupChatMessage> {
   return (message) => {
-    if (!GroupChatMessageSchema.safeParse(message).success) {
+    if (!ExpertGroupChatMessageSchema.safeParse(message).success) {
       return { path: [], code: "invalid_group_chat_message" };
     }
     if (existingMessageIds.has(message.id)) {

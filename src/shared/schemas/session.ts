@@ -405,12 +405,21 @@ const GroupChatMessageInputSchema = z.strictObject({
   createdAt: nonEmptyString,
 });
 
-export const GroupChatMessageSchema = GroupChatMessageInputSchema.extend({
+export const GroupChatMessageSchema = GroupChatMessageInputSchema;
+
+/** 専門家LLMが返す、通常画面向けのグループチャット発言。 */
+export const ExpertGroupChatMessageSchema = GroupChatMessageInputSchema.extend({
+  speakerType: z.literal("expert"),
   content: plainText(200),
 });
 
 /** 日本語名: グループチャット発言。 */
 export type GroupChatMessage = z.infer<typeof GroupChatMessageSchema>;
+
+/** 日本語名: 専門家LLMのグループチャット発言。 */
+export type ExpertGroupChatMessage = z.infer<
+  typeof ExpertGroupChatMessageSchema
+>;
 
 const RequestedSpeakerSchema = z.strictObject({
   speakerType: z.enum(["expert", "user"]),
