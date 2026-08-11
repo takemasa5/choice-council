@@ -116,6 +116,20 @@ test("POST /api/final-markdown/generate は上限を超える直近発言を拒�
 
 test("終了メモ出力は許可したMarkdownブロックと3000字だけを受け付ける", () => {
   assert.ok(FinalMarkdownSchema.safeParse({ markdown: validMarkdown }).success);
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace(/^#{1,2}/gm, "   $&"),
+    }).success,
+  );
+
+  const headingsOnlyInParagraph = validMarkdown.replace(
+    "## 次アクション\n次の行動",
+    "次の行動には ## 次アクション を含める",
+  );
+  const headingsOutOfOrder = validMarkdown.replace(
+    "## 相談テーマ\n相談内容\n\n## 現時点の状態\n暫定結論",
+    "## 現時点の状態\n暫定結論\n\n## 相談テーマ\n相談内容",
+  );
 
   for (const markdown of [
     `${validMarkdown}\n\n### 許可しない見出し`,
@@ -125,6 +139,8 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     `${validMarkdown}\n\n> 引用`,
     `${validMarkdown}\n\n+ 許可しない箇条書き`,
     `${validMarkdown}\n\n${"あ".repeat(3001)}`,
+    headingsOnlyInParagraph,
+    headingsOutOfOrder,
   ]) {
     assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, false);
   }
@@ -133,7 +149,12 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
 test("POST /api/final-markdown/generate はMarkdown違反を理由付きで再生成する", async () => {
   const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const outputs = [
-    { markdown: `${validMarkdown}\n\n### 許可しない見出し` },
+    {
+      markdown: validMarkdown.replace(
+        "## 相談テーマ\n相談内容\n\n## 現時点の状態\n暫定結論",
+        "## 現時点の状態\n暫定結論\n\n## 相談テーマ\n相談内容",
+      ),
+    },
     { markdown: validMarkdown },
   ];
   const response = await requestJson(

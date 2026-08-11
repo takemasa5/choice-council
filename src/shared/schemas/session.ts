@@ -31,6 +31,9 @@ const finalMarkdownRequiredHeadings = [
   "## 次アクション",
   "## セッションログ要約",
 ] as const;
+const finalMarkdownRequiredHeadingSet = new Set<string>(
+  finalMarkdownRequiredHeadings,
+);
 
 const finalMemoStatusLabels = [
   "暫定結論",
@@ -136,7 +139,7 @@ function plainText(maximumLength: number) {
 
 /** 通常文を壊さず、表示対象では許可しないインラインMarkdownだけを検出する。 */
 function containsInlineMarkdown(value: string) {
-  return /\*\*[^*\r\n]+\*\*|__[^_\r\n]+__|`[^`\r\n]+`|!?\[[^\]\r\n]+\]\(\s*(?:(?:[a-z][a-z\d+.-]*:|\/|www\.)[^)\r\n]*)\)/i.test(
+  return /\*\*[^*\r\n]+\*\*|__[^_\r\n]+__|`[^`\r\n]+`|\*[^*\s\r\n](?:[^*\r\n]*[^*\s\r\n])?\*|(?<![\p{L}\p{N}])_[^_\s\r\n](?:[^_\r\n]*[^_\s\r\n])?_(?![\p{L}\p{N}])|~~[^~\s\r\n](?:[^~\r\n]*[^~\s\r\n])?~~|!?\[[^\]\r\n]+\]\(\s*[^)\r\n]+\)/u.test(
     value,
   );
 }
@@ -786,14 +789,12 @@ export const FinalMarkdownSchema = z
       });
     }
 
-    for (const heading of finalMarkdownRequiredHeadings) {
-      if (!output.markdown.includes(heading)) {
-        context.addIssue({
-          code: "custom",
-          message: `markdown must include ${heading}`,
-          path: ["markdown"],
-        });
-      }
+    if (!usesRequiredFinalMarkdownHeadings(output.markdown)) {
+      context.addIssue({
+        code: "custom",
+        message: "markdown must contain required H1/H2 headings in order",
+        path: ["markdown"],
+      });
     }
 
     if (
@@ -813,6 +814,7 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
     if (line.trim().length === 0) return true;
     if (/<\/?[a-z][^>]*>/i.test(line)) return false;
     if (/^(?: {4}|\t)/.test(line)) return false;
+    if (getFinalMarkdownHeading(line)) return true;
     if (/^[ \t]*(?:`{3,}|~{3,}|#{3,}|>|\+\s|\d+[.)]\s)/.test(line)) {
       return false;
     }
@@ -824,6 +826,30 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
 
     return true;
   });
+}
+
+/** 許可済みの先頭0〜3空白付きH1/H2を、必須見出し照合用に正規化する。 */
+function getFinalMarkdownHeading(line: string) {
+  const match = line.match(/^ {0,3}(#{1,2})[ \t]+(.+?)[ \t]*$/);
+  return match ? `${match[1]} ${match[2]}` : null;
+}
+
+/** 必須見出しが独立行として仕様順に一度ずつ現れるかを判定する。 */
+function usesRequiredFinalMarkdownHeadings(markdown: string) {
+  const requiredHeadings = markdown
+    .split(/\r?\n/)
+    .map(getFinalMarkdownHeading)
+    .filter(
+      (heading): heading is string =>
+        heading !== null && finalMarkdownRequiredHeadingSet.has(heading),
+    );
+
+  return (
+    requiredHeadings.length === finalMarkdownRequiredHeadings.length &&
+    requiredHeadings.every(
+      (heading, index) => heading === finalMarkdownRequiredHeadings[index],
+    )
+  );
 }
 
 export type FinalMarkdown = z.infer<typeof FinalMarkdownSchema>;

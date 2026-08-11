@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../../../server/app";
-import type { StructuredOutputRequest } from "../../../server/llm/types";
+import {
+  StructuredOutputValidationError,
+  type StructuredOutputRequest,
+} from "../../../server/llm/types";
 import { SessionMemoSchema } from "../../../src/shared/schemas/session";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
 
@@ -20,7 +23,7 @@ test("セッションメモは文字数、配列数、Markdown構文を制限し
   const validMemo = {
     ...memo,
     theme: "通常の相談テーマ",
-    facts: ["費用を確認する。# は見出しではない。"],
+    facts: ["費用を確認する。# は見出しではなく、* と ~~ は記号です。"],
   };
 
   assert.ok(SessionMemoSchema.safeParse(validMemo).success);
@@ -34,6 +37,11 @@ test("セッションメモは文字数、配列数、Markdown構文を制限し
     { ...memo, facts: ["- 箇条書き"] },
     { ...memo, facts: ["1. 番号付きリスト"] },
     { ...memo, facts: ["```コードフェンス"] },
+    { ...memo, facts: ["*単一強調*"] },
+    { ...memo, facts: ["_単一強調_"] },
+    { ...memo, facts: ["~~取り消し線~~"] },
+    { ...memo, facts: ["[相対リンク](relative)"] },
+    { ...memo, facts: ["![相対画像](images/example.png)"] },
   ]) {
     assert.equal(SessionMemoSchema.safeParse(invalidMemo).success, false);
   }
@@ -41,7 +49,8 @@ test("セッションメモは文字数、配列数、Markdown構文を制限し
 
 test("Markdown構文を含むセッションメモ応答は再生成する", async () => {
   let generationCount = 0;
-  const outputs = [{ ...memo, facts: ["- Markdownの箇条書き"] }, memo];
+  const outputs = [{ ...memo, facts: ["[相対リンク](relative)"] }, memo];
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const response = await requestJson(
     createApp({
       createLlmProvider: () => ({
@@ -50,8 +59,24 @@ test("Markdown構文を含むセッションメモ応答は再生成する", asy
         ) => {
           const output = outputs[Math.min(generationCount, outputs.length - 1)];
           generationCount += 1;
+          structuredRequests.push({
+            repairInstruction: request.repairInstruction,
+          });
           const parsedOutput = request.schema.safeParse(output);
-          return parsedOutput.success ? parsedOutput.data : null;
+          if (!parsedOutput.success) {
+            throw new StructuredOutputValidationError({
+              schemaName: request.schemaName,
+              classification: "schema_validation",
+              issues: parsedOutput.error.issues.map((issue) => ({
+                path: issue.path.filter(
+                  (segment): segment is string | number =>
+                    typeof segment === "string" || typeof segment === "number",
+                ),
+                code: issue.code,
+              })),
+            });
+          }
+          return parsedOutput.data;
         },
       }),
     }),
@@ -62,6 +87,10 @@ test("Markdown構文を含むセッションメモ応答は再生成する", asy
   assert.equal(response.status, 200);
   assert.equal(generationCount, 2);
   assert.deepEqual(response.body, memo);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /failure_classification=schema_validation/,
+  );
 });
 
 test("POST /api/session-memo/update reports a missing API key", async () => {

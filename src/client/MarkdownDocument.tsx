@@ -98,8 +98,8 @@ function getHeading(
   return null;
 }
 
-/** 順不同リストの先頭記号だけを許可する。 */
+/** 先頭0〜3空白の順不同リストだけを、入れ子にせず描画する。 */
 function getListItem(line: string): string | null {
-  const match = line.match(/^(?:- |\* )(.*)$/);
+  const match = line.match(/^ {0,3}(?:- |\* )(.*)$/);
   return match ? match[1] : null;
 }

@@ -30,6 +30,18 @@ test("先頭3空白までのH1とH2を見出しとして描画する", () => {
   assert.doesNotMatch(markup, /<p> {1,3}#{1,2} /);
 });
 
+test("先頭1〜3空白の順不同リストを描画し、4空白は段落として扱う", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: " - 1空白の項目\n   * 3空白の項目\n    - 4空白の項目",
+    }),
+  );
+
+  assert.match(markup, /<ul><li>1空白の項目<\/li><li>3空白の項目<\/li><\/ul>/);
+  assert.doesNotMatch(markup, /<li>4空白の項目<\/li>/);
+  assert.match(markup, /<p> {4}- 4空白の項目<\/p>/);
+});
+
 test("HTMLは要素化せずテキストとしてエスケープする", () => {
   const markup = renderToStaticMarkup(
     createElement(MarkdownDocument, {
