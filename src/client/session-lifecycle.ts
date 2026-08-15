@@ -90,6 +90,12 @@ export function restoreStoredSessionState(parsed: StoredSession): SessionState {
     normalizedSession.currentPhase,
     normalizedSession.response?.current_phase,
   );
+  if (
+    restoredPhase === "premise" &&
+    isUnanswerableWaitUserResponse(normalizedSession.response)
+  ) {
+    return createInitialSessionState();
+  }
   const restoredSession = recoverInterruptedFinalMemo({
     currentPhase: restoredPhase,
     response: normalizedSession.response,
@@ -956,6 +962,14 @@ function responseToHistory(
   response: FacilitatorResponse | null,
 ): ResponseHistory {
   return response ? { [response.current_phase]: response } : {};
+}
+
+/**
+ * 旧保存値で確認質問を復元できない場合、前提整理画面には進行操作が残らない。
+ * 相談内容は App 側で復元されるため、進行状態だけを破棄して安全にやり直す。
+ */
+function isUnanswerableWaitUserResponse(response: FacilitatorResponse) {
+  return response.next_action === "wait_user" && !response.user_question;
 }
 
 function isProposalStateRequired(phase: Phase) {

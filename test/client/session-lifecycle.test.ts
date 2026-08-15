@@ -177,16 +177,25 @@ test("旧形式のメモを正規化して復元後もAPI入力として継続�
     facts: ["- 最初の事実\n補足", "", "1. 2番目の事実", "```", "4番目の事実"],
     values: ["* 価値観", "あ".repeat(81), "3. 条件", "4. 除外対象"],
   };
+  const premiseResponse = {
+    ...facilitatorResponse,
+    expert_requests: [],
+    user_question: {
+      question: "確認したい条件はありますか。",
+      options: ["ありません", "その他"],
+      required: true,
+    },
+  };
   const restored = restoreStoredSessionState({
     request: { consultation: "相談内容", memo: oldMemo } as never,
     response: {
-      ...facilitatorResponse,
+      ...premiseResponse,
       current_phase: "premise" as const,
       memo_updates: oldMemo,
     } as never,
     responseHistory: {
       premise: {
-        ...facilitatorResponse,
+        ...premiseResponse,
         current_phase: "premise" as const,
         memo_updates: oldMemo,
       } as never,
@@ -229,16 +238,25 @@ test("旧メモのinline Markdownを平文化して有効なセッション状�
     facts: ["**重要な事実**", "`確認コード`", "[参考資料](/reference)"],
     values: ["![図の説明](https://example.com/image.png)"],
   };
+  const premiseResponse = {
+    ...facilitatorResponse,
+    expert_requests: [],
+    user_question: {
+      question: "確認したい条件はありますか。",
+      options: ["ありません", "その他"],
+      required: true,
+    },
+  };
   const restored = restoreStoredSessionState({
     request: { consultation: "相談内容", memo: oldMemo } as never,
     response: {
-      ...facilitatorResponse,
+      ...premiseResponse,
       current_phase: "premise" as const,
       memo_updates: oldMemo,
     } as never,
     responseHistory: {
       premise: {
-        ...facilitatorResponse,
+        ...premiseResponse,
         current_phase: "premise" as const,
         memo_updates: oldMemo,
       } as never,
@@ -745,6 +763,62 @@ test("復元できない意見交換ターンは検討フェーズへ戻して�
   assert.equal(restored.response?.current_phase, "deliberation");
   assert.equal(restored.responseHistory.group_chat, undefined);
   assert.deepEqual(restored.responseHistory.deliberation, deliberationResponse);
+});
+
+test("復元できない確認質問を待つ保存済みセッションは相談入力へ戻す", () => {
+  const stored = {
+    request: { consultation: "相談内容" },
+    response: {
+      ...facilitatorResponse,
+      user_question: {
+        question: "```\n```",
+        options: ["はい", "その他"],
+        required: true,
+      },
+    },
+    currentPhase: "premise" as const,
+  };
+
+  const normalized = normalizeStoredSession(stored as never);
+  const restored = restoreStoredSessionState(stored as never);
+
+  assert.equal(normalized.response?.next_action, "wait_user");
+  assert.equal(normalized.response?.user_question, null);
+  assert.deepEqual(restored, createInitialSessionState());
+});
+
+test("確認質問のない前提整理の待機応答は相談入力へ戻す", () => {
+  const stored = {
+    request: { consultation: "相談内容" },
+    response: facilitatorResponse,
+    currentPhase: "premise" as const,
+  };
+
+  assert.equal(
+    FacilitatorResponseSchema.safeParse(stored.response).success,
+    true,
+  );
+  assert.deepEqual(
+    restoreStoredSessionState(stored as never),
+    createInitialSessionState(),
+  );
+});
+
+test("前提整理以外の待機応答は復元を継続する", () => {
+  const stored = {
+    request: { consultation: "相談内容" },
+    response: {
+      ...facilitatorResponse,
+      current_phase: "expert_selection" as const,
+    },
+    currentPhase: "expert_selection" as const,
+  };
+
+  const restored = restoreStoredSessionState(stored as never);
+
+  assert.equal(restored.currentPhase, "expert_selection");
+  assert.equal(restored.response?.next_action, "wait_user");
+  assert.equal(restored.response?.user_question, null);
 });
 
 test("旧形式または参照不整合の案保存値は専門家選定へ安全に戻す", () => {
