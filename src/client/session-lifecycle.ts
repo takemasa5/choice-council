@@ -14,6 +14,7 @@ import {
   DiscussionSelectionSchema,
   ExpertCommentSchema,
   ExpertGroupChatMessageSchema,
+  ExpertRequestSchema,
   FacilitatorResponseSchema,
   FacilitatorTurnSchema,
   FinalMarkdownSchema,
@@ -136,18 +137,30 @@ export function restoreStoredSessionState(parsed: StoredSession): SessionState {
 
 /** 旧保存形式の通常画面出力を、現行の表示・後続入力として安全に正規化する。 */
 export function normalizeStoredSession(session: StoredSession): StoredSession {
-  const expertDrafts = normalizeStoredExpertDrafts(session.expertDrafts);
+  const confirmedExperts = normalizeStoredConfirmedExpertRequests(
+    session.confirmedExperts,
+    session.initialExpertRequests,
+    isPremiseResponse(session.response)
+      ? session.response.expert_requests
+      : undefined,
+    session.expertComments,
+  );
+  const expertDrafts = normalizeStoredExpertDrafts(
+    session.expertDrafts,
+    session.expertDraftProvenanceKey,
+  );
+  const response = normalizeStoredFacilitatorResponse(session.response);
 
   return {
     ...session,
     request: session.request.memo
       ? { ...session.request, memo: normalizeSessionMemo(session.request.memo) }
       : session.request,
-    response: normalizeStoredFacilitatorResponse(session.response),
+    response,
     responseHistory: session.responseHistory
       ? normalizeResponseHistory(session.responseHistory)
       : undefined,
-    confirmedExperts: normalizeStoredExpertRequests(session.confirmedExperts),
+    confirmedExperts,
     initialExpertRequests: normalizeStoredExpertRequests(
       session.initialExpertRequests,
     ),
@@ -165,6 +178,13 @@ export function normalizeStoredSession(session: StoredSession): StoredSession {
     groupChatTurn: normalizeStoredFacilitatorTurn(session.groupChatTurn),
     finalMarkdown: normalizeStoredFinalMarkdown(session.finalMarkdown),
   };
+}
+
+/** 前提整理の応答だけは、まだ確定前のLLM候補として復元に利用する。 */
+function isPremiseResponse(
+  response: unknown,
+): response is { current_phase: "premise"; expert_requests: unknown } {
+  return isRecord(response) && response.current_phase === "premise";
 }
 
 /** 保存済み終了メモは現行の表示契約を満たす場合だけ復元する。 */
@@ -311,7 +331,7 @@ function normalizeStoredFacilitatorExpertRequests(value: unknown) {
   return normalizeStoredExpertRequests(value) ?? [];
 }
 
-/** 保存済みの確定・初期専門家候補を、後続APIへ渡せる現行形式へ収める。 */
+/** 保存済みのLLM由来専門家候補を、通常画面の現行形式へ収める。 */
 function normalizeStoredExpertRequests(
   value: unknown,
 ): ExpertRequest[] | undefined {
@@ -339,20 +359,121 @@ function normalizeStoredExpertRequests(
     : normalizedExperts;
 }
 
-/** 編集中の専門家候補は途中入力を保ちつつ、LLM由来の通常画面文言だけを平文化する。 */
+/**
+ * 確定済み候補はユーザーが編集した入力として、そのまま後続APIへ渡せる形で復元する。
+ * 現行の入力schemaを満たさない旧形式だけは、LLM候補と同じ互換正規化を行う。
+ */
+function normalizeStoredConfirmedExpertRequests(
+  value: unknown,
+  initialCandidates: unknown,
+  responseCandidates: unknown,
+  expertComments: unknown,
+): ExpertRequest[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const currentExperts = ExpertRequestSchema.array().safeParse(
+    value.slice(0, maximumExpertRequestCount),
+  );
+  if (
+    currentExperts.success &&
+    confirmedExpertsContainUserInput(
+      currentExperts.data,
+      initialCandidates,
+      responseCandidates,
+      expertComments,
+    )
+  ) {
+    return currentExperts.data;
+  }
+
+  return normalizeStoredExpertRequests(value);
+}
+
+/** 確定候補がLLM候補と異なるか、生成済みコメントが原文を参照していればユーザー入力として保持する。 */
+function confirmedExpertsContainUserInput(
+  confirmedExperts: ExpertRequest[],
+  initialCandidates: unknown,
+  responseCandidates: unknown,
+  expertComments: unknown,
+) {
+  if (confirmedExpertsMatchCommentHeaders(confirmedExperts, expertComments)) {
+    return true;
+  }
+
+  return ![initialCandidates, responseCandidates].some((candidates) =>
+    expertRequestsMatch(confirmedExperts, candidates),
+  );
+}
+
+function confirmedExpertsMatchCommentHeaders(
+  confirmedExperts: ExpertRequest[],
+  expertComments: unknown,
+) {
+  return (
+    Array.isArray(expertComments) &&
+    confirmedExperts.length === expertComments.length &&
+    confirmedExperts.every((expert, index) => {
+      const comment = expertComments[index];
+      return (
+        isRecord(comment) &&
+        expert.role_name === comment.role_name &&
+        expert.viewpoint === comment.viewpoint
+      );
+    })
+  );
+}
+
+function expertRequestsMatch(experts: ExpertRequest[], candidates: unknown) {
+  const parsedCandidates = ExpertRequestSchema.array().safeParse(candidates);
+  return (
+    parsedCandidates.success &&
+    experts.length === parsedCandidates.data.length &&
+    experts.every((expert, index) => {
+      const candidate = parsedCandidates.data[index];
+      return (
+        candidate !== undefined &&
+        expert.role_name === candidate.role_name &&
+        expert.viewpoint === candidate.viewpoint &&
+        expert.request === candidate.request
+      );
+    })
+  );
+}
+
+/**
+ * 編集済み下書きは入力内容を保持する。復元元候補と一致する未編集下書きだけを
+ * LLM由来候補として通常画面向けに正規化する。
+ */
 function normalizeStoredExpertDrafts(
   value: unknown,
+  provenanceKey: unknown,
 ): ExpertDraft[] | undefined {
   if (!Array.isArray(value)) return undefined;
+
+  const provenance = parseExpertDraftProvenance(provenanceKey);
 
   return value.slice(0, maximumExpertRequestCount).flatMap((draft, index) => {
     if (!isRecord(draft)) return [];
 
+    const isUneditedLlmDraft = draftMatchesProvenance(
+      draft,
+      provenance?.[index],
+    );
+
     return [
       {
-        role_name: normalizeFacilitatorText(draft.role_name),
-        viewpoint: normalizeFacilitatorText(draft.viewpoint),
-        request: normalizeFacilitatorText(draft.request),
+        role_name: normalizeStoredExpertDraftText(
+          draft.role_name,
+          isUneditedLlmDraft,
+        ),
+        viewpoint: normalizeStoredExpertDraftText(
+          draft.viewpoint,
+          isUneditedLlmDraft,
+        ),
+        request: normalizeStoredExpertDraftText(
+          draft.request,
+          isUneditedLlmDraft,
+        ),
         draftId:
           typeof draft.draftId === "string" && draft.draftId.trim()
             ? draft.draftId
@@ -360,6 +481,40 @@ function normalizeStoredExpertDrafts(
       },
     ];
   });
+}
+
+function normalizeStoredExpertDraftText(value: unknown, isLlmDraft: boolean) {
+  if (isLlmDraft) return normalizeFacilitatorText(value);
+  return typeof value === "string" ? value : "";
+}
+
+/** 復元元候補キーを、下書きとの位置対応を保ったまま読み出す。 */
+function parseExpertDraftProvenance(provenanceKey: unknown) {
+  if (typeof provenanceKey !== "string") return undefined;
+
+  try {
+    const provenance = JSON.parse(provenanceKey);
+    return Array.isArray(provenance) ? provenance : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 同じ位置の復元元候補と一致するときだけ、下書きを未編集のLLM候補として扱う。 */
+function draftMatchesProvenance(
+  draft: Record<string, unknown>,
+  provenance: unknown,
+) {
+  if (!isRecord(provenance)) return false;
+
+  const normalizedProvenance = normalizeStoredExpertRequests([provenance]);
+  if (normalizedProvenance?.length !== 1) return false;
+
+  return (
+    draft.role_name === provenance.role_name &&
+    draft.viewpoint === provenance.viewpoint &&
+    draft.request === provenance.request
+  );
 }
 
 /** 下書きの復元元候補キーも、候補本体と同じ現行形式へそろえる。 */

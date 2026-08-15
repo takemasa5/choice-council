@@ -545,12 +545,7 @@ test("旧形式の通常画面出力を平文化して意見交換状態を復�
   assert.equal(restored.response?.current_phase, "group_chat");
 });
 
-test("保存済み専門家候補を通常画面の制約へ正規化して復元する", () => {
-  const confirmedExpert = {
-    role_name: "家計アドバイザー",
-    viewpoint: "予算",
-    request: "費用を整理してください",
-  };
+test("保存済みの未編集LLM専門家候補を通常画面の制約へ正規化して復元する", () => {
   const legacyExpert = {
     role_name: `> **${"役".repeat(151)}**\n`,
     viewpoint: "- [観点](relative)\n補足",
@@ -558,28 +553,11 @@ test("保存済み専門家候補を通常画面の制約へ正規化して復�
   };
   const stored = {
     request: { consultation: "相談内容" },
-    response: {
-      ...facilitatorResponse,
-      expert_requests: [
-        {
-          role_name: "応答候補",
-          viewpoint: "応答観点",
-          request: "応答依頼",
-        },
-      ],
-    },
-    confirmedExperts: [confirmedExpert, legacyExpert, { role_name: "不完全" }],
-    initialExpertRequests: [legacyExpert, { role_name: "不完全" }],
-    expertDrafts: [
-      { ...legacyExpert, draftId: "expert-draft-7" },
-      {
-        role_name: "途中入力",
-        viewpoint: "",
-        request: "",
-        draftId: "expert-draft-8",
-      },
-      "不正な候補",
-    ],
+    response: { ...facilitatorResponse, expert_requests: [legacyExpert] },
+    confirmedExperts: [legacyExpert],
+    initialExpertRequests: [legacyExpert],
+    expertDrafts: [{ ...legacyExpert, draftId: "expert-draft-7" }],
+    expertDraftProvenanceKey: JSON.stringify([legacyExpert]),
   };
 
   const normalized = normalizeStoredSession(stored as never);
@@ -589,25 +567,16 @@ test("保存済み専門家候補を通常画面の制約へ正規化して復�
     request: "A＜B＞C",
   };
 
-  assert.deepEqual(normalized.confirmedExperts, [
-    confirmedExpert,
-    normalizedLegacyExpert,
-  ]);
+  assert.deepEqual(normalized.confirmedExperts, [normalizedLegacyExpert]);
   assert.deepEqual(normalized.initialExpertRequests, [normalizedLegacyExpert]);
   assert.deepEqual(normalized.expertDrafts, [
     { ...normalizedLegacyExpert, draftId: "expert-draft-7" },
-    {
-      role_name: "途中入力",
-      viewpoint: "",
-      request: "",
-      draftId: "expert-draft-8",
-    },
   ]);
   assert.ok(
     ExpertCommentRequestSchema.safeParse({
       consultation: "相談内容",
       currentPhase: "deliberation",
-      expert: normalized.confirmedExperts?.[1],
+      expert: normalized.confirmedExperts?.[0],
     }).success,
   );
 });
@@ -639,8 +608,7 @@ test("保存済み専門家下書きの復元元候補キーも正規化する",
   assert.deepEqual(normalized.response?.expert_requests, [normalizedCandidate]);
   assert.deepEqual(normalized.expertDrafts, [
     {
-      ...normalizedCandidate,
-      viewpoint: "予算と家族の満足度 補足",
+      ...editedDraft,
       draftId: "expert-draft-1",
     },
   ]);
@@ -648,6 +616,221 @@ test("保存済み専門家下書きの復元元候補キーも正規化する",
     normalized.expertDraftProvenanceKey,
     JSON.stringify([normalizedCandidate]),
   );
+});
+
+test("保存済み専門家下書きは同じ添字の未編集候補だけを正規化する", () => {
+  const firstCandidate = {
+    role_name: "> **家計アドバイザー**",
+    viewpoint: "- [予算](relative)\n補足",
+    request: "`費用を整理してください`",
+  };
+  const secondCandidate = {
+    role_name: "> **教育アドバイザー**",
+    viewpoint: "- [学び](relative)\n補足",
+    request: "`学費を整理してください`",
+  };
+  const thirdCandidate = {
+    role_name: "> **住居アドバイザー**",
+    viewpoint: "- [住まい](relative)\n補足",
+    request: "`住居費を整理してください`",
+  };
+  const candidates = [firstCandidate, secondCandidate, thirdCandidate];
+  const normalizedCandidates = [
+    {
+      role_name: "家計アドバイザー",
+      viewpoint: "予算 補足",
+      request: "費用を整理してください",
+    },
+    {
+      role_name: "教育アドバイザー",
+      viewpoint: "学び 補足",
+      request: "学費を整理してください",
+    },
+    {
+      role_name: "住居アドバイザー",
+      viewpoint: "住まい 補足",
+      request: "住居費を整理してください",
+    },
+  ];
+  const provenanceKey = JSON.stringify(candidates);
+  const toStoredSession = (expertDrafts: unknown[]) =>
+    ({
+      request: { consultation: "相談内容" },
+      response: { ...facilitatorResponse, expert_requests: candidates },
+      expertDrafts,
+      expertDraftProvenanceKey: provenanceKey,
+    }) as never;
+
+  const oneEditedDraft = normalizeStoredSession(
+    toStoredSession([
+      { ...firstCandidate, draftId: "expert-draft-1" },
+      {
+        ...secondCandidate,
+        viewpoint: "- [編集済みの学び](relative)\n補足",
+        draftId: "expert-draft-2",
+      },
+      { ...thirdCandidate, draftId: "expert-draft-3" },
+    ]),
+  );
+  const deletedDraft = normalizeStoredSession(
+    toStoredSession([
+      { ...firstCandidate, draftId: "expert-draft-1" },
+      { ...thirdCandidate, draftId: "expert-draft-3" },
+    ]),
+  );
+  const reorderedDrafts = normalizeStoredSession(
+    toStoredSession([
+      { ...secondCandidate, draftId: "expert-draft-2" },
+      { ...firstCandidate, draftId: "expert-draft-1" },
+    ]),
+  );
+  const insertedAndInvalidDrafts = normalizeStoredSession(
+    toStoredSession([
+      { ...firstCandidate, draftId: "expert-draft-1" },
+      "不正な下書き",
+      { ...secondCandidate, draftId: "expert-draft-2" },
+    ]),
+  );
+  const emptiedDraft = normalizeStoredSession(
+    toStoredSession([
+      { ...firstCandidate, draftId: "expert-draft-1" },
+      {
+        role_name: "",
+        viewpoint: "",
+        request: "",
+        draftId: "expert-draft-2",
+      },
+      { ...thirdCandidate, draftId: "expert-draft-3" },
+    ]),
+  );
+
+  assert.deepEqual(oneEditedDraft.expertDrafts, [
+    { ...normalizedCandidates[0], draftId: "expert-draft-1" },
+    {
+      ...secondCandidate,
+      viewpoint: "- [編集済みの学び](relative)\n補足",
+      draftId: "expert-draft-2",
+    },
+    { ...normalizedCandidates[2], draftId: "expert-draft-3" },
+  ]);
+  assert.deepEqual(deletedDraft.expertDrafts, [
+    { ...normalizedCandidates[0], draftId: "expert-draft-1" },
+    { ...thirdCandidate, draftId: "expert-draft-3" },
+  ]);
+  assert.deepEqual(reorderedDrafts.expertDrafts, [
+    { ...secondCandidate, draftId: "expert-draft-2" },
+    { ...firstCandidate, draftId: "expert-draft-1" },
+  ]);
+  assert.deepEqual(insertedAndInvalidDrafts.expertDrafts, [
+    { ...normalizedCandidates[0], draftId: "expert-draft-1" },
+    { ...secondCandidate, draftId: "expert-draft-2" },
+  ]);
+  assert.deepEqual(emptiedDraft.expertDrafts, [
+    { ...normalizedCandidates[0], draftId: "expert-draft-1" },
+    {
+      role_name: "",
+      viewpoint: "",
+      request: "",
+      draftId: "expert-draft-2",
+    },
+    { ...normalizedCandidates[2], draftId: "expert-draft-3" },
+  ]);
+  assert.equal(
+    oneEditedDraft.expertDraftProvenanceKey,
+    JSON.stringify(normalizedCandidates),
+  );
+});
+
+test("編集・確定済み専門家候補は原文と生成済みコメントの対応を保って検討フェーズへ復元する", () => {
+  const llmCandidate = {
+    role_name: "家計アドバイザー",
+    viewpoint: "予算",
+    request: "費用を整理してください",
+  };
+  const confirmedExpert = {
+    role_name: `# ${"長い専門家名".repeat(20)}`,
+    viewpoint: "- 家計への影響\n- 家族の納得感",
+    request: "**優先順位**を整理し、\n比較してください。",
+  };
+  const comment = {
+    ...expertComment,
+    role_name: confirmedExpert.role_name,
+    viewpoint: confirmedExpert.viewpoint,
+  };
+  const stored = {
+    request: { consultation: "相談内容" },
+    response: {
+      ...facilitatorResponse,
+      current_phase: "deliberation" as const,
+      expert_requests: [confirmedExpert],
+    },
+    responseHistory: {
+      deliberation: {
+        ...facilitatorResponse,
+        current_phase: "deliberation" as const,
+        expert_requests: [confirmedExpert],
+      },
+    },
+    currentPhase: "deliberation" as const,
+    initialExpertRequests: [llmCandidate],
+    confirmedExperts: [confirmedExpert],
+    expertDrafts: [{ ...confirmedExpert, draftId: "expert-draft-1" }],
+    expertDraftProvenanceKey: JSON.stringify([llmCandidate]),
+    expertComments: [comment],
+    discussionSelection: {
+      kind: "deep_dive" as const,
+      proposalId: "proposal-1",
+    },
+    selectedProposalIds: ["proposal-1"],
+  };
+
+  const normalized = normalizeStoredSession(stored as never);
+  const beforeCommentGeneration = normalizeStoredSession({
+    ...stored,
+    response: {
+      ...stored.response,
+      current_phase: "expert_selection" as const,
+    },
+    currentPhase: "expert_selection" as const,
+    expertComments: [],
+    discussionSelection: undefined,
+    selectedProposalIds: [],
+  } as never);
+  const proposalState = getRestoredProposalState(normalized);
+  const restored = restoreStoredSessionState(stored as never);
+
+  assert.deepEqual(normalized.initialExpertRequests, [llmCandidate]);
+  assert.deepEqual(normalized.confirmedExperts, [confirmedExpert]);
+  assert.deepEqual(beforeCommentGeneration.confirmedExperts, [confirmedExpert]);
+  assert.ok(FacilitatorResponseSchema.safeParse(normalized.response).success);
+  assert.ok(
+    FacilitatorResponseSchema.safeParse(
+      normalized.responseHistory?.deliberation,
+    ).success,
+  );
+  assert.notDeepEqual(normalized.response?.expert_requests, [confirmedExpert]);
+  assert.notDeepEqual(
+    normalized.responseHistory?.deliberation?.expert_requests,
+    [confirmedExpert],
+  );
+  assert.deepEqual(normalized.expertDrafts, [
+    { ...confirmedExpert, draftId: "expert-draft-1" },
+  ]);
+  assert.equal(
+    normalized.expertDraftProvenanceKey,
+    JSON.stringify([llmCandidate]),
+  );
+  assert.ok(
+    ExpertCommentRequestSchema.safeParse({
+      consultation: "相談内容",
+      currentPhase: "deliberation",
+      expert: normalized.confirmedExperts?.[0],
+    }).success,
+  );
+  assert.equal(proposalState.isValid, true);
+  assert.deepEqual(proposalState.expertComments, [comment]);
+  assert.equal(restored.currentPhase, "deliberation");
+  assert.equal(restored.response?.current_phase, "deliberation");
 });
 
 test("不正な下書き復元元候補キーは保持しないが空候補は保持する", () => {

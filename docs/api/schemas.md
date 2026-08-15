@@ -36,6 +36,9 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 通常画面向けの LLM 文字列に含まれる ASCII の `<` と `>` は、検証前に全角の `＜` と `＞` へ正規化して表示する。
 
 - 通常フローのファシリテーター表示文言、質問、指名理由は各 150 字以内とする。グループチャットの `FacilitatorTurn.message`、`question`、`requestReason` は各 200 字以内とする。
+
+専門家選定でユーザーが編集して確定する候補は LLM 通常画面出力ではない。`role_name`、`viewpoint`、`request` は非空文字列として保存・専門家コメント生成に渡し、改行、Markdown、150字超の内容も原文を保持する。
+
 - 専門家初回コメントの `summary` は 300 字以内、`proposal.content`、`key_point`、`concern`、`question_to_user` は各 120 字以内とする。`proposal.benefits`、`sacrifices`、`conditions` の各要素は 80 字以内とする。
 - グループチャットの専門家発言である `GroupChatMessage.content` は 200 字以内とする。
 - セッションメモの `theme` は 120 字以内とし、各配列は最大 3 件、各要素は 80 字以内とする。
