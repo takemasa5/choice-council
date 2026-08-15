@@ -473,6 +473,33 @@ test("POST /api/final-markdown/generate は単独の状態ラベルと通常の�
   assert.equal(generateCount, 1);
 });
 
+test("POST /api/final-markdown/generate はアスタリスクの状態リストを再生成せず受理する", async () => {
+  let generateCount = 0;
+  const markdownWithAsteriskStatus = validMarkdown.replace(
+    "## 現時点の状態\n暫定結論",
+    "## 現時点の状態\n* 暫定結論",
+  );
+  const response = await requestJson(
+    createTestApp(
+      { markdown: markdownWithAsteriskStatus },
+      "test-api-key",
+      () => {
+        generateCount += 1;
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(generateCount, 1);
+});
+
 test("POST /api/final-markdown/generate は別の終了状態が独立して併記された場合に再生成する", async () => {
   for (const unexpectedStatus of ["判断保留", "- 判断保留"]) {
     const structuredRequests: Array<{ repairInstruction?: string }> = [];

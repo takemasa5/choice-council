@@ -158,7 +158,7 @@ function isStandaloneParagraphLine(lines: string[], index: number) {
 
 /** 許可済みの順不同リスト項目の表示テキストを取り出す。 */
 function getUnorderedListItem(line: string): string | null {
-  const match = line.match(/^ {0,3}(?:-|\\*)[ \t]+(.+?)\s*$/);
+  const match = line.match(/^ {0,3}(?:-|\*)[ \t]+(.+?)\s*$/);
   return match ? match[1] : null;
 }
 
