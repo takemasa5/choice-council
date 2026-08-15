@@ -818,9 +818,10 @@ export const FinalMarkdownSchema = z
 
 /** 終了メモで許可するMarkdownブロックだけを判定する。 */
 function usesAllowedFinalMarkdownBlocks(markdown: string) {
+  if (containsForbiddenFinalMarkdownHtml(markdown)) return false;
+
   return markdown.split(/\r?\n/).every((line) => {
     if (line.trim().length === 0) return true;
-    if (/<\/?[a-z][^>]*>/i.test(line)) return false;
     if (/^(?: {4}|\t)/.test(line)) return false;
     if (getFinalMarkdownHeading(line)) return true;
     if (/^[ \t]*(?:`{3,}|~{3,}|#{3,}|>|\+\s|\d+[.)]\s)/.test(line)) {
@@ -834,6 +835,13 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
 
     return true;
   });
+}
+
+/** HTML として解釈され得る要素、コメント、宣言を終了メモから除外する。 */
+function containsForbiddenFinalMarkdownHtml(markdown: string) {
+  return /<\/?[a-z][^>]*>|<!--(?:[\s\S]*?-->|[\s\S]*$)|<![a-z][^>]*>/i.test(
+    markdown,
+  );
 }
 
 /** 許可済みの先頭0〜3空白付きH1/H2を、必須見出し照合用に正規化する。 */

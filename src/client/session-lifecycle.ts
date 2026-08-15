@@ -117,6 +117,13 @@ export function restoreStoredSessionState(parsed: StoredSession): SessionState {
     return recoverToExpertSelection(restoredState);
   }
 
+  if (
+    restoredState.currentPhase === "group_chat" &&
+    !normalizedSession.groupChatTurn
+  ) {
+    return recoverToDeliberation(restoredState);
+  }
+
   return restoredState;
 }
 
@@ -969,6 +976,24 @@ function recoverToExpertSelection(state: SessionState): SessionState {
     responseHistory: {
       ...keepResponsesThroughPhase(state.responseHistory, "premise"),
       expert_selection: response,
+    },
+  };
+}
+
+/** 復元できない意見交換ターンでは、開始操作をやり直せる検討フェーズへ戻す。 */
+function recoverToDeliberation(state: SessionState): SessionState {
+  if (!state.response) return createInitialSessionState();
+
+  const response =
+    state.responseHistory.deliberation ??
+    createResponseForPhase(state.response, "deliberation");
+  return {
+    ...state,
+    currentPhase: "deliberation",
+    response,
+    responseHistory: {
+      ...keepResponsesThroughPhase(state.responseHistory, "deliberation"),
+      deliberation: response,
     },
   };
 }

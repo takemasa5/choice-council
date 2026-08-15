@@ -62,6 +62,20 @@ const expertComment = {
   needs_research: false,
 };
 
+const groupChatTurn = {
+  message: "進行します。",
+  requestedSpeaker: {
+    speakerType: "expert" as const,
+    speakerName: "専門家",
+    participantId: "expert-1",
+  },
+  requestReason: "意見を確認します。",
+  question: "どの条件を優先しますか。",
+  userOptions: null,
+  memoUpdate: null,
+  contextSummaryUpdate: null,
+};
+
 test("相談開始時に開始済み相談、現在フェーズ、応答履歴をまとめて確定する", () => {
   const state = startSession(
     { consultation: "相談内容" },
@@ -148,6 +162,7 @@ test("Markdown のない終了メモを保存データから復元すると意�
     expertComments: [expertComment],
     discussionSelection: { kind: "deep_dive", proposalId: "proposal-1" },
     selectedProposalIds: ["proposal-1"],
+    groupChatTurn,
   });
 
   assert.equal(restored.currentPhase, "group_chat");
@@ -293,6 +308,7 @@ test("旧形式の専門家コメントを正規化して意見交換フェー�
       proposalId: "proposal-1",
     },
     selectedProposalIds: ["proposal-1"],
+    groupChatTurn,
   };
 
   const proposalState = getRestoredProposalState(stored as never);
@@ -680,6 +696,55 @@ test("復元不能な通常画面応答は相談入力へ安全に戻す", () =>
   assert.equal(restored.currentPhase, "consultation_input");
   assert.equal(restored.response, null);
   assert.deepEqual(restored.responseHistory, {});
+});
+
+test("復元できない意見交換ターンは検討フェーズへ戻して再生成する", () => {
+  const deliberationResponse = {
+    ...facilitatorResponse,
+    current_phase: "deliberation" as const,
+  };
+  const groupChatResponse = {
+    ...facilitatorResponse,
+    current_phase: "group_chat" as const,
+  };
+  const stored = {
+    request: { consultation: "相談内容" },
+    response: groupChatResponse,
+    responseHistory: {
+      deliberation: deliberationResponse,
+      group_chat: groupChatResponse,
+    },
+    currentPhase: "group_chat" as const,
+    confirmedExperts: [facilitatorResponse.expert_requests[0]],
+    expertComments: [expertComment],
+    discussionSelection: {
+      kind: "deep_dive" as const,
+      proposalId: "proposal-1",
+    },
+    selectedProposalIds: ["proposal-1"],
+    groupChatTurn: {
+      message: "```ts\n```",
+      requestedSpeaker: {
+        speakerType: "expert" as const,
+        speakerName: "専門家",
+        participantId: "expert-1",
+      },
+      requestReason: "理由",
+      question: "質問",
+      userOptions: null,
+      memoUpdate: null,
+      contextSummaryUpdate: null,
+    },
+  };
+
+  const normalized = normalizeStoredSession(stored as never);
+  const restored = restoreStoredSessionState(stored as never);
+
+  assert.equal(normalized.groupChatTurn, undefined);
+  assert.equal(restored.currentPhase, "deliberation");
+  assert.equal(restored.response?.current_phase, "deliberation");
+  assert.equal(restored.responseHistory.group_chat, undefined);
+  assert.deepEqual(restored.responseHistory.deliberation, deliberationResponse);
 });
 
 test("旧形式または参照不整合の案保存値は専門家選定へ安全に戻す", () => {
