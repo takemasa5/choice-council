@@ -98,6 +98,15 @@ function createFinalMarkdownValidator(
       };
     }
 
+    if (
+      hasStandaloneUnexpectedStatusLabel(statusSection, expectedStatusLabel)
+    ) {
+      return {
+        path: ["markdown"],
+        code: "unexpected_standalone_status_label",
+      };
+    }
+
     return true;
   };
 }
@@ -118,6 +127,18 @@ function hasStandaloneStatusLabel(
       isStandaloneParagraphLine(lines, index)
     );
   });
+}
+
+/** 選択されていない終了状態が、状態値として独立して併記されていないかを判定する。 */
+function hasStandaloneUnexpectedStatusLabel(
+  section: string,
+  expectedStatusLabel: string,
+) {
+  return Object.values(finalMemoStatusLabels).some(
+    (statusLabel) =>
+      statusLabel !== expectedStatusLabel &&
+      hasStandaloneStatusLabel(section, statusLabel),
+  );
 }
 
 /** MarkdownDocument と同じく、順不同リストが段落を区切るものとして扱う。 */

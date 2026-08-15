@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -64,6 +65,42 @@ test("タブまたは複数空白で区切った順不同リストを描画す�
     markup,
     /<ul><li>タブ付き項目<\/li><li>複数空白付き項目<\/li><\/ul>/,
   );
+});
+
+test("1〜3空白のリスト継続行は直前の項目として描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "- 案A\n 補足1\n  補足2\n   補足3\n- 案B",
+    }),
+  );
+
+  assert.match(
+    markup,
+    /<ul><li>案A\n補足1\n補足2\n補足3<\/li><li>案B<\/li><\/ul>/,
+  );
+  assert.doesNotMatch(markup, /<p> {1,3}補足[123]<\/p>/);
+});
+
+test("リスト継続行の改行を保持するスタイルを適用する", () => {
+  const styles = readFileSync(
+    new URL("../../src/client/styles.css", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    styles,
+    /\.markdown-document p,\n\.markdown-document li \{\n\x20{2}white-space: pre-wrap;/,
+  );
+});
+
+test("リスト直後の先頭空白付き見出しは継続行にしない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "- 案A\n  ## 次の節\n本文",
+    }),
+  );
+
+  assert.match(markup, /<ul><li>案A<\/li><\/ul><h2>次の節<\/h2><p>本文<\/p>/);
 });
 
 test("空のアスタリスク項目を一貫してリストとして描画する", () => {

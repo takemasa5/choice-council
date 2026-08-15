@@ -58,8 +58,15 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       const items: string[] = [];
       while (index < lines.length) {
         const item = getListItem(lines[index]);
-        if (item === null) break;
-        items.push(item);
+        if (item !== null) {
+          items.push(item);
+          index += 1;
+          continue;
+        }
+
+        const continuation = getListContinuation(lines[index]);
+        if (continuation === null || getHeading(lines[index]) !== null) break;
+        items[items.length - 1] += `\n${continuation}`;
         index += 1;
       }
       blocks.push({ type: "list", items });
@@ -113,5 +120,11 @@ function getListItem(line: string): string | null {
   }
 
   const match = line.match(/^ {0,3}(?:-|\*)[ \t]+(.+)$/);
+  return match ? match[1] : null;
+}
+
+/** 入れ子にせず、直前の項目に続く1〜3空白の本文行だけを読み取る。 */
+function getListContinuation(line: string): string | null {
+  const match = line.match(/^ {1,3}([^\s].*)$/);
   return match ? match[1] : null;
 }

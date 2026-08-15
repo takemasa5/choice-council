@@ -304,6 +304,16 @@ test("終了メモ出力の箇条書き区切りと空項目は表示契約ど�
   }
 });
 
+test("終了メモ出力は順不同リストの1〜3空白継続行を受理する", () => {
+  for (const continuation of [" 補足", "  補足", "   補足"]) {
+    const markdown = validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      `## 検討した選択肢\n- 案A\n${continuation}`,
+    );
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, true);
+  }
+});
+
 test("POST /api/final-markdown/generate はMarkdown違反を理由付きで再生成する", async () => {
   const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const outputs = [
@@ -461,4 +471,39 @@ test("POST /api/final-markdown/generate は単独の状態ラベルと通常の�
 
   assert.equal(response.status, 200);
   assert.equal(generateCount, 1);
+});
+
+test("POST /api/final-markdown/generate は別の終了状態が独立して併記された場合に再生成する", async () => {
+  for (const unexpectedStatus of ["判断保留", "- 判断保留"]) {
+    const structuredRequests: Array<{ repairInstruction?: string }> = [];
+    const markdownWithUnexpectedStatus = validMarkdown.replace(
+      "## 現時点の状態\n暫定結論",
+      `## 現時点の状態\n暫定結論\n\n${unexpectedStatus}`,
+    );
+    const response = await requestJson(
+      createTestApp(
+        [
+          { markdown: markdownWithUnexpectedStatus },
+          { markdown: validMarkdown },
+        ],
+        "test-api-key",
+        (request) => {
+          structuredRequests.push(request as { repairInstruction?: string });
+        },
+      ),
+      "/api/final-markdown/generate",
+      {
+        consultation: "相談内容",
+        memo: { ...memo, status: "tentative_conclusion" },
+        contextSummary: "費用の上限を確認している。",
+        recentMessages: [],
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.match(
+      structuredRequests[1]?.repairInstruction ?? "",
+      /path=markdown,code=unexpected_standalone_status_label/,
+    );
+  }
 });
