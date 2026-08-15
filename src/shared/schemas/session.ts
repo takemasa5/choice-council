@@ -829,10 +829,11 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
   if (containsForbiddenFinalMarkdownHtml(markdown)) return false;
   if (containsInlineMarkdown(markdown)) return false;
   if (containsReferenceStyleFinalMarkdown(markdown)) return false;
+  if (containsFinalMarkdownHardLineBreak(markdown)) return false;
 
   return markdown.split(/\r?\n/).every((line) => {
     if (line.trim().length === 0) return true;
-    if (/^(?: {4}|\t)/.test(line)) return false;
+    if (isFinalMarkdownCodeBlockIndent(line)) return false;
     if (getFinalMarkdownHeading(line)) return true;
     if (/^[ \t]*(?:`{3,}|~{3,}|#{3,}|>|\+\s|\d+[.)]\s)/.test(line)) {
       return false;
@@ -845,6 +846,35 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
 
     return true;
   });
+}
+
+/** 段落内で描画しないMarkdownハード改行を終了メモから除外する。 */
+function containsFinalMarkdownHardLineBreak(markdown: string) {
+  return markdown
+    .split(/\r?\n/)
+    .some(
+      (line) =>
+        / {2,}$/.test(line) || (line.match(/\\+$/)?.[0].length ?? 0) % 2 === 1,
+    );
+}
+
+/** Markdownの4列タブ停止に従い、インデントコードブロックになる行を除外する。 */
+function isFinalMarkdownCodeBlockIndent(line: string) {
+  let indentationColumns = 0;
+
+  for (const character of line) {
+    if (character === " ") {
+      indentationColumns += 1;
+    } else if (character === "\t") {
+      indentationColumns += 4 - (indentationColumns % 4);
+    } else {
+      return indentationColumns >= 4;
+    }
+
+    if (indentationColumns >= 4) return true;
+  }
+
+  return false;
 }
 
 /** 終了メモでは参照先を別行へ隠せる参照形式のリンク・画像を許可しない。 */

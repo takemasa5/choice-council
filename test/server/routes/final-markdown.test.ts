@@ -197,6 +197,24 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
   );
   assert.ok(
     FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "行末の空白は1つ "),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "本文中の\\バックスラッシュ"),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace(
+        "相談内容",
+        "末尾の\\\\バックスラッシュ\\\\",
+      ),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
       markdown: validMarkdown.replace(/^#{1,2}/gm, "   $&"),
     }).success,
   );
@@ -223,6 +241,9 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     `${validMarkdown}\n\n### 許可しない見出し`,
     `${validMarkdown}\n\n1. 番号付きリスト`,
     `${validMarkdown}\n\n\`\`\`\nコード`,
+    `${validMarkdown}\n\n \t混在インデントのコード`,
+    `${validMarkdown}\n\n  \t混在インデントのコード`,
+    `${validMarkdown}\n\n   \t混在インデントのコード`,
     `${validMarkdown}\n\n<div>HTML</div>`,
     `${validMarkdown}\n\n<!-- HTML コメント -->`,
     `${validMarkdown}\n\n<!--\nHTML コメント\n-->`,
@@ -248,6 +269,8 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     validMarkdown.replace("相談内容", "![画像](https://example.com/image.png)"),
     validMarkdown.replace("相談内容", "[詳細][ref]"),
     validMarkdown.replace("相談内容", "![画像][ref]"),
+    validMarkdown.replace("相談内容", "1行目  \n2行目"),
+    validMarkdown.replace("相談内容", "1行目\\\n2行目"),
     `${validMarkdown}\n\n[ref]: https://example.com`,
     `${validMarkdown}\n\n${"あ".repeat(3001)}`,
     headingsOnlyInParagraph,
