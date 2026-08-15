@@ -23,10 +23,31 @@ test("セッションメモは文字数、配列数、Markdown構文を制限し
   const validMemo = {
     ...memo,
     theme: "通常の相談テーマ",
-    facts: ["費用 > 予算でも、# は見出しではなく、* と ~~ は記号です。"],
+    facts: [
+      "費用 > 予算でも、# は見出しではなく、* と ~~ は記号です。",
+      "通常のURLは https://example.com です。",
+    ],
   };
 
   assert.ok(SessionMemoSchema.safeParse(validMemo).success);
+
+  for (const [plainText, normalizedText] of [
+    ["<em>強調</em>", "＜em＞強調＜/em＞"],
+    ["<https://example.com>", "＜https://example.com＞"],
+    ["<user@example.com>", "＜user@example.com＞"],
+    ["<!-- note -->", "＜!-- note --＞"],
+    ["A<B>C", "A＜B＞C"],
+    ["> 注意点", "＞ 注意点"],
+    ["  > 空白付き引用", "＞ 空白付き引用"],
+  ]) {
+    const parsedMemo = SessionMemoSchema.safeParse({
+      ...memo,
+      facts: [plainText],
+    });
+
+    assert.ok(parsedMemo.success);
+    assert.equal(parsedMemo.data.facts[0], normalizedText);
+  }
 
   for (const invalidMemo of [
     { ...memo, theme: "あ".repeat(121) },
@@ -37,8 +58,6 @@ test("セッションメモは文字数、配列数、Markdown構文を制限し
     { ...memo, facts: ["- 箇条書き"] },
     { ...memo, facts: ["1. 番号付きリスト"] },
     { ...memo, facts: ["```コードフェンス"] },
-    { ...memo, facts: ["> 注意点"] },
-    { ...memo, facts: ["  > 空白付き引用"] },
     { ...memo, facts: ["*単一強調*"] },
     { ...memo, facts: ["_単一強調_"] },
     { ...memo, facts: ["~~取り消し線~~"] },
@@ -51,7 +70,7 @@ test("セッションメモは文字数、配列数、Markdown構文を制限し
 
 test("Markdown構文を含むセッションメモ応答は再生成する", async () => {
   let generationCount = 0;
-  const outputs = [{ ...memo, facts: ["> 注意点"] }, memo];
+  const outputs = [{ ...memo, facts: ["# 見出し"] }, memo];
   const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const response = await requestJson(
     createApp({

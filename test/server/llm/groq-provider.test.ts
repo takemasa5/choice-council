@@ -3,6 +3,7 @@ import test from "node:test";
 import { createLlmProviderFromEnvironment } from "../../../server/llm/create-provider";
 import { GroqLlmProvider } from "../../../server/llm/groq-provider";
 import { StructuredOutputValidationError } from "../../../server/llm/types";
+import { SessionMemoSchema } from "../../../src/shared/schemas/session";
 import { z } from "zod";
 
 /** Groq SDKを呼び出さずにChat Completionsリクエストを確認する最小クライアント。 */
@@ -69,6 +70,38 @@ test("Groqプロバイダーはstrict JSON Schemaで構造化出力を要求し�
     reasoning_effort: "low",
     temperature: 0.6,
   });
+});
+
+test("GroqプロバイダーはplainTextを含むセッションメモを正規化して返す", async () => {
+  const fakeClient = createGroqClient(
+    JSON.stringify({
+      theme: "A<B>C",
+      status: "in_progress",
+      facts: [],
+      values: [],
+      concerns: [],
+      options: [],
+      decision_axes: [],
+      expert_summaries: [],
+      conflicts: [],
+      open_questions: [],
+      next_actions: [],
+    }),
+  );
+  const provider = new GroqLlmProvider(
+    "test-api-key",
+    "groq-test",
+    fakeClient.client as never,
+  );
+
+  const output = await provider.generateStructuredOutput({
+    systemPrompt: "日本語で回答する",
+    userInput: { consultation: "相談内容" },
+    schema: SessionMemoSchema,
+    schemaName: "session_memo",
+  });
+
+  assert.equal(output?.theme, "A＜B＞C");
 });
 
 test("Groqプロバイダーはネストした文字列と配列の未対応制約をJSON Schemaから除外する", async () => {

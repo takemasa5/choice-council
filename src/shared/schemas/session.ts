@@ -122,12 +122,14 @@ export type SessionMemo = z.infer<typeof SessionMemoSchema>;
 
 /** 通常画面のメモに許可する、Markdown構文を含まない短いプレーンテキスト。 */
 function plainText(maximumLength: number) {
-  return nonEmptyString
-    .max(maximumLength)
+  return z
+    .string()
+    .transform((value) => value.replaceAll("<", "＜").replaceAll(">", "＞"))
+    .pipe(nonEmptyString.max(maximumLength))
     .refine(
       (value) =>
         !/[\r\n]/.test(value) &&
-        !/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```|>[ \t]?)/.test(value) &&
+        !/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```)/.test(value) &&
         !containsInlineMarkdown(value),
       "Markdown syntax is not allowed in session memo text",
     );

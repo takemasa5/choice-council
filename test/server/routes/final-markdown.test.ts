@@ -173,6 +173,15 @@ test("POST /api/final-markdown/generate は上限を超える直近発言を拒�
 
 test("終了メモ出力は許可したMarkdownブロックと3000字だけを受け付ける", () => {
   assert.ok(FinalMarkdownSchema.safeParse({ markdown: validMarkdown }).success);
+  const markdownWithAngleBrackets = validMarkdown.replace(
+    "相談内容",
+    "A < B > C",
+  );
+  const parsedMarkdown = FinalMarkdownSchema.safeParse({
+    markdown: markdownWithAngleBrackets,
+  });
+  assert.ok(parsedMarkdown.success);
+  assert.match(parsedMarkdown.data.markdown, /A < B > C/);
   assert.ok(
     FinalMarkdownSchema.safeParse({
       markdown: validMarkdown.replace(/^#{1,2}/gm, "   $&"),

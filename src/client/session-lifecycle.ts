@@ -211,13 +211,23 @@ function normalizeMemoText(value: unknown, maximumLength: number) {
 function normalizeLegacyPlainText(value: unknown, maximumLength: number) {
   if (typeof value !== "string") return "";
 
-  return value
+  let normalized = removeLegacyFencedCodeBlocks(value)
     .replace(/[\r\n]+/g, " ")
-    .trim()
-    .replace(
+    .trim();
+  let withoutLeadingMarker = normalized.replace(
+    /^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|`{3,}[ \t]*|>[ \t]?)/,
+    "",
+  );
+
+  while (withoutLeadingMarker !== normalized) {
+    normalized = withoutLeadingMarker.trimStart();
+    withoutLeadingMarker = normalized.replace(
       /^[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|`{3,}[ \t]*|>[ \t]?)/,
       "",
-    )
+    );
+  }
+
+  return normalized
     .replace(/!?\[([^\]\r\n]+)\]\(\s*[^)\r\n]+\)/g, "$1")
     .replace(
       /\*\*([^*\r\n]+)\*\*|__([^_\r\n]+)__|\*([^*\r\n]+)\*|(?<![\p{L}\p{N}])_([^_\r\n]+)_(?![\p{L}\p{N}])/gu,
@@ -228,6 +238,16 @@ function normalizeLegacyPlainText(value: unknown, maximumLength: number) {
     .replace(/~~([^~\r\n]+)~~/g, "$1")
     .trim()
     .slice(0, maximumLength);
+}
+
+/** 旧保存値のfenced code blockを、言語指定と開閉フェンスなしの本文へ戻す。 */
+function removeLegacyFencedCodeBlocks(value: string) {
+  return value
+    .replace(
+      /^[ \t]*(?:(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|>[ \t]?))*```[^\r\n]*\r?\n(?:([\s\S]*?)\r?\n)?[ \t]*```[ \t]*(?:\r?\n|$)/gm,
+      "$1",
+    )
+    .replace(/^[ \t]*```[ \t]*(?:\r?\n|$)/gm, "");
 }
 
 /** ファシリテーターの通常画面文言を、現行の150字プレーンテキストへ収める。 */
@@ -321,16 +341,21 @@ function normalizeStoredGroupChatMessages(value: unknown): GroupChatMessage[] {
 function normalizeStoredGroupChatMessage(
   value: unknown,
 ): GroupChatMessage | null {
+  const record = isRecord(value) ? value : {};
+  const hasLegacyAsciiQuote =
+    record.speakerType === "expert" &&
+    hasLeadingLegacyAsciiQuote(record.content);
   const currentMessage = GroupChatMessageSchema.safeParse(value);
   if (currentMessage.success) {
     if (currentMessage.data.speakerType !== "expert") {
       return currentMessage.data;
     }
     const currentExpertMessage = ExpertGroupChatMessageSchema.safeParse(value);
-    if (currentExpertMessage.success) return currentExpertMessage.data;
+    if (currentExpertMessage.success && !hasLegacyAsciiQuote) {
+      return currentExpertMessage.data;
+    }
   }
 
-  const record = isRecord(value) ? value : {};
   const normalizedMessage = {
     id: normalizeRequiredText(record.id),
     speakerType: record.speakerType,
@@ -353,10 +378,15 @@ function normalizeStoredFacilitatorTurn(
 ): FacilitatorTurn | undefined {
   if (value === undefined) return undefined;
 
-  const currentTurn = FacilitatorTurnSchema.safeParse(value);
-  if (currentTurn.success) return currentTurn.data;
-
   const record = isRecord(value) ? value : {};
+  const hasLegacyAsciiQuote = [
+    record.message,
+    record.requestReason,
+    record.question,
+  ].some(hasLeadingLegacyAsciiQuote);
+  const currentTurn = FacilitatorTurnSchema.safeParse(value);
+  if (currentTurn.success && !hasLegacyAsciiQuote) return currentTurn.data;
+
   const requestedSpeaker = isRecord(record.requestedSpeaker)
     ? record.requestedSpeaker
     : {};
@@ -387,6 +417,11 @@ function normalizeStoredFacilitatorTurn(
   const parsedTurn = FacilitatorTurnSchema.safeParse(normalizedTurn);
 
   return parsedTurn.success ? parsedTurn.data : undefined;
+}
+
+/** 旧保存データのASCII引用だけを、現行の全角化済み通常文と区別する。 */
+function hasLeadingLegacyAsciiQuote(value: unknown) {
+  return typeof value === "string" && /^[ \t]*>/.test(value);
 }
 
 /** 旧ターンの「その他」は自由入力へ集約し、ユーザー選択肢を現行仕様へ復元する。 */

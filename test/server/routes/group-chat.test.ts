@@ -98,6 +98,14 @@ test("グループチャット出力は通常画面用の文字数とMarkdownを
     }).success,
     false,
   );
+  const userMessage = GroupChatMessageSchema.safeParse({
+    ...message,
+    speakerType: "user",
+    content: "A<B>C",
+  });
+  assert.ok(userMessage.success);
+  assert.equal(userMessage.data.content, "A<B>C");
+
   assert.ok(
     GroupChatMessageSchema.safeParse({
       ...message,

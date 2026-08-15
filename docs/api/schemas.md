@@ -33,6 +33,8 @@ MVP時点から LLM 出力は構造化する。実装では `src/shared/schemas`
 
 ファシリテーター、専門家初回コメント、グループチャット、セッションメモに表示する LLM 文字列は、Markdown を許可しない。見出し、箇条書き、番号付きリスト、コードブロック、改行を含まない簡潔なプレーンテキストとする。終了メモの `markdown` だけはこの制約の対象外とする。
 
+通常画面向けの LLM 文字列に含まれる ASCII の `<` と `>` は、検証前に全角の `＜` と `＞` へ正規化して表示する。
+
 - 通常フローのファシリテーター表示文言、質問、指名理由は各 150 字以内とする。グループチャットの `FacilitatorTurn.message`、`question`、`requestReason` は各 200 字以内とする。
 - 専門家初回コメントの `summary` は 300 字以内、`proposal.content`、`key_point`、`concern`、`question_to_user` は各 120 字以内とする。`proposal.benefits`、`sacrifices`、`conditions` の各要素は 80 字以内とする。
 - グループチャットの専門家発言である `GroupChatMessage.content` は 200 字以内とする。
