@@ -82,7 +82,7 @@ export function createFinalMarkdownHandler(
   };
 }
 
-/** 終了状態ラベルの不足を、本文を含まない再生成理由として返す。 */
+/** 選択済み終了状態の独立した記載不足を、本文を含まない再生成理由として返す。 */
 function createFinalMarkdownValidator(
   expectedStatusLabel: string,
 ): StructuredOutputPostValidator<FinalMarkdown> {
@@ -91,18 +91,54 @@ function createFinalMarkdownValidator(
       modelResponse.markdown,
       "## 現時点の状態",
     );
-    if (!statusSection.includes(expectedStatusLabel)) {
-      return { path: ["markdown"], code: "missing_expected_status_label" };
+    if (!hasStandaloneStatusLabel(statusSection, expectedStatusLabel)) {
+      return {
+        path: ["markdown"],
+        code: "missing_standalone_status_label",
+      };
     }
 
-    return Object.values(finalMemoStatusLabels).some(
-      (statusLabel) =>
-        statusLabel !== expectedStatusLabel &&
-        statusSection.includes(statusLabel),
-    )
-      ? { path: ["markdown"], code: "unexpected_status_label" }
-      : true;
+    return true;
   };
+}
+
+/** 選択済み状態が、説明文ではなく単独の段落または箇条書き項目かを判定する。 */
+function hasStandaloneStatusLabel(
+  section: string,
+  expectedStatusLabel: string,
+) {
+  const lines = section.split(/\r?\n/);
+
+  return lines.some((line, index) => {
+    const listItem = getUnorderedListItem(line);
+    if (listItem !== null) return listItem === expectedStatusLabel;
+
+    return (
+      line.trim() === expectedStatusLabel &&
+      isStandaloneParagraphLine(lines, index)
+    );
+  });
+}
+
+/** MarkdownDocument と同じく、順不同リストが段落を区切るものとして扱う。 */
+function isStandaloneParagraphLine(lines: string[], index: number) {
+  const previousLine = lines[index - 1];
+  const nextLine = lines[index + 1];
+
+  return (
+    (previousLine === undefined ||
+      previousLine.trim() === "" ||
+      getUnorderedListItem(previousLine) !== null) &&
+    (nextLine === undefined ||
+      nextLine.trim() === "" ||
+      getUnorderedListItem(nextLine) !== null)
+  );
+}
+
+/** 許可済みの順不同リスト項目の表示テキストを取り出す。 */
+function getUnorderedListItem(line: string): string | null {
+  const match = line.match(/^ {0,3}(?:-|\\*)[ \t]+(.+?)\s*$/);
+  return match ? match[1] : null;
 }
 
 /**

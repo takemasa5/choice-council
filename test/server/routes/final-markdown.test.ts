@@ -398,25 +398,56 @@ test("POST /api/final-markdown/generate は状態ラベル不足を理由付き�
   assert.equal(response.status, 200);
   assert.match(
     structuredRequests[1]?.repairInstruction ?? "",
-    /path=markdown,code=missing_expected_status_label/,
+    /path=markdown,code=missing_standalone_status_label/,
   );
 });
 
-test("POST /api/final-markdown/generate は状態欄に選択していない終了状態がある場合に再生成する", async () => {
+test("POST /api/final-markdown/generate は否定された終了状態ラベルを再生成する", async () => {
   const structuredRequests: Array<{ repairInstruction?: string }> = [];
-  const markdownWithConflictingStatus = validMarkdown.replace(
-    "## 現時点の状態\n暫定結論",
-    "## 現時点の状態\n判断保留です。ただし、ユーザーが選んだ終了状態は暫定結論です。",
+  const pendingDecisionMarkdown = validMarkdown.replace("暫定結論", "判断保留");
+  const markdownWithNegatedStatus = pendingDecisionMarkdown.replace(
+    "## 現時点の状態\n判断保留",
+    "## 現時点の状態\n判断保留ではない。",
   );
   const response = await requestJson(
     createTestApp(
       [
-        { markdown: markdownWithConflictingStatus },
-        { markdown: validMarkdown },
+        { markdown: markdownWithNegatedStatus },
+        { markdown: pendingDecisionMarkdown },
       ],
       "test-api-key",
       (request) => {
         structuredRequests.push(request as { repairInstruction?: string });
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "pending_decision" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=markdown,code=missing_standalone_status_label/,
+  );
+});
+
+test("POST /api/final-markdown/generate は単独の状態ラベルと通常の補足説明を受理する", async () => {
+  let generateCount = 0;
+  const markdownWithStatusExplanation = validMarkdown.replace(
+    "## 現時点の状態\n暫定結論",
+    "## 現時点の状態\n- 暫定結論\n\n判断保留に戻る可能性もあるため、追加情報を確認する。",
+  );
+  const response = await requestJson(
+    createTestApp(
+      { markdown: markdownWithStatusExplanation },
+      "test-api-key",
+      () => {
+        generateCount += 1;
       },
     ),
     "/api/final-markdown/generate",
@@ -429,8 +460,5 @@ test("POST /api/final-markdown/generate は状態欄に選択していない終�
   );
 
   assert.equal(response.status, 200);
-  assert.match(
-    structuredRequests[1]?.repairInstruction ?? "",
-    /path=markdown,code=unexpected_status_label/,
-  );
+  assert.equal(generateCount, 1);
 });
