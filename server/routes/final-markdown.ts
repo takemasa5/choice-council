@@ -86,12 +86,23 @@ export function createFinalMarkdownHandler(
 function createFinalMarkdownValidator(
   expectedStatusLabel: string,
 ): StructuredOutputPostValidator<FinalMarkdown> {
-  return (modelResponse) =>
-    getMarkdownSection(modelResponse.markdown, "## 現時点の状態").includes(
-      expectedStatusLabel,
+  return (modelResponse) => {
+    const statusSection = getMarkdownSection(
+      modelResponse.markdown,
+      "## 現時点の状態",
+    );
+    if (!statusSection.includes(expectedStatusLabel)) {
+      return { path: ["markdown"], code: "missing_expected_status_label" };
+    }
+
+    return Object.values(finalMemoStatusLabels).some(
+      (statusLabel) =>
+        statusLabel !== expectedStatusLabel &&
+        statusSection.includes(statusLabel),
     )
-      ? true
-      : { path: ["markdown"], code: "missing_expected_status_label" };
+      ? { path: ["markdown"], code: "unexpected_status_label" }
+      : true;
+  };
 }
 
 /**

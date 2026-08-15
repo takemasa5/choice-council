@@ -401,3 +401,36 @@ test("POST /api/final-markdown/generate は状態ラベル不足を理由付き�
     /path=markdown,code=missing_expected_status_label/,
   );
 });
+
+test("POST /api/final-markdown/generate は状態欄に選択していない終了状態がある場合に再生成する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const markdownWithConflictingStatus = validMarkdown.replace(
+    "## 現時点の状態\n暫定結論",
+    "## 現時点の状態\n判断保留です。ただし、ユーザーが選んだ終了状態は暫定結論です。",
+  );
+  const response = await requestJson(
+    createTestApp(
+      [
+        { markdown: markdownWithConflictingStatus },
+        { markdown: validMarkdown },
+      ],
+      "test-api-key",
+      (request) => {
+        structuredRequests.push(request as { repairInstruction?: string });
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=markdown,code=unexpected_status_label/,
+  );
+});
