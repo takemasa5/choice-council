@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { RequestHandler } from "express";
 import {
   ExpertGroupChatMessageSchema,
@@ -10,7 +11,6 @@ import {
   sendInvalidModelResponse,
   sendInvalidRequest,
   sendLlmRequestFailed,
-  type StructuredOutputPostValidator,
 } from "./response-utils";
 import type { AppDependencies } from "./types";
 
@@ -26,9 +26,6 @@ export function createGroupChatExpertReplyHandler(
       sendInvalidRequest(response, parsedRequest.error.flatten());
       return;
     }
-    const existingMessageIds = new Set(
-      parsedRequest.data.recentMessages.map((message) => message.id),
-    );
     try {
       const output =
         await parseStructuredOutputOnceWithRetry<ExpertGroupChatMessage>(
@@ -40,7 +37,7 @@ export function createGroupChatExpertReplyHandler(
               schemaName: "group_chat_message",
               repairInstruction: attempt?.repairInstruction,
             }),
-          createGroupChatMessageValidator(existingMessageIds),
+          isValidExpertGroupChatMessage,
           (failure) =>
             logStructuredOutputFailure(
               request,
@@ -55,6 +52,7 @@ export function createGroupChatExpertReplyHandler(
       }
       response.json({
         ...output,
+        id: createGroupChatMessageId(),
         speakerType: "expert",
         speakerName: parsedRequest.data.expert.role_name,
         participantId: parsedRequest.data.expert.participantId,
@@ -65,19 +63,17 @@ export function createGroupChatExpertReplyHandler(
   };
 }
 
-/** 既存メッセージとのID重複を、再生成可能な安全な理由として返す。 */
-function createGroupChatMessageValidator(
-  existingMessageIds: Set<string>,
-): StructuredOutputPostValidator<ExpertGroupChatMessage> {
-  return (message) => {
-    if (!ExpertGroupChatMessageSchema.safeParse(message).success) {
-      return { path: [], code: "invalid_group_chat_message" };
-    }
-    if (existingMessageIds.has(message.id)) {
-      return { path: ["id"], code: "duplicate_message_id" };
-    }
-    return true;
-  };
+/** LLM応答の構造を確認し、表示本文以外のメタデータはサーバー側で確定する。 */
+function isValidExpertGroupChatMessage(message: ExpertGroupChatMessage) {
+  if (!ExpertGroupChatMessageSchema.safeParse(message).success) {
+    return { path: [], code: "invalid_group_chat_message" };
+  }
+  return true;
+}
+
+/** モデルが返したIDを使わず、会話履歴と独立して新しい専門家発言IDを付与する。 */
+function createGroupChatMessageId() {
+  return `expert-${randomUUID()}`;
 }
 
 /** グループチャット専門家回答用プロンプト。仕様対応: `docs/api/schemas.md#グループチャット`。 */

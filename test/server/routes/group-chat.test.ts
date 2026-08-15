@@ -676,28 +676,28 @@ test("POST /api/expert/group-chat はMarkdownを含む専門家発言を再生�
   );
 });
 
-test("POST /api/expert/group-chat は重複IDを再生成して新しい発言を返す", async () => {
-  const recentMessage = {
-    id: "message-1",
+test("POST /api/expert/group-chat はrecentMessagesにない過去IDを返されても新しいIDを付与する", async () => {
+  const oldMessageId = "expert-old-message";
+  const recentMessages = Array.from({ length: 8 }, (_, index) => ({
+    id: `message-${index + 1}`,
     speakerType: "facilitator" as const,
     speakerName: "ファシリテーター",
     participantId: "facilitator",
-    content: "費用面を確認します。",
+    content: `費用面を確認します。${index + 1}`,
     createdAt: "2026-07-18T00:00:00.000Z",
-  };
-  const duplicateReply = {
-    id: recentMessage.id,
+  }));
+  const replyWithOldId = {
+    id: oldMessageId,
     speakerType: "expert",
     speakerName: expert.role_name,
     participantId: expert.participantId,
     content: "予算を確認します。",
     createdAt: "2026-07-18T00:01:00.000Z",
   };
-  const retriedReply = { ...duplicateReply, id: "reply-2" };
 
   const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const response = await requestJson(
-    createTestApp([duplicateReply, retriedReply], "test-api-key", (request) => {
+    createTestApp(replyWithOldId, "test-api-key", (request) => {
       structuredRequests.push(request as { repairInstruction?: string });
     }),
     "/api/expert/group-chat",
@@ -706,7 +706,7 @@ test("POST /api/expert/group-chat は重複IDを再生成して新しい発言�
       currentPhase: "group_chat",
       memo,
       contextSummary: "費用を検討中です。",
-      recentMessages: [recentMessage],
+      recentMessages,
       expert,
       facilitatorQuestion: "予算の考え方を教えてください。",
       discussionContext: {
@@ -717,9 +717,13 @@ test("POST /api/expert/group-chat は重複IDを再生成して新しい発言�
   );
 
   assert.equal(response.status, 200);
-  assert.equal((response.body as { id: string }).id, retriedReply.id);
-  assert.match(
-    structuredRequests[1]?.repairInstruction ?? "",
-    /path=id,code=duplicate_message_id/,
-  );
+  const responseBody = response.body as { id: string; content: string };
+  const existingMessageIds = new Set([
+    oldMessageId,
+    ...recentMessages.map((message) => message.id),
+  ]);
+  assert.equal(existingMessageIds.has(responseBody.id), false);
+  assert.match(responseBody.id, /^expert-[0-9a-f-]{36}$/);
+  assert.equal(responseBody.content, replyWithOldId.content);
+  assert.equal(structuredRequests.length, 1);
 });

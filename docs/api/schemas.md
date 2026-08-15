@@ -270,7 +270,7 @@ MVP では外部調査を実施しない。`needs_research: true` の内容と�
 | facilitatorQuestion | 必須 | ファシリテーターがその専門家へ出した質問                                           |
 | discussionContext   | 必須 | 開始時に確定した案選択と、初回コメント由来の全具体案。専門家は回答の起点として使う |
 
-応答は、指定専門家の `GroupChatMessage` 1件とする。`id` は入力 `recentMessages` に含まれる既存のIDと重複してはならず、重複する構造化出力は無効として再生成対象にする。専門家の回答後、クライアントは次のファシリテーターターンを要求する。
+応答は、指定専門家の `GroupChatMessage` 1件とする。応答の `id` はサーバーが新規に生成し、LLMが構造化出力で返した `id` は使用しない。これにより、入力が直近8件の `recentMessages` に限られていても、モデルが過去のIDを再利用して会話履歴のIDが重複することを防ぐ。専門家の回答後、クライアントは次のファシリテーターターンを要求する。
 
 #### `POST /api/facilitator/group-chat/next`
 
