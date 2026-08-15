@@ -16,6 +16,7 @@ import {
   ExpertGroupChatMessageSchema,
   FacilitatorResponseSchema,
   FacilitatorTurnSchema,
+  FinalMarkdownSchema,
   GroupChatMessageSchema,
   maximumExpertRequestCount,
   SessionMemoSchema,
@@ -149,7 +150,15 @@ export function normalizeStoredSession(session: StoredSession): StoredSession {
       session.groupChatMessages,
     ),
     groupChatTurn: normalizeStoredFacilitatorTurn(session.groupChatTurn),
+    finalMarkdown: normalizeStoredFinalMarkdown(session.finalMarkdown),
   };
+}
+
+/** 保存済み終了メモは現行の表示契約を満たす場合だけ復元する。 */
+function normalizeStoredFinalMarkdown(value: unknown) {
+  const parsedMarkdown = FinalMarkdownSchema.safeParse({ markdown: value });
+
+  return parsedMarkdown.success ? parsedMarkdown.data.markdown : undefined;
 }
 
 /** 保存済みファシリテーター応答を、現行表示schemaに適合する場合だけ復元する。 */

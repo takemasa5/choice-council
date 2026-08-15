@@ -837,9 +837,9 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
   });
 }
 
-/** HTML として解釈され得る要素、コメント、宣言を終了メモから除外する。 */
+/** HTML として解釈され得る要素、コメント、宣言、CDATA、処理命令を終了メモから除外する。 */
 function containsForbiddenFinalMarkdownHtml(markdown: string) {
-  return /<\/?[a-z][^>]*>|<!--(?:[\s\S]*?-->|[\s\S]*$)|<![a-z][^>]*>/i.test(
+  return /<\/?[a-z][^>]*>|<!--(?:[\s\S]*?-->|[\s\S]*$)|<![a-z][^>]*>|<!\[CDATA\[(?:[\s\S]*?\]\]>|[\s\S]*$)|<\?(?:[\s\S]*?\?>|[\s\S]*$)/i.test(
     markdown,
   );
 }

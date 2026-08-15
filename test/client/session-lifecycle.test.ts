@@ -76,6 +76,73 @@ const groupChatTurn = {
   contextSummaryUpdate: null,
 };
 
+const validFinalMarkdown = `# 意思決定メモ
+
+## 相談テーマ
+相談内容
+
+## 現時点の状態
+暫定結論
+
+## 重視した価値観
+価値観
+
+## 整理した事実
+事実
+
+## 検討した選択肢
+選択肢
+
+## 主な判断軸
+判断軸
+
+## 専門家コメント要約
+要約
+
+## 意見が割れた点
+なし
+
+## 未確認事項
+なし
+
+## 次アクション
+次の行動
+
+## セッションログ要約
+追加調査待ちを選択した。`;
+
+function createStoredFinalMemo(finalMarkdown: string) {
+  return {
+    request: { consultation: "相談内容" },
+    response: {
+      ...facilitatorResponse,
+      current_phase: "final_memo" as const,
+      memo_updates: { ...memo, status: "pending_research" as const },
+    } as never,
+    responseHistory: {
+      group_chat: {
+        ...facilitatorResponse,
+        current_phase: "group_chat" as const,
+      } as never,
+      final_memo: {
+        ...facilitatorResponse,
+        current_phase: "final_memo" as const,
+        memo_updates: { ...memo, status: "pending_research" as const },
+      } as never,
+    },
+    currentPhase: "final_memo" as const,
+    confirmedExperts: [facilitatorResponse.expert_requests[0]],
+    expertComments: [expertComment],
+    discussionSelection: {
+      kind: "deep_dive" as const,
+      proposalId: "proposal-1",
+    },
+    selectedProposalIds: ["proposal-1"],
+    groupChatTurn,
+    finalMarkdown,
+  };
+}
+
 test("相談開始時に開始済み相談、現在フェーズ、応答履歴をまとめて確定する", () => {
   const state = startSession(
     { consultation: "相談内容" },
@@ -168,6 +235,39 @@ test("Markdown のない終了メモを保存データから復元すると意�
   assert.equal(restored.currentPhase, "group_chat");
   assert.equal(restored.response?.memo_updates.status, "in_progress");
   assert.equal(restored.responseHistory.final_memo, undefined);
+});
+
+test("現行schemaを満たす保存済み終了メモは復元時に維持する", () => {
+  const stored = createStoredFinalMemo(validFinalMarkdown);
+  const normalized = normalizeStoredSession(stored);
+  const restored = restoreStoredSessionState(stored);
+
+  assert.equal(normalized.finalMarkdown, validFinalMarkdown);
+  assert.equal(restored.currentPhase, "final_memo");
+  assert.equal(
+    restored.responseHistory.final_memo?.current_phase,
+    "final_memo",
+  );
+});
+
+test("不正な保存済み終了メモは破棄して再生成可能な意見交換へ戻す", () => {
+  const invalidFinalMarkdowns = [
+    `${validFinalMarkdown}\n${"あ".repeat(3000)}`,
+    `${validFinalMarkdown}\n\n\`\`\`\nコード\n\`\`\``,
+    `${validFinalMarkdown}\n\n1. 番号付きリスト`,
+    `${validFinalMarkdown}\n\n<div>HTML</div>`,
+  ];
+
+  for (const finalMarkdown of invalidFinalMarkdowns) {
+    const stored = createStoredFinalMemo(finalMarkdown);
+    const normalized = normalizeStoredSession(stored);
+    const restored = restoreStoredSessionState(stored);
+
+    assert.equal(normalized.finalMarkdown, undefined);
+    assert.equal(restored.currentPhase, "group_chat");
+    assert.equal(restored.response?.memo_updates.status, "in_progress");
+    assert.equal(restored.responseHistory.final_memo, undefined);
+  }
 });
 
 test("旧形式のメモを正規化して復元後もAPI入力として継続できる", () => {

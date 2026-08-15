@@ -215,6 +215,14 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     `${validMarkdown}\n\n<!--\nHTML コメント\n-->`,
     `${validMarkdown}\n\n<!-- HTML コメント`,
     `${validMarkdown}\n\n<!DOCTYPE html>`,
+    validMarkdown.replace(
+      "## 現時点の状態\n暫定結論",
+      "<![CDATA[非表示の内容]]>\n## 現時点の状態\n暫定結論",
+    ),
+    validMarkdown.replace(
+      "## 現時点の状態\n暫定結論",
+      "<?processing instruction?>\n## 現時点の状態\n暫定結論",
+    ),
     `${validMarkdown}\n\n> 引用`,
     `${validMarkdown}\n\n+ 許可しない箇条書き`,
     `${validMarkdown}\n\n${"あ".repeat(3001)}`,

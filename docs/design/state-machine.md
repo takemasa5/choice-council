@@ -90,6 +90,8 @@ LLM は `next_action` で候補行動を返せるが、実際のフェーズ遷�
 
 終了メモの生成中に保存済みセッションを復元した場合も、Markdown がなければ自動生成は完了していないものとして扱う。アプリは `group_chat` へ戻り、`SessionMemo.status` を `in_progress` に戻して終了状態を選び直せるようにする。
 
+保存済みの終了メモが現行の Markdown schema（構成、許可ブロック、HTML 禁止、3000 字上限）を満たさない場合も、終了メモとして表示・保持しない。未生成と同様に `group_chat` へ戻り、`SessionMemo.status` を `in_progress` に戻して再生成できるようにする。
+
 ユーザーが同意しない場合、現在フェーズに留まる。
 
 ## `next_action`
