@@ -35,9 +35,6 @@ import {
   createStoredSession,
   getAvailableReturnPhases,
   getCurrentSessionMemo,
-  getRestoredProposalState,
-  isStoredProposalStateComplete,
-  normalizeStoredSession,
   proceedToExpertSelection as proceedSessionToExpertSelection,
   restoreGroupChatAfterFinalMemoFailure as restoreSessionGroupChatAfterFinalMemoFailure,
   restoreStoredSessionState,
@@ -246,41 +243,35 @@ export function App() {
   function restoreSession(parsed: StoredSession | null) {
     if (!parsed) return;
 
-    const normalizedSession = normalizeStoredSession(parsed);
-    const restoredProposalState = getRestoredProposalState(normalizedSession);
-    const restoredSessionState = restoreStoredSessionState(normalizedSession);
-    const storedProposalPhase =
-      normalizedSession.currentPhase ??
-      normalizedSession.response?.current_phase;
-    const isProposalRecovery =
-      (storedProposalPhase === "deliberation" ||
-        storedProposalPhase === "group_chat" ||
-        storedProposalPhase === "final_memo") &&
-      !isStoredProposalStateComplete(
-        storedProposalPhase,
-        restoredProposalState,
-      );
+    const restoration = restoreStoredSessionState(parsed);
+    if (!restoration.isValid) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+    const { session: storedSession, proposalState: restoredProposalState } =
+      restoration;
+    const restoredSessionState = restoration;
 
-    changeConsultation(normalizedSession.request.consultation);
-    changeFacts(normalizedSession.request.facts ?? "");
-    changeValues(normalizedSession.request.values ?? "");
-    changeConcerns(normalizedSession.request.concerns ?? "");
-    changeExpectedOutcome(normalizedSession.request.expectedOutcome ?? "");
+    changeConsultation(storedSession.request.consultation);
+    changeFacts(storedSession.request.facts ?? "");
+    changeValues(storedSession.request.values ?? "");
+    changeConcerns(storedSession.request.concerns ?? "");
+    changeExpectedOutcome(storedSession.request.expectedOutcome ?? "");
     setSessionState(restoredSessionState);
     const restoredExperts =
-      normalizedSession.confirmedExperts ??
-      normalizedSession.response?.expert_requests ??
+      storedSession.confirmedExperts ??
+      storedSession.response?.expert_requests ??
       [];
     restoreSelection({
       initialCandidates: getInitialExpertRequests(
-        normalizedSession.initialExpertRequests,
+        storedSession.initialExpertRequests,
         restoredSessionState.currentPhase,
         restoredSessionState.response,
       ),
       confirmedCandidates: restoredExperts,
       comments: restoredProposalState.expertComments,
-      drafts: normalizedSession.expertDrafts,
-      restoredDraftProvenanceKey: normalizedSession.expertDraftProvenanceKey,
+      drafts: storedSession.expertDrafts,
+      restoredDraftProvenanceKey: storedSession.expertDraftProvenanceKey,
     });
     const restoredCandidates =
       restoredSessionState.response?.expert_requests ?? [];
@@ -289,26 +280,21 @@ export function App() {
       JSON.stringify(restoredCandidates),
     );
     shouldSkipRestoredCandidateSyncRef.current = true;
-    if (isProposalRecovery) {
-      groupChatPhase.reset();
-      finalMemoPhase.clear();
-    } else {
-      groupChatPhase.restore({
-        messages: normalizedSession.groupChatMessages ?? [],
-        turn: normalizedSession.groupChatTurn ?? null,
-        contextSummary: normalizedSession.groupChatContextSummary ?? "",
-        expertRepliesSinceUser:
-          normalizedSession.groupChatExpertRepliesSinceUser ?? 0,
-        isNextTurnRetryPending:
-          normalizedSession.groupChatNextTurnRetryPending ?? false,
-      });
-      finalMemoPhase.restore(normalizedSession.finalMarkdown ?? "");
-    }
+    groupChatPhase.restore({
+      messages: storedSession.groupChatMessages ?? [],
+      turn: storedSession.groupChatTurn ?? null,
+      contextSummary: storedSession.groupChatContextSummary ?? "",
+      expertRepliesSinceUser:
+        storedSession.groupChatExpertRepliesSinceUser ?? 0,
+      isNextTurnRetryPending:
+        storedSession.groupChatNextTurnRetryPending ?? false,
+    });
+    finalMemoPhase.restore(storedSession.finalMarkdown ?? "");
     setDiscussionSelection(restoredProposalState.discussionSelection);
     setSelectedProposalIds(restoredProposalState.selectedProposalIds);
     restoreQuestionAnswer(
-      normalizedSession.request.userQuestionAnswer,
-      normalizedSession.response,
+      storedSession.request.userQuestionAnswer,
+      storedSession.response,
     );
   }
 

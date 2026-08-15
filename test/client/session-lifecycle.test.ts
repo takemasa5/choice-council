@@ -4,7 +4,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { GroupChatPhase } from "../../src/client/phases/GroupChatPhase";
 import {
-  createSessionRequest,
   createInitialSessionState,
   createStoredSession,
   getRestoredProposalState,
@@ -16,14 +15,10 @@ import {
   startSession,
 } from "../../src/client/session-lifecycle";
 import {
-  ConsultationRequestSchema,
-  ExpertCommentSchema,
   ExpertCommentRequestSchema,
   FacilitatorResponseSchema,
   FacilitatorTurnSchema,
   GroupChatMessageSchema,
-  GroupChatNextRequestSchema,
-  SessionMemoSchema,
 } from "../../src/shared/schemas/session";
 import { memo } from "../../test-support/server";
 
@@ -114,7 +109,11 @@ const validFinalMarkdown = `# 意思決定メモ
 
 function createStoredFinalMemo(finalMarkdown: string) {
   return {
-    request: { consultation: "相談内容" },
+    request: {
+      consultation: "相談内容",
+      currentPhase: "final_memo" as const,
+      memo: { ...memo, status: "pending_research" as const },
+    },
     response: {
       ...facilitatorResponse,
       current_phase: "final_memo" as const,
@@ -132,14 +131,19 @@ function createStoredFinalMemo(finalMarkdown: string) {
       } as never,
     },
     currentPhase: "final_memo" as const,
+    expertDrafts: [],
+    expertDraftProvenanceKey: undefined,
+    initialExpertRequests: [],
     confirmedExperts: [facilitatorResponse.expert_requests[0]],
     expertComments: [expertComment],
+    groupChatMessages: [],
     discussionSelection: {
       kind: "deep_dive" as const,
       proposalId: "proposal-1",
     },
     selectedProposalIds: ["proposal-1"],
     groupChatTurn,
+    groupChatExpertRepliesSinceUser: 0,
     finalMarkdown,
   };
 }
@@ -206,7 +210,7 @@ test("終了メモから戻ると後続履歴を破棄して対象フェーズ�
   assert.equal(returned.responseHistory.final_memo, undefined);
 });
 
-test("Markdown のない終了メモを保存データから復元すると意見交換へ戻す", () => {
+test("Markdown のない終了メモの保存セッションは全体を破棄する", () => {
   const restored = restoreStoredSessionState({
     request: { consultation: "相談内容" },
     response: {
@@ -233,17 +237,15 @@ test("Markdown のない終了メモを保存データから復元すると意�
     groupChatTurn,
   });
 
-  assert.equal(restored.currentPhase, "group_chat");
-  assert.equal(restored.response?.memo_updates.status, "in_progress");
-  assert.equal(restored.responseHistory.final_memo, undefined);
+  assert.equal(restored.isValid, false);
+  assert.deepEqual(restored.responseHistory, {});
 });
 
 test("現行schemaを満たす保存済み終了メモは復元時に維持する", () => {
   const stored = createStoredFinalMemo(validFinalMarkdown);
-  const normalized = normalizeStoredSession(stored);
   const restored = restoreStoredSessionState(stored);
 
-  assert.equal(normalized.finalMarkdown, validFinalMarkdown);
+  assert.equal(restored.isValid, true);
   assert.equal(restored.currentPhase, "final_memo");
   assert.equal(
     restored.responseHistory.final_memo?.current_phase,
@@ -257,27 +259,23 @@ test("選択済み状態をアスタリスク箇条書きで記載した保存�
     "* 追加調査待ち",
   );
   const stored = createStoredFinalMemo(finalMarkdown);
-  const normalized = normalizeStoredSession(stored);
   const restored = restoreStoredSessionState(stored);
 
-  assert.equal(normalized.finalMarkdown, finalMarkdown);
+  assert.equal(restored.isValid, true);
   assert.equal(restored.currentPhase, "final_memo");
 });
 
-test("保存済みメモの終了状態と一致しない終了メモは再生成可能な意見交換へ戻す", () => {
+test("保存済みメモの終了状態と一致しない終了メモは全体を破棄する", () => {
   const stored = createStoredFinalMemo(
     validFinalMarkdown.replace("追加調査待ち", "判断保留"),
   );
-  const normalized = normalizeStoredSession(stored);
   const restored = restoreStoredSessionState(stored);
 
-  assert.equal(normalized.finalMarkdown, undefined);
-  assert.equal(restored.currentPhase, "group_chat");
-  assert.equal(restored.response?.memo_updates.status, "in_progress");
-  assert.equal(restored.responseHistory.final_memo, undefined);
+  assert.equal(restored.isValid, false);
+  assert.equal(restored.currentPhase, "consultation_input");
 });
 
-test("不正な保存済み終了メモは破棄して再生成可能な意見交換へ戻す", () => {
+test("不正な保存済み終了メモは保存セッション全体を破棄する", () => {
   const invalidFinalMarkdowns = [
     `${validFinalMarkdown}\n${"あ".repeat(3000)}`,
     `${validFinalMarkdown}\n\n\`\`\`\nコード\n\`\`\``,
@@ -287,17 +285,14 @@ test("不正な保存済み終了メモは破棄して再生成可能な意見�
 
   for (const finalMarkdown of invalidFinalMarkdowns) {
     const stored = createStoredFinalMemo(finalMarkdown);
-    const normalized = normalizeStoredSession(stored);
     const restored = restoreStoredSessionState(stored);
 
-    assert.equal(normalized.finalMarkdown, undefined);
-    assert.equal(restored.currentPhase, "group_chat");
-    assert.equal(restored.response?.memo_updates.status, "in_progress");
-    assert.equal(restored.responseHistory.final_memo, undefined);
+    assert.equal(restored.isValid, false);
+    assert.equal(restored.currentPhase, "consultation_input");
   }
 });
 
-test("旧形式のメモを正規化して復元後もAPI入力として継続できる", () => {
+test("旧形式のメモを含む保存セッションは全体を破棄する", () => {
   const oldMemo = {
     ...memo,
     theme: `  # ${"相談テーマ".repeat(30)}\n`,
@@ -330,34 +325,10 @@ test("旧形式のメモを正規化して復元後もAPI入力として継続�
     currentPhase: "premise",
   });
 
-  const restoredMemo = restored.response?.memo_updates;
-  assert.ok(restoredMemo);
-  assert.equal(restoredMemo.theme.length, 120);
-  assert.doesNotMatch(restoredMemo.theme, /^\s*#/);
-  assert.deepEqual(restoredMemo.facts, [
-    "最初の事実 補足",
-    "2番目の事実",
-    "4番目の事実",
-  ]);
-  assert.deepEqual(restoredMemo.values, ["価値観", "あ".repeat(80), "条件"]);
-  assert.ok(SessionMemoSchema.safeParse(restoredMemo).success);
-
-  const continuationRequest = createSessionRequest({
-    consultation: "相談内容",
-    facts: "",
-    values: "",
-    concerns: "",
-    expectedOutcome: "",
-    state: restored,
-  });
-  assert.ok(SessionMemoSchema.safeParse(continuationRequest.memo).success);
-  assert.deepEqual(
-    restored.responseHistory.premise?.memo_updates,
-    restoredMemo,
-  );
+  assert.equal(restored.isValid, false);
 });
 
-test("旧メモのinline Markdownを平文化して有効なセッション状態を復元する", () => {
+test("inline Markdownを含む旧メモの保存セッションは全体を破棄する", () => {
   const oldMemo = {
     ...memo,
     theme:
@@ -391,29 +362,10 @@ test("旧メモのinline Markdownを平文化して有効なセッション状�
     currentPhase: "premise",
   });
 
-  const restoredMemo = restored.response?.memo_updates;
-  assert.ok(restoredMemo);
-  assert.equal(restoredMemo.theme, "相談テーマ と 条件を 確認資料 で整理する");
-  assert.deepEqual(restoredMemo.facts, [
-    "重要な事実",
-    "確認コード",
-    "参考資料",
-  ]);
-  assert.deepEqual(restoredMemo.values, ["図の説明"]);
-  assert.ok(SessionMemoSchema.safeParse(restoredMemo).success);
-
-  const continuationRequest = createSessionRequest({
-    consultation: "相談内容",
-    facts: "",
-    values: "",
-    concerns: "",
-    expectedOutcome: "",
-    state: restored,
-  });
-  assert.ok(ConsultationRequestSchema.safeParse(continuationRequest).success);
+  assert.equal(restored.isValid, false);
 });
 
-test("旧形式の専門家コメントを正規化して意見交換フェーズを復元する", () => {
+test("旧形式の専門家コメントを含む保存セッションは全体を破棄する", () => {
   const oldComment = {
     ...expertComment,
     summary: `**${"要".repeat(180)}**\n~~${"約".repeat(180)}~~`,
@@ -458,43 +410,12 @@ test("旧形式の専門家コメントを正規化して意見交換フェー�
 
   const proposalState = getRestoredProposalState(stored as never);
   const restored = restoreStoredSessionState(stored as never);
-  const [restoredComment] = proposalState.expertComments;
 
-  assert.equal(proposalState.isValid, true);
-  assert.ok(restoredComment);
-  assert.equal(restoredComment.summary.length, 300);
-  assert.doesNotMatch(restoredComment.summary, /[\r\n*~`]/);
-  assert.equal(restoredComment.proposal.name.length, 120);
-  assert.deepEqual(restoredComment.proposal.benefits, ["利点 補足"]);
-  assert.deepEqual(restoredComment.proposal.sacrifices, ["犠牲"]);
-  assert.deepEqual(restoredComment.proposal.conditions, ["条件"]);
-  assert.ok(ExpertCommentSchema.safeParse(restoredComment).success);
-  assert.equal(restored.currentPhase, "group_chat");
-  assert.equal(restored.response?.current_phase, "group_chat");
-  assert.ok(
-    GroupChatNextRequestSchema.safeParse({
-      consultation: "相談内容",
-      currentPhase: "group_chat",
-      memo,
-      contextSummary: "検討中です。",
-      recentMessages: [],
-      confirmedExperts: [confirmedExpert],
-      expertRepliesSinceUser: 0,
-      discussionContext: {
-        selection: proposalState.discussionSelection,
-        proposals: [
-          {
-            participantId: confirmedExpert.participantId,
-            roleName: confirmedExpert.role_name,
-            proposal: restoredComment.proposal,
-          },
-        ],
-      },
-    }).success,
-  );
+  assert.equal(proposalState.isValid, false);
+  assert.equal(restored.isValid, false);
 });
 
-test("旧形式の通常画面出力を平文化して意見交換状態を復元する", () => {
+test("旧形式の通常画面出力を含む保存セッションは全体を破棄する", () => {
   const legacyResponse = {
     ...facilitatorResponse,
     current_phase: "group_chat" as const,
@@ -543,32 +464,9 @@ test("旧形式の通常画面出力を平文化して意見交換状態を復�
     selectedProposalIds: ["proposal-1"],
   };
 
-  const normalized = normalizeStoredSession(stored as never);
   const restored = restoreStoredSessionState(stored as never);
-  const [message] = normalized.groupChatMessages ?? [];
 
-  assert.ok(FacilitatorResponseSchema.safeParse(normalized.response).success);
-  assert.ok(
-    FacilitatorResponseSchema.safeParse(normalized.responseHistory?.group_chat)
-      .success,
-  );
-  assert.ok(GroupChatMessageSchema.safeParse(message).success);
-  assert.ok(FacilitatorTurnSchema.safeParse(normalized.groupChatTurn).success);
-  assert.ok(normalized.response);
-  assert.doesNotMatch(
-    [
-      normalized.response.current_phase_label,
-      normalized.response.phase_goal,
-      normalized.response.facilitator_message,
-      message?.content,
-      normalized.groupChatTurn?.message,
-      normalized.groupChatTurn?.requestReason,
-      normalized.groupChatTurn?.question,
-    ].join(" "),
-    /[\r\n*`]|\[[^\]]+\]\(/,
-  );
-  assert.equal(restored.currentPhase, "group_chat");
-  assert.equal(restored.response?.current_phase, "group_chat");
+  assert.equal(restored.isValid, false);
 });
 
 test("保存済みの未編集LLM専門家候補を通常画面の制約へ正規化して復元する", () => {
@@ -767,7 +665,7 @@ test("保存済み専門家下書きは同じ添字の未編集候補だけを�
   );
 });
 
-test("編集・確定済み専門家候補は原文と生成済みコメントの対応を保って検討フェーズへ復元する", () => {
+test("不完全な編集済み候補の保存セッションは全体を破棄する", () => {
   const llmCandidate = {
     role_name: "家計アドバイザー",
     viewpoint: "予算",
@@ -810,53 +708,9 @@ test("編集・確定済み専門家候補は原文と生成済みコメント�
     selectedProposalIds: ["proposal-1"],
   };
 
-  const normalized = normalizeStoredSession(stored as never);
-  const beforeCommentGeneration = normalizeStoredSession({
-    ...stored,
-    response: {
-      ...stored.response,
-      current_phase: "expert_selection" as const,
-    },
-    currentPhase: "expert_selection" as const,
-    expertComments: [],
-    discussionSelection: undefined,
-    selectedProposalIds: [],
-  } as never);
-  const proposalState = getRestoredProposalState(normalized);
   const restored = restoreStoredSessionState(stored as never);
 
-  assert.deepEqual(normalized.initialExpertRequests, [llmCandidate]);
-  assert.deepEqual(normalized.confirmedExperts, [confirmedExpert]);
-  assert.deepEqual(beforeCommentGeneration.confirmedExperts, [confirmedExpert]);
-  assert.ok(FacilitatorResponseSchema.safeParse(normalized.response).success);
-  assert.ok(
-    FacilitatorResponseSchema.safeParse(
-      normalized.responseHistory?.deliberation,
-    ).success,
-  );
-  assert.notDeepEqual(normalized.response?.expert_requests, [confirmedExpert]);
-  assert.notDeepEqual(
-    normalized.responseHistory?.deliberation?.expert_requests,
-    [confirmedExpert],
-  );
-  assert.deepEqual(normalized.expertDrafts, [
-    { ...confirmedExpert, draftId: "expert-draft-1" },
-  ]);
-  assert.equal(
-    normalized.expertDraftProvenanceKey,
-    JSON.stringify([llmCandidate]),
-  );
-  assert.ok(
-    ExpertCommentRequestSchema.safeParse({
-      consultation: "相談内容",
-      currentPhase: "deliberation",
-      expert: normalized.confirmedExperts?.[0],
-    }).success,
-  );
-  assert.equal(proposalState.isValid, true);
-  assert.deepEqual(proposalState.expertComments, [comment]);
-  assert.equal(restored.currentPhase, "deliberation");
-  assert.equal(restored.response?.current_phase, "deliberation");
+  assert.equal(restored.isValid, false);
 });
 
 test("不正な下書き復元元候補キーは保持しないが空候補は保持する", () => {
@@ -1204,7 +1058,7 @@ test("復元不能な通常画面応答は相談入力へ安全に戻す", () =>
   assert.deepEqual(restored.responseHistory, {});
 });
 
-test("復元できない意見交換ターンは検討フェーズへ戻して再生成する", () => {
+test("復元できない意見交換ターンを含む保存セッションは全体を破棄する", () => {
   const deliberationResponse = {
     ...facilitatorResponse,
     current_phase: "deliberation" as const,
@@ -1243,17 +1097,12 @@ test("復元できない意見交換ターンは検討フェーズへ戻して�
     },
   };
 
-  const normalized = normalizeStoredSession(stored as never);
   const restored = restoreStoredSessionState(stored as never);
 
-  assert.equal(normalized.groupChatTurn, undefined);
-  assert.equal(restored.currentPhase, "deliberation");
-  assert.equal(restored.response?.current_phase, "deliberation");
-  assert.equal(restored.responseHistory.group_chat, undefined);
-  assert.deepEqual(restored.responseHistory.deliberation, deliberationResponse);
+  assert.equal(restored.isValid, false);
 });
 
-test("復元できない確認質問を待つ保存済みセッションは相談入力へ戻す", () => {
+test("復元できない確認質問を待つ保存セッションは全体を破棄する", () => {
   const stored = {
     request: { consultation: "相談内容" },
     response: {
@@ -1267,12 +1116,9 @@ test("復元できない確認質問を待つ保存済みセッションは相�
     currentPhase: "premise" as const,
   };
 
-  const normalized = normalizeStoredSession(stored as never);
   const restored = restoreStoredSessionState(stored as never);
 
-  assert.equal(normalized.response?.next_action, "wait_user");
-  assert.equal(normalized.response?.user_question, null);
-  assert.deepEqual(restored, createInitialSessionState());
+  assert.equal(restored.isValid, false);
 });
 
 test("確認質問のない前提整理の待機応答は相談入力へ戻す", () => {
@@ -1286,13 +1132,12 @@ test("確認質問のない前提整理の待機応答は相談入力へ戻す",
     FacilitatorResponseSchema.safeParse(stored.response).success,
     true,
   );
-  assert.deepEqual(
-    restoreStoredSessionState(stored as never),
-    createInitialSessionState(),
-  );
+  const restored = restoreStoredSessionState(stored as never);
+  assert.equal(restored.isValid, false);
+  assert.equal(restored.currentPhase, "consultation_input");
 });
 
-test("前提整理以外の待機応答は復元を継続する", () => {
+test("履歴が不完全な待機応答の保存セッションは全体を破棄する", () => {
   const stored = {
     request: { consultation: "相談内容" },
     response: {
@@ -1304,12 +1149,10 @@ test("前提整理以外の待機応答は復元を継続する", () => {
 
   const restored = restoreStoredSessionState(stored as never);
 
-  assert.equal(restored.currentPhase, "expert_selection");
-  assert.equal(restored.response?.next_action, "wait_user");
-  assert.equal(restored.response?.user_question, null);
+  assert.equal(restored.isValid, false);
 });
 
-test("旧形式または参照不整合の案保存値は専門家選定へ安全に戻す", () => {
+test("参照不整合の案保存値を含むセッションは全体を破棄する", () => {
   const stored = {
     request: { consultation: "相談内容" },
     response: {
@@ -1346,8 +1189,7 @@ test("旧形式または参照不整合の案保存値は専門家選定へ安�
   assert.equal(proposalState.isValid, false);
   assert.deepEqual(proposalState.expertComments, []);
   assert.equal(proposalState.discussionSelection, null);
-  assert.equal(restored.currentPhase, "expert_selection");
-  assert.equal(restored.response?.current_phase, "expert_selection");
+  assert.equal(restored.isValid, false);
 });
 
 test("復元時は案選択と選択済み案IDの完全一致を要求する", () => {
@@ -1406,7 +1248,7 @@ test("復元時は案選択と選択済み案IDの完全一致を要求する", 
   );
 });
 
-test("選択途中の案は検討フェーズへ復元し、初回コメントを維持する", () => {
+test("不完全な選択途中の案を含むセッションは全体を破棄する", () => {
   const stored = {
     request: { consultation: "相談内容" },
     response: {
@@ -1436,8 +1278,7 @@ test("選択途中の案は検討フェーズへ復元し、初回コメント�
   assert.equal(proposalState.discussionSelection, null);
   assert.deepEqual(proposalState.selectedProposalIds, ["proposal-1"]);
   assert.deepEqual(proposalState.expertComments, [expertComment]);
-  assert.equal(restored.currentPhase, "deliberation");
-  assert.equal(restored.response?.current_phase, "deliberation");
+  assert.equal(restored.isValid, false);
 });
 
 test("案選択はセッションへ保存できる", () => {

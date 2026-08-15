@@ -12,6 +12,7 @@ import type {
   SessionMemo,
 } from "../shared/schemas/session";
 import {
+  ConsultationRequestSchema,
   DiscussionSelectionSchema,
   ExpertCommentSchema,
   ExpertGroupChatMessageSchema,
@@ -25,7 +26,6 @@ import {
   getFinalMarkdownHeading,
   SessionMemoSchema,
 } from "../shared/schemas/session";
-import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
 import {
   clearResponseHistory,
   createResponseForPhase,
@@ -35,7 +35,6 @@ import {
   phaseOrder,
   type ResponseHistory,
 } from "./phase-history";
-import { restoreSessionPhase } from "./session-phase-restoration";
 import type { ExpertDraft } from "./hooks/use-expert-selection-phase";
 
 export type SessionState = {
@@ -74,6 +73,17 @@ export type RestoredProposalState = {
   isValid: boolean;
 };
 
+/** 保存セッションの復元結果。無効な保存値と初期状態を混同しない。 */
+export type StoredSessionRestoration = SessionState &
+  (
+    | {
+        isValid: true;
+        session: StoredSession;
+        proposalState: RestoredProposalState;
+      }
+    | { isValid: false }
+  );
+
 export function createInitialSessionState(): SessionState {
   return {
     startedConsultation: "",
@@ -83,62 +93,226 @@ export function createInitialSessionState(): SessionState {
   };
 }
 
-/** 保存済みのフェーズ横断状態を復元し、生成中断した終了メモも復旧する。 */
-export function restoreStoredSessionState(parsed: StoredSession): SessionState {
-  const normalizedSession = normalizeStoredSession(parsed);
+/**
+ * 保存値は現行schemaと状態機械を完全に満たす場合だけ復元する。
+ * 古い形式や途中状態を局所的に修復しないことで、表示・API入力の契約を保つ。
+ */
+export function restoreStoredSessionState(
+  parsed: unknown,
+): StoredSessionRestoration {
+  const session = parseStoredSession(parsed);
+  if (!session) return { ...createInitialSessionState(), isValid: false };
 
-  if (!normalizedSession.response) {
-    return createInitialSessionState();
+  const proposalState = getRestoredProposalState(session);
+  if (!isStoredSessionStateMachineConsistent(session, proposalState)) {
+    return { ...createInitialSessionState(), isValid: false };
   }
 
-  const restoredPhase = restoreSessionPhase(
-    normalizedSession.currentPhase,
-    normalizedSession.response?.current_phase,
-  );
-  if (
-    restoredPhase === "premise" &&
-    isUnanswerableWaitUserResponse(normalizedSession.response)
-  ) {
-    return createInitialSessionState();
-  }
-  const restoredSession = recoverInterruptedFinalMemo({
-    currentPhase: restoredPhase,
-    response: normalizedSession.response,
-    responseHistory:
-      normalizedSession.responseHistory ??
-      responseToHistory(normalizedSession.response),
-    finalMarkdown: normalizedSession.finalMarkdown ?? "",
-  });
-
-  const restoredState = {
+  return {
     startedConsultation:
-      normalizedSession.startedConsultation ??
-      (normalizedSession.response
-        ? normalizedSession.request.consultation
-        : ""),
-    response: restoredSession.response,
-    responseHistory: restoredSession.responseHistory,
-    currentPhase: restoredSession.currentPhase,
+      session.startedConsultation ?? session.request.consultation,
+    response: session.response,
+    responseHistory: session.responseHistory ?? {},
+    currentPhase: session.currentPhase as Phase,
+    isValid: true,
+    session,
+    proposalState,
   };
-
-  const proposalState = getRestoredProposalState(normalizedSession);
-  if (
-    !isStoredProposalStateComplete(restoredState.currentPhase, proposalState)
-  ) {
-    return recoverToExpertSelection(restoredState);
-  }
-
-  if (
-    restoredState.currentPhase === "group_chat" &&
-    !normalizedSession.groupChatTurn
-  ) {
-    return recoverToDeliberation(restoredState);
-  }
-
-  return restoredState;
 }
 
-/** 旧保存形式の通常画面出力を、現行の表示・後続入力として安全に正規化する。 */
+function parseStoredSession(value: unknown): StoredSession | null {
+  if (!isRecord(value) || !hasOnlyStoredSessionKeys(value)) return null;
+  if (!isExactSchemaValue(value.request, ConsultationRequestSchema))
+    return null;
+  if (!isPhase(value.currentPhase)) return null;
+  if (!isStoredResponse(value.response)) return null;
+  if (!isStoredResponseHistory(value.responseHistory)) return null;
+  if (!isOptionalString(value.startedConsultation)) return null;
+  if (!isArrayOf(value.expertComments, ExpertCommentSchema)) return null;
+  if (!isStoredExpertDrafts(value.expertDrafts)) return null;
+  if (!isOptionalExpertDraftProvenance(value.expertDraftProvenanceKey))
+    return null;
+  if (!isArrayOf(value.initialExpertRequests, ExpertRequestSchema)) return null;
+  if (!isArrayOf(value.confirmedExperts, ExpertRequestSchema)) return null;
+  if (!isArrayOf(value.groupChatMessages, GroupChatMessageSchema)) return null;
+  if (!isOptionalSchemaValue(value.groupChatTurn, FacilitatorTurnSchema)) {
+    return null;
+  }
+  if (!isOptionalNonEmptyString(value.groupChatContextSummary)) return null;
+  if (!isNonNegativeInteger(value.groupChatExpertRepliesSinceUser)) return null;
+  if (
+    value.groupChatNextTurnRetryPending !== undefined &&
+    typeof value.groupChatNextTurnRetryPending !== "boolean"
+  ) {
+    return null;
+  }
+  if (
+    value.discussionSelection !== undefined &&
+    !isExactSchemaValue(value.discussionSelection, DiscussionSelectionSchema)
+  ) {
+    return null;
+  }
+  if (!isNonEmptyStringArray(value.selectedProposalIds)) return null;
+  if (
+    value.finalMarkdown !== undefined &&
+    typeof value.finalMarkdown !== "string"
+  ) {
+    return null;
+  }
+
+  return value as StoredSession;
+}
+
+function hasOnlyStoredSessionKeys(value: Record<string, unknown>) {
+  const storedSessionKeys = new Set<string>([
+    "request",
+    "startedConsultation",
+    "response",
+    "responseHistory",
+    "currentPhase",
+    "expertComments",
+    "expertDrafts",
+    "expertDraftProvenanceKey",
+    "initialExpertRequests",
+    "confirmedExperts",
+    "groupChatMessages",
+    "groupChatTurn",
+    "groupChatContextSummary",
+    "groupChatExpertRepliesSinceUser",
+    "groupChatNextTurnRetryPending",
+    "discussionSelection",
+    "selectedProposalIds",
+    "finalMarkdown",
+  ]);
+
+  return Object.keys(value).every((key) => storedSessionKeys.has(key));
+}
+
+function isStoredResponse(value: unknown) {
+  return value === null || isExactSchemaValue(value, FacilitatorResponseSchema);
+}
+
+function isStoredResponseHistory(value: unknown): value is ResponseHistory {
+  if (!isRecord(value)) return false;
+
+  return Object.entries(value).every(
+    ([phase, response]) =>
+      isPhase(phase) &&
+      isExactSchemaValue(response, FacilitatorResponseSchema) &&
+      (response as FacilitatorResponse).current_phase === phase,
+  );
+}
+
+function isArrayOf(
+  value: unknown,
+  schema: {
+    safeParse: (input: unknown) => { success: boolean; data?: unknown };
+  },
+) {
+  return (
+    Array.isArray(value) &&
+    value.every((item) => isExactSchemaValue(item, schema))
+  );
+}
+
+function isStoredExpertDrafts(value: unknown) {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (draft) =>
+        isRecord(draft) &&
+        typeof draft.role_name === "string" &&
+        typeof draft.viewpoint === "string" &&
+        typeof draft.request === "string" &&
+        typeof draft.draftId === "string" &&
+        draft.draftId.trim().length > 0 &&
+        Object.keys(draft).length === 4,
+    )
+  );
+}
+
+function isOptionalExpertDraftProvenance(value: unknown) {
+  if (value === undefined) return true;
+  if (typeof value !== "string") return false;
+
+  try {
+    const candidates: unknown = JSON.parse(value);
+    return isArrayOf(candidates, ExpertRequestSchema);
+  } catch {
+    return false;
+  }
+}
+
+function isOptionalString(value: unknown) {
+  return value === undefined || typeof value === "string";
+}
+
+function isOptionalSchemaValue(
+  value: unknown,
+  schema: {
+    safeParse: (input: unknown) => { success: boolean; data?: unknown };
+  },
+) {
+  return value === undefined || isExactSchemaValue(value, schema);
+}
+
+function isOptionalNonEmptyString(value: unknown) {
+  return (
+    value === undefined ||
+    (typeof value === "string" && value.trim().length > 0)
+  );
+}
+
+function isNonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isNonEmptyStringArray(value: unknown) {
+  return (
+    Array.isArray(value) &&
+    value.every((item) => typeof item === "string" && item.trim().length > 0)
+  );
+}
+
+function isPhase(value: unknown): value is Phase {
+  return [
+    "consultation_input",
+    "premise",
+    "expert_selection",
+    "deliberation",
+    "group_chat",
+    "final_memo",
+  ].includes(value as Phase);
+}
+
+function isExactSchemaValue(
+  value: unknown,
+  schema: {
+    safeParse: (input: unknown) => { success: boolean; data?: unknown };
+  },
+) {
+  const parsed = schema.safeParse(value);
+  return parsed.success && stableJson(parsed.data) === stableJson(value);
+}
+
+function stableJson(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * 互換確認用の正規化ヘルパー。
+ * 保存セッションの復元処理では使用せず、不整合な保存値は `restoreStoredSessionState`
+ * で全体を破棄する。
+ */
 export function normalizeStoredSession(session: StoredSession): StoredSession {
   const confirmedExperts = normalizeStoredConfirmedExpertRequests(
     session.confirmedExperts,
@@ -187,7 +361,6 @@ export function normalizeStoredSession(session: StoredSession): StoredSession {
   };
 }
 
-/** 前提整理の応答だけは、まだ確定前のLLM候補として復元に利用する。 */
 function isPremiseResponse(
   response: unknown,
 ): response is { current_phase: "premise"; expert_requests: unknown } {
@@ -929,23 +1102,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function getRestoredProposalState(
   parsed: StoredSession,
 ): RestoredProposalState {
-  const normalizedExpertComments = normalizeStoredExpertComments(
-    parsed.expertComments,
-  );
   const commentsResult = ExpertCommentSchema.array().safeParse(
-    normalizedExpertComments,
+    parsed.expertComments,
   );
   const selectionResult = parsed.discussionSelection
     ? DiscussionSelectionSchema.safeParse(parsed.discussionSelection)
     : null;
-  const expertComments = commentsResult.success ? commentsResult.data : [];
+  const expertComments =
+    commentsResult.success &&
+    stableJson(commentsResult.data) === stableJson(parsed.expertComments)
+      ? commentsResult.data
+      : [];
   const discussionSelection = selectionResult?.success
     ? selectionResult.data
     : null;
-  const selectedProposalIds = Array.isArray(parsed.selectedProposalIds)
-    ? parsed.selectedProposalIds.filter(
-        (id): id is string => typeof id === "string" && Boolean(id.trim()),
-      )
+  const selectedProposalIds = isNonEmptyStringArray(parsed.selectedProposalIds)
+    ? (parsed.selectedProposalIds as string[])
     : [];
   const proposalIds = expertComments.map((comment) => comment.proposal.id);
   const selectedByDiscussion =
@@ -983,7 +1155,7 @@ export function getRestoredProposalState(
           : true;
   const areProposalIdsUnique = proposalIds.length === new Set(proposalIds).size;
   const isValid =
-    commentsResult.success &&
+    expertComments.length === (parsed.expertComments?.length ?? 0) &&
     (!parsed.discussionSelection || selectionResult?.success === true) &&
     areProposalIdsUnique &&
     areSelectedProposalIdsValid &&
@@ -1009,6 +1181,52 @@ export function isStoredProposalStateComplete(
     return false;
   }
   return phase === "deliberation" || proposalState.discussionSelection !== null;
+}
+
+function isStoredSessionStateMachineConsistent(
+  session: StoredSession,
+  proposalState: RestoredProposalState,
+) {
+  const phase = session.currentPhase as Phase | undefined;
+  const response = session.response;
+  const responseHistory = session.responseHistory ?? {};
+
+  if (phase === undefined) return false;
+  if (phase === "consultation_input") {
+    return response === null && Object.keys(responseHistory).length === 0;
+  }
+  if (!response || response.current_phase !== phase) return false;
+  if (
+    !responseHistory[phase] ||
+    stableJson(responseHistory[phase]) !== stableJson(response)
+  ) {
+    return false;
+  }
+  if (
+    phase === "premise" &&
+    response.next_action === "wait_user" &&
+    !response.user_question
+  ) {
+    return false;
+  }
+  if (!isStoredProposalStateComplete(phase, proposalState)) return false;
+  if (phase === "group_chat" && !session.groupChatTurn) return false;
+  if (phase !== "final_memo") return session.finalMarkdown === undefined;
+
+  const finalMarkdown = FinalMarkdownSchema.safeParse({
+    markdown: session.finalMarkdown,
+  });
+  const finalMemoStatus = getStoredFinalMemoStatus(response, responseHistory);
+
+  return (
+    finalMarkdown.success &&
+    finalMarkdown.data.markdown === session.finalMarkdown &&
+    finalMemoStatus !== undefined &&
+    isFinalMarkdownStatusConsistent(
+      finalMarkdown.data.markdown,
+      finalMemoStatus,
+    )
+  );
 }
 
 /** 新規相談の開始応答を横断状態へ反映する。 */
@@ -1298,58 +1516,10 @@ export function createStoredSession({
   };
 }
 
-function responseToHistory(
-  response: FacilitatorResponse | null,
-): ResponseHistory {
-  return response ? { [response.current_phase]: response } : {};
-}
-
-/**
- * 旧保存値で確認質問を復元できない場合、前提整理画面には進行操作が残らない。
- * 相談内容は App 側で復元されるため、進行状態だけを破棄して安全にやり直す。
- */
-function isUnanswerableWaitUserResponse(response: FacilitatorResponse) {
-  return response.next_action === "wait_user" && !response.user_question;
-}
-
 function isProposalStateRequired(phase: Phase) {
   return (
     phase === "deliberation" || phase === "group_chat" || phase === "final_memo"
   );
-}
-
-/** 不正な案保存値では、確定済み専門家を保持できる選定フェーズへ戻す。 */
-function recoverToExpertSelection(state: SessionState): SessionState {
-  if (!state.response) return createInitialSessionState();
-
-  const response = createResponseForPhase(state.response, "expert_selection");
-  return {
-    ...state,
-    currentPhase: "expert_selection",
-    response,
-    responseHistory: {
-      ...keepResponsesThroughPhase(state.responseHistory, "premise"),
-      expert_selection: response,
-    },
-  };
-}
-
-/** 復元できない意見交換ターンでは、開始操作をやり直せる検討フェーズへ戻す。 */
-function recoverToDeliberation(state: SessionState): SessionState {
-  if (!state.response) return createInitialSessionState();
-
-  const response =
-    state.responseHistory.deliberation ??
-    createResponseForPhase(state.response, "deliberation");
-  return {
-    ...state,
-    currentPhase: "deliberation",
-    response,
-    responseHistory: {
-      ...keepResponsesThroughPhase(state.responseHistory, "deliberation"),
-      deliberation: response,
-    },
-  };
 }
 
 function getLatestMemoBeforePhase(
