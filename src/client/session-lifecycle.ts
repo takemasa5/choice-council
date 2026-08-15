@@ -135,6 +135,7 @@ function parseStoredSession(value: unknown): StoredSession | null {
   if (!isArrayOf(value.initialExpertRequests, ExpertRequestSchema)) return null;
   if (!isArrayOf(value.confirmedExperts, ExpertRequestSchema)) return null;
   if (!isArrayOf(value.groupChatMessages, GroupChatMessageSchema)) return null;
+  if (!hasUniqueGroupChatMessageIds(value.groupChatMessages)) return null;
   if (!isOptionalSchemaValue(value.groupChatTurn, FacilitatorTurnSchema)) {
     return null;
   }
@@ -213,6 +214,20 @@ function isArrayOf(
     Array.isArray(value) &&
     value.every((item) => isExactSchemaValue(item, schema))
   );
+}
+
+function hasUniqueGroupChatMessageIds(messages: unknown) {
+  if (!Array.isArray(messages)) return false;
+
+  const messageIds = new Set<string>();
+
+  return messages.every((message) => {
+    if (!isRecord(message) || typeof message.id !== "string") return false;
+    if (messageIds.has(message.id)) return false;
+
+    messageIds.add(message.id);
+    return true;
+  });
 }
 
 function isStoredExpertDrafts(value: unknown) {
@@ -1393,16 +1408,17 @@ export function restoreGroupChatAfterFinalMemoFailure(
   };
 }
 
-/** 専門家の確定内容を現在フェーズの応答と履歴へ保存する。 */
-export function saveConfirmedExperts(
-  state: SessionState,
-  experts: ExpertRequest[],
-): SessionState {
+/**
+ * 専門家確定後のフェーズを応答履歴へ保存する。
+ * 確定候補は呼び出し元の `confirmedExperts` として別途保存し、
+ * LLM 応答の `expert_requests` は上書きしない。
+ */
+export function saveConfirmedExperts(state: SessionState): SessionState {
   if (!state.response) return state;
 
   const nextPhase =
     state.currentPhase === "premise" ? "expert_selection" : state.currentPhase;
-  const response = createResponseForPhase(state.response, nextPhase, experts);
+  const response = createResponseForPhase(state.response, nextPhase);
   return {
     ...state,
     currentPhase: nextPhase,

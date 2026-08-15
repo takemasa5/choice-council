@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConsultationStartRequest,
   DiscussionSelection,
-  ExpertRequest,
   FacilitatorTurn,
   FacilitatorResponse,
   Phase,
@@ -555,10 +554,10 @@ export function App() {
     });
   }
 
-  function saveConfirmedExpertDrafts(experts: ExpertRequest[]) {
+  function saveConfirmedExpertDrafts() {
     facilitatorFlow.clearFailure();
     clearDiscussionSelection();
-    setSessionState((state) => saveConfirmedExperts(state, experts));
+    setSessionState((state) => saveConfirmedExperts(state));
   }
 
   function clearDiscussionSelection() {

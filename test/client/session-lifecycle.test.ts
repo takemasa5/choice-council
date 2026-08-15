@@ -11,6 +11,7 @@ import {
   proceedToExpertSelection,
   restoreStoredSessionState,
   returnToPhase,
+  saveConfirmedExperts,
   settleFinalMemo,
   startSession,
 } from "../../src/client/session-lifecycle";
@@ -251,6 +252,42 @@ test("現行schemaを満たす保存済み終了メモは復元時に維持す�
     restored.responseHistory.final_memo?.current_phase,
     "final_memo",
   );
+});
+
+test("発言IDが一意な保存済みグループチャットは復元し、重複時は全体を破棄する", () => {
+  const firstMessage = {
+    id: "message-1",
+    speakerType: "expert" as const,
+    speakerName: "専門家",
+    participantId: "expert-1",
+    content: "意見を共有します。",
+    createdAt: "2026-08-11T00:00:00.000Z",
+  };
+  const secondMessage = {
+    ...firstMessage,
+    id: "message-2",
+    speakerType: "user" as const,
+    speakerName: "あなた",
+    participantId: "user",
+    content: "条件を補足します。",
+  };
+  const stored = {
+    ...createStoredFinalMemo(validFinalMarkdown),
+    groupChatMessages: [firstMessage, secondMessage],
+  };
+
+  assert.equal(restoreStoredSessionState(stored).isValid, true);
+
+  const restored = restoreStoredSessionState({
+    ...stored,
+    groupChatMessages: [
+      firstMessage,
+      { ...secondMessage, id: firstMessage.id },
+    ],
+  });
+
+  assert.equal(restored.isValid, false);
+  assert.equal(restored.currentPhase, "consultation_input");
 });
 
 test("選択済み状態をアスタリスク箇条書きで記載した保存済み終了メモは復元する", () => {
@@ -665,7 +702,7 @@ test("保存済み専門家下書きは同じ添字の未編集候補だけを�
   );
 });
 
-test("不完全な編集済み候補の保存セッションは全体を破棄する", () => {
+test("ユーザー確定候補を LLM 応答へ保存したセッションは全体を破棄する", () => {
   const llmCandidate = {
     role_name: "家計アドバイザー",
     viewpoint: "予算",
@@ -711,6 +748,57 @@ test("不完全な編集済み候補の保存セッションは全体を破棄�
   const restored = restoreStoredSessionState(stored as never);
 
   assert.equal(restored.isValid, false);
+});
+
+test("ユーザー確定候補は LLM 応答と分離して保存・復元する", () => {
+  const llmCandidate = {
+    role_name: "家計アドバイザー",
+    viewpoint: "予算",
+    request: "費用を整理してください",
+  };
+  const confirmedExpert = {
+    role_name: `# ${"長い専門家名".repeat(20)}`,
+    viewpoint: "- 家計への影響\n- 家族の納得感",
+    request: "**優先順位**を整理し、\n比較してください。",
+  };
+  const expertSelectionResponse = {
+    ...facilitatorResponse,
+    current_phase: "expert_selection" as const,
+    expert_requests: [llmCandidate],
+  };
+  const savedState = saveConfirmedExperts({
+    startedConsultation: "相談内容",
+    response: expertSelectionResponse,
+    responseHistory: {
+      premise: facilitatorResponse,
+      expert_selection: expertSelectionResponse,
+    },
+    currentPhase: "expert_selection",
+  });
+  const stored = createStoredSession({
+    request: { consultation: "相談内容" },
+    state: savedState,
+    expertComments: [],
+    expertDrafts: [{ ...confirmedExpert, draftId: "expert-draft-1" }],
+    expertDraftProvenanceKey: JSON.stringify([llmCandidate]),
+    initialExpertRequests: [llmCandidate],
+    confirmedExperts: [confirmedExpert],
+    groupChatMessages: [],
+    groupChatExpertRepliesSinceUser: 0,
+    selectedProposalIds: [],
+    finalMarkdown: "",
+  });
+
+  const restored = restoreStoredSessionState(stored);
+
+  assert.deepEqual(savedState.response?.expert_requests, [llmCandidate]);
+  assert.deepEqual(
+    savedState.responseHistory.expert_selection?.expert_requests,
+    [llmCandidate],
+  );
+  assert.equal(restored.isValid, true);
+  if (!restored.isValid) return;
+  assert.deepEqual(restored.session.confirmedExperts, [confirmedExpert]);
 });
 
 test("不正な下書き復元元候補キーは保持しないが空候補は保持する", () => {
