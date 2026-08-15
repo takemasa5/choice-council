@@ -241,8 +241,7 @@ export function sendLlmRequestFailed(
     logLlmRequestFailure(request, response, 500, getSafeLlmErrorDetails(error));
     response.status(500).json({
       error: "invalid_llm_configuration",
-      message:
-        "GROQ_MAX_OUTPUT_TOKENS には 1 以上 65536 以下の整数を指定してください。",
+      message: getInvalidLlmConfigurationMessage(error.variableName),
     });
     return;
   }
@@ -262,6 +261,19 @@ export function sendLlmRequestFailed(
     error: "llm_request_failed",
     message: "LLM API request failed.",
   });
+}
+
+/** 利用者へ表示できるLLM設定エラーの文言を返す。 */
+function getInvalidLlmConfigurationMessage(variableName: string): string {
+  if (variableName === "GROQ_MODEL") {
+    return "GROQ_MODEL には openai/gpt-oss-120b を指定してください。";
+  }
+
+  if (variableName === "GROQ_MAX_OUTPUT_TOKENS") {
+    return "GROQ_MAX_OUTPUT_TOKENS には 1 以上 65536 以下の整数を指定してください。";
+  }
+
+  return "LLM の設定が不正です。";
 }
 
 /** LLM 失敗時に、入力本文を含めない構造化イベントを共通で記録する。 */

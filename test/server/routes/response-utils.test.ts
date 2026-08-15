@@ -1,10 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { StructuredOutputValidationError } from "../../../server/llm/types";
+import {
+  InvalidLlmConfigurationError,
+  StructuredOutputValidationError,
+} from "../../../server/llm/types";
 import {
   parseStructuredOutputOnceWithRetry,
+  sendLlmRequestFailed,
   type StructuredOutputFailure,
 } from "../../../server/routes/response-utils";
+
+test("GROQ_MODELの設定エラーは許可モデルを示す", () => {
+  let responseBody: unknown;
+  const response = {
+    locals: {},
+    status: () => response,
+    json: (body: unknown) => {
+      responseBody = body;
+    },
+  };
+
+  sendLlmRequestFailed(
+    { method: "POST", path: "/api/session-memo/update" } as never,
+    response as never,
+    new InvalidLlmConfigurationError("GROQ_MODEL"),
+  );
+
+  assert.deepEqual(responseBody, {
+    error: "invalid_llm_configuration",
+    message: "GROQ_MODEL には openai/gpt-oss-120b を指定してください。",
+  });
+});
 
 test("構造化出力の再試行には安全な理由付きJSON再生成指示を渡す", async () => {
   const attempts: Array<{ attempt?: number; repairInstruction?: string }> = [];
