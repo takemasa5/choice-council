@@ -130,9 +130,17 @@ function plainText(maximumLength: number) {
       (value) =>
         !/[\r\n]/.test(value) &&
         !/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```)/.test(value) &&
+        !containsHorizontalRule(value) &&
         !containsInlineMarkdown(value),
       "Markdown syntax is not allowed in session memo text",
     );
+}
+
+/** 先頭の最大3空白を含む、Markdownの水平線だけを検出する。 */
+function containsHorizontalRule(value: string) {
+  return /^ {0,3}(?:-[ \t]*){3,}$|^ {0,3}(?:\*[ \t]*){3,}$|^ {0,3}(?:_[ \t]*){3,}$/.test(
+    value,
+  );
 }
 
 /** 通常文を壊さず、表示対象では許可しないインラインMarkdownだけを検出する。 */

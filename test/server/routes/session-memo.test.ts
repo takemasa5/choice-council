@@ -66,11 +66,25 @@ test("セッションメモは文字数、配列数、Markdown構文を制限し
   ]) {
     assert.equal(SessionMemoSchema.safeParse(invalidMemo).success, false);
   }
+
+  for (const horizontalRule of [
+    "---",
+    "***",
+    "___",
+    "   - - - ",
+    "  *\t* *",
+    " _ _ _",
+  ]) {
+    assert.equal(
+      SessionMemoSchema.safeParse({ ...memo, facts: [horizontalRule] }).success,
+      false,
+    );
+  }
 });
 
-test("Markdown構文を含むセッションメモ応答は再生成する", async () => {
+test("水平線を含むセッションメモ応答は再生成する", async () => {
   let generationCount = 0;
-  const outputs = [{ ...memo, facts: ["# 見出し"] }, memo];
+  const outputs = [{ ...memo, facts: ["---"] }, memo];
   const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const response = await requestJson(
     createApp({
