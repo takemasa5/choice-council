@@ -6,6 +6,7 @@ import type {
   ExpertRequest,
   FacilitatorResponse,
   FacilitatorTurn,
+  FinalMemoStatus,
   GroupChatMessage,
   Phase,
   SessionMemo,
@@ -17,9 +18,11 @@ import {
   ExpertRequestSchema,
   FacilitatorResponseSchema,
   FacilitatorTurnSchema,
+  FinalMemoStatusSchema,
   FinalMarkdownSchema,
   GroupChatMessageSchema,
   maximumExpertRequestCount,
+  getFinalMarkdownHeading,
   SessionMemoSchema,
 } from "../shared/schemas/session";
 import { recoverInterruptedFinalMemo } from "./final-memo-restoration";
@@ -150,6 +153,9 @@ export function normalizeStoredSession(session: StoredSession): StoredSession {
     session.expertDraftProvenanceKey,
   );
   const response = normalizeStoredFacilitatorResponse(session.response);
+  const responseHistory = session.responseHistory
+    ? normalizeResponseHistory(session.responseHistory)
+    : undefined;
 
   return {
     ...session,
@@ -157,9 +163,7 @@ export function normalizeStoredSession(session: StoredSession): StoredSession {
       ? { ...session.request, memo: normalizeSessionMemo(session.request.memo) }
       : session.request,
     response,
-    responseHistory: session.responseHistory
-      ? normalizeResponseHistory(session.responseHistory)
-      : undefined,
+    responseHistory,
     confirmedExperts,
     initialExpertRequests: normalizeStoredExpertRequests(
       session.initialExpertRequests,
@@ -176,7 +180,10 @@ export function normalizeStoredSession(session: StoredSession): StoredSession {
       session.groupChatMessages,
     ),
     groupChatTurn: normalizeStoredFacilitatorTurn(session.groupChatTurn),
-    finalMarkdown: normalizeStoredFinalMarkdown(session.finalMarkdown),
+    finalMarkdown: normalizeStoredFinalMarkdown(
+      session.finalMarkdown,
+      getStoredFinalMemoStatus(response, responseHistory),
+    ),
   };
 }
 
@@ -188,10 +195,111 @@ function isPremiseResponse(
 }
 
 /** 保存済み終了メモは現行の表示契約を満たす場合だけ復元する。 */
-function normalizeStoredFinalMarkdown(value: unknown) {
+function normalizeStoredFinalMarkdown(
+  value: unknown,
+  memoStatus: FinalMemoStatus | undefined,
+) {
   const parsedMarkdown = FinalMarkdownSchema.safeParse({ markdown: value });
 
-  return parsedMarkdown.success ? parsedMarkdown.data.markdown : undefined;
+  if (!parsedMarkdown.success || !memoStatus) return undefined;
+
+  return isFinalMarkdownStatusConsistent(
+    parsedMarkdown.data.markdown,
+    memoStatus,
+  )
+    ? parsedMarkdown.data.markdown
+    : undefined;
+}
+
+/** 保存済み終了メモの状態は、終了メモ応答を優先して復元する。 */
+function getStoredFinalMemoStatus(
+  response: FacilitatorResponse | null,
+  responseHistory: ResponseHistory | undefined,
+) {
+  const memo =
+    response?.current_phase === "final_memo"
+      ? response.memo_updates
+      : responseHistory?.final_memo?.memo_updates;
+  const parsedStatus = FinalMemoStatusSchema.safeParse(memo?.status);
+
+  return parsedStatus.success ? parsedStatus.data : undefined;
+}
+
+const finalMemoStatusLabels: Record<FinalMemoStatus, string> = {
+  tentative_conclusion: "暫定結論",
+  pending_decision: "判断保留",
+  pending_research: "追加調査待ち",
+  pending_family_discussion: "家族・関係者相談待ち",
+  action_plan: "実行計画",
+};
+
+/** API応答と同じ終了状態契約を、保存済みMarkdownの復元時にも適用する。 */
+function isFinalMarkdownStatusConsistent(
+  markdown: string,
+  memoStatus: FinalMemoStatus,
+) {
+  const statusSection = getMarkdownSection(markdown, "## 現時点の状態");
+  const expectedStatusLabel = finalMemoStatusLabels[memoStatus];
+
+  return (
+    hasStandaloneStatusLabel(statusSection, expectedStatusLabel) &&
+    !Object.values(finalMemoStatusLabels).some(
+      (statusLabel) =>
+        statusLabel !== expectedStatusLabel &&
+        hasStandaloneStatusLabel(statusSection, statusLabel),
+    )
+  );
+}
+
+/** 指定見出しから次の見出しまでを、終了状態の検証対象として取り出す。 */
+function getMarkdownSection(markdown: string, heading: string) {
+  const lines = markdown.split(/\r?\n/);
+  const startIndex = lines.findIndex(
+    (line) => getFinalMarkdownHeading(line) === heading,
+  );
+  if (startIndex === -1) return "";
+
+  const sectionLines: string[] = [];
+  for (const line of lines.slice(startIndex + 1)) {
+    if (getFinalMarkdownHeading(line) !== null) break;
+    sectionLines.push(line);
+  }
+  return sectionLines.join("\n");
+}
+
+/** 選択済み状態が、説明文ではなく独立した段落または箇条書き項目かを判定する。 */
+function hasStandaloneStatusLabel(section: string, statusLabel: string) {
+  const lines = section.split(/\r?\n/);
+
+  return lines.some((line, index) => {
+    const listItem = getUnorderedListItem(line);
+    if (listItem !== null) return listItem === statusLabel;
+
+    return (
+      line.trim() === statusLabel && isStandaloneParagraphLine(lines, index)
+    );
+  });
+}
+
+/** 順不同リストを段落を区切るブロックとして扱う。 */
+function isStandaloneParagraphLine(lines: string[], index: number) {
+  const previousLine = lines[index - 1];
+  const nextLine = lines[index + 1];
+
+  return (
+    (previousLine === undefined ||
+      previousLine.trim() === "" ||
+      getUnorderedListItem(previousLine) !== null) &&
+    (nextLine === undefined ||
+      nextLine.trim() === "" ||
+      getUnorderedListItem(nextLine) !== null)
+  );
+}
+
+/** 許可済み順不同リスト項目の表示テキストを取得する。 */
+function getUnorderedListItem(line: string): string | null {
+  const match = line.match(/^ {0,3}(?:-|\*)[ \t]+(.+?)\s*$/);
+  return match ? match[1] : null;
 }
 
 /** 保存済みファシリテーター応答を、現行表示schemaに適合する場合だけ復元する。 */

@@ -830,6 +830,7 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
   if (containsInlineMarkdown(markdown)) return false;
   if (containsReferenceStyleFinalMarkdown(markdown)) return false;
   if (containsFinalMarkdownHardLineBreak(markdown)) return false;
+  if (containsNestedFinalMarkdownListItem(markdown)) return false;
 
   return markdown.split(/\r?\n/).every((line) => {
     if (line.trim().length === 0) return true;
@@ -846,6 +847,37 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
 
     return true;
   });
+}
+
+/** 表示器が扱わない入れ子の順不同リスト項目を終了メモから除外する。 */
+function containsNestedFinalMarkdownListItem(markdown: string) {
+  let listIndentation: number | null = null;
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const itemIndentation = getFinalMarkdownListItemIndentation(line);
+    if (itemIndentation !== null) {
+      if (listIndentation !== null && itemIndentation >= listIndentation + 2) {
+        return true;
+      }
+
+      listIndentation = Math.min(
+        listIndentation ?? itemIndentation,
+        itemIndentation,
+      );
+      continue;
+    }
+
+    if (line.trim().length === 0 || /^ {1,3}\S/.test(line)) continue;
+    listIndentation = null;
+  }
+
+  return false;
+}
+
+/** 表示器が順不同リストとして扱う行の、先頭空白数を取得する。 */
+function getFinalMarkdownListItemIndentation(line: string) {
+  const match = line.match(/^( {0,3})(?:-|\*)(?:[ \t]+|$)/);
+  return match ? match[1].length : null;
 }
 
 /** 段落内で描画しないMarkdownハード改行を終了メモから除外する。 */

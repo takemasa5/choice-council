@@ -314,6 +314,25 @@ test("終了メモ出力は順不同リストの1〜3空白継続行を受理す
   }
 });
 
+test("終了メモ出力は入れ子の順不同リストを受理しない", () => {
+  for (const nestedItem of ["  - 子項目", "   * 子項目"]) {
+    const markdown = validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      `## 検討した選択肢\n- 親項目\n${nestedItem}`,
+    );
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, false);
+  }
+
+  const topLevelList = validMarkdown.replace(
+    "## 検討した選択肢\n選択肢",
+    "## 検討した選択肢\n   - 案A\n  - 案B",
+  );
+  assert.equal(
+    FinalMarkdownSchema.safeParse({ markdown: topLevelList }).success,
+    true,
+  );
+});
+
 test("POST /api/final-markdown/generate はMarkdown違反を理由付きで再生成する", async () => {
   const structuredRequests: Array<{ repairInstruction?: string }> = [];
   const outputs = [

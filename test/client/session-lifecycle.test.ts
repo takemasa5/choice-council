@@ -83,7 +83,7 @@ const validFinalMarkdown = `# 意思決定メモ
 相談内容
 
 ## 現時点の状態
-暫定結論
+追加調査待ち
 
 ## 重視した価値観
 価値観
@@ -249,6 +249,32 @@ test("現行schemaを満たす保存済み終了メモは復元時に維持す�
     restored.responseHistory.final_memo?.current_phase,
     "final_memo",
   );
+});
+
+test("選択済み状態をアスタリスク箇条書きで記載した保存済み終了メモは復元する", () => {
+  const finalMarkdown = validFinalMarkdown.replace(
+    "追加調査待ち",
+    "* 追加調査待ち",
+  );
+  const stored = createStoredFinalMemo(finalMarkdown);
+  const normalized = normalizeStoredSession(stored);
+  const restored = restoreStoredSessionState(stored);
+
+  assert.equal(normalized.finalMarkdown, finalMarkdown);
+  assert.equal(restored.currentPhase, "final_memo");
+});
+
+test("保存済みメモの終了状態と一致しない終了メモは再生成可能な意見交換へ戻す", () => {
+  const stored = createStoredFinalMemo(
+    validFinalMarkdown.replace("追加調査待ち", "判断保留"),
+  );
+  const normalized = normalizeStoredSession(stored);
+  const restored = restoreStoredSessionState(stored);
+
+  assert.equal(normalized.finalMarkdown, undefined);
+  assert.equal(restored.currentPhase, "group_chat");
+  assert.equal(restored.response?.memo_updates.status, "in_progress");
+  assert.equal(restored.responseHistory.final_memo, undefined);
 });
 
 test("不正な保存済み終了メモは破棄して再生成可能な意見交換へ戻す", () => {
