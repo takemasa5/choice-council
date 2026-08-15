@@ -18,6 +18,7 @@ import {
 import {
   ConsultationRequestSchema,
   ExpertCommentSchema,
+  ExpertCommentRequestSchema,
   FacilitatorResponseSchema,
   FacilitatorTurnSchema,
   GroupChatMessageSchema,
@@ -542,6 +543,152 @@ test("旧形式の通常画面出力を平文化して意見交換状態を復�
   );
   assert.equal(restored.currentPhase, "group_chat");
   assert.equal(restored.response?.current_phase, "group_chat");
+});
+
+test("保存済み専門家候補を通常画面の制約へ正規化して復元する", () => {
+  const confirmedExpert = {
+    role_name: "家計アドバイザー",
+    viewpoint: "予算",
+    request: "費用を整理してください",
+  };
+  const legacyExpert = {
+    role_name: `> **${"役".repeat(151)}**\n`,
+    viewpoint: "- [観点](relative)\n補足",
+    request: "`A<B>C`",
+  };
+  const stored = {
+    request: { consultation: "相談内容" },
+    response: {
+      ...facilitatorResponse,
+      expert_requests: [
+        {
+          role_name: "応答候補",
+          viewpoint: "応答観点",
+          request: "応答依頼",
+        },
+      ],
+    },
+    confirmedExperts: [confirmedExpert, legacyExpert, { role_name: "不完全" }],
+    initialExpertRequests: [legacyExpert, { role_name: "不完全" }],
+    expertDrafts: [
+      { ...legacyExpert, draftId: "expert-draft-7" },
+      {
+        role_name: "途中入力",
+        viewpoint: "",
+        request: "",
+        draftId: "expert-draft-8",
+      },
+      "不正な候補",
+    ],
+  };
+
+  const normalized = normalizeStoredSession(stored as never);
+  const normalizedLegacyExpert = {
+    role_name: "役".repeat(150),
+    viewpoint: "観点 補足",
+    request: "A＜B＞C",
+  };
+
+  assert.deepEqual(normalized.confirmedExperts, [
+    confirmedExpert,
+    normalizedLegacyExpert,
+  ]);
+  assert.deepEqual(normalized.initialExpertRequests, [normalizedLegacyExpert]);
+  assert.deepEqual(normalized.expertDrafts, [
+    { ...normalizedLegacyExpert, draftId: "expert-draft-7" },
+    {
+      role_name: "途中入力",
+      viewpoint: "",
+      request: "",
+      draftId: "expert-draft-8",
+    },
+  ]);
+  assert.ok(
+    ExpertCommentRequestSchema.safeParse({
+      consultation: "相談内容",
+      currentPhase: "deliberation",
+      expert: normalized.confirmedExperts?.[1],
+    }).success,
+  );
+});
+
+test("保存済み専門家下書きの復元元候補キーも正規化する", () => {
+  const legacyCandidate = {
+    role_name: "> **家計アドバイザー**",
+    viewpoint: "- [予算](relative)\n補足",
+    request: "`費用を整理してください`",
+  };
+  const normalizedCandidate = {
+    role_name: "家計アドバイザー",
+    viewpoint: "予算 補足",
+    request: "費用を整理してください",
+  };
+  const editedDraft = {
+    ...legacyCandidate,
+    viewpoint: "- [予算と家族の満足度](relative)\n補足",
+    draftId: "expert-draft-1",
+  };
+
+  const normalized = normalizeStoredSession({
+    request: { consultation: "相談内容" },
+    response: { ...facilitatorResponse, expert_requests: [legacyCandidate] },
+    expertDrafts: [editedDraft],
+    expertDraftProvenanceKey: JSON.stringify([legacyCandidate]),
+  } as never);
+
+  assert.deepEqual(normalized.response?.expert_requests, [normalizedCandidate]);
+  assert.deepEqual(normalized.expertDrafts, [
+    {
+      ...normalizedCandidate,
+      viewpoint: "予算と家族の満足度 補足",
+      draftId: "expert-draft-1",
+    },
+  ]);
+  assert.equal(
+    normalized.expertDraftProvenanceKey,
+    JSON.stringify([normalizedCandidate]),
+  );
+});
+
+test("不正な下書き復元元候補キーは保持しないが空候補は保持する", () => {
+  const draft = {
+    role_name: "家計アドバイザー",
+    viewpoint: "予算",
+    request: "費用を整理してください",
+    draftId: "expert-draft-1",
+  };
+
+  const invalid = normalizeStoredSession({
+    request: { consultation: "相談内容" },
+    response: facilitatorResponse,
+    expertDrafts: [draft],
+    expertDraftProvenanceKey: JSON.stringify([{ role_name: "不完全" }]),
+  } as never);
+  const empty = normalizeStoredSession({
+    request: { consultation: "相談内容" },
+    response: facilitatorResponse,
+    expertDrafts: [draft],
+    expertDraftProvenanceKey: JSON.stringify([]),
+  } as never);
+
+  assert.equal(invalid.expertDraftProvenanceKey, undefined);
+  assert.equal(empty.expertDraftProvenanceKey, "[]");
+});
+
+test("復元不能な保存済み専門家候補は応答の候補へフォールバックできる", () => {
+  const normalized = normalizeStoredSession({
+    request: { consultation: "相談内容" },
+    response: facilitatorResponse,
+    confirmedExperts: [{ role_name: "不完全" }],
+    initialExpertRequests: [],
+  } as never);
+
+  assert.equal(normalized.confirmedExperts, undefined);
+  assert.deepEqual(
+    normalized.confirmedExperts ?? normalized.response?.expert_requests,
+    facilitatorResponse.expert_requests,
+  );
+  assert.deepEqual(normalized.initialExpertRequests, []);
 });
 
 test("保存済みのユーザー発言は復元時に内容を加工しない", () => {

@@ -136,6 +136,8 @@ export function restoreStoredSessionState(parsed: StoredSession): SessionState {
 
 /** 旧保存形式の通常画面出力を、現行の表示・後続入力として安全に正規化する。 */
 export function normalizeStoredSession(session: StoredSession): StoredSession {
+  const expertDrafts = normalizeStoredExpertDrafts(session.expertDrafts);
+
   return {
     ...session,
     request: session.request.memo
@@ -145,6 +147,17 @@ export function normalizeStoredSession(session: StoredSession): StoredSession {
     responseHistory: session.responseHistory
       ? normalizeResponseHistory(session.responseHistory)
       : undefined,
+    confirmedExperts: normalizeStoredExpertRequests(session.confirmedExperts),
+    initialExpertRequests: normalizeStoredExpertRequests(
+      session.initialExpertRequests,
+    ),
+    expertDrafts,
+    expertDraftProvenanceKey:
+      expertDrafts === undefined
+        ? undefined
+        : normalizeStoredExpertDraftProvenanceKey(
+            session.expertDraftProvenanceKey,
+          ),
     expertComments: normalizeStoredExpertComments(session.expertComments),
     groupChatMessages: normalizeStoredGroupChatMessages(
       session.groupChatMessages,
@@ -288,16 +301,23 @@ function normalizeFacilitatorText(value: unknown) {
     next_action: "wait_user",
   };
 
-  return FacilitatorResponseSchema.safeParse(candidate).success
-    ? normalized
-    : "";
+  const parsedResponse = FacilitatorResponseSchema.safeParse(candidate);
+
+  return parsedResponse.success ? parsedResponse.data.current_phase_label : "";
 }
 
 /** 旧保存済みの専門家候補を、現行の通常画面制約へ収める。 */
 function normalizeStoredFacilitatorExpertRequests(value: unknown) {
-  if (!Array.isArray(value)) return [];
+  return normalizeStoredExpertRequests(value) ?? [];
+}
 
-  return value
+/** 保存済みの確定・初期専門家候補を、後続APIへ渡せる現行形式へ収める。 */
+function normalizeStoredExpertRequests(
+  value: unknown,
+): ExpertRequest[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const normalizedExperts = value
     .slice(0, maximumExpertRequestCount)
     .map((expert) => {
       const record = isRecord(expert) ? expert : {};
@@ -313,6 +333,50 @@ function normalizeStoredFacilitatorExpertRequests(value: unknown) {
         expert.viewpoint.length > 0 &&
         expert.request.length > 0,
     );
+
+  return value.length > 0 && normalizedExperts.length === 0
+    ? undefined
+    : normalizedExperts;
+}
+
+/** 編集中の専門家候補は途中入力を保ちつつ、LLM由来の通常画面文言だけを平文化する。 */
+function normalizeStoredExpertDrafts(
+  value: unknown,
+): ExpertDraft[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  return value.slice(0, maximumExpertRequestCount).flatMap((draft, index) => {
+    if (!isRecord(draft)) return [];
+
+    return [
+      {
+        role_name: normalizeFacilitatorText(draft.role_name),
+        viewpoint: normalizeFacilitatorText(draft.viewpoint),
+        request: normalizeFacilitatorText(draft.request),
+        draftId:
+          typeof draft.draftId === "string" && draft.draftId.trim()
+            ? draft.draftId
+            : `restored-expert-draft-${index + 1}`,
+      },
+    ];
+  });
+}
+
+/** 下書きの復元元候補キーも、候補本体と同じ現行形式へそろえる。 */
+function normalizeStoredExpertDraftProvenanceKey(value: unknown) {
+  if (typeof value !== "string") return undefined;
+
+  try {
+    const normalizedCandidates = normalizeStoredExpertRequests(
+      JSON.parse(value),
+    );
+
+    return normalizedCandidates === undefined
+      ? undefined
+      : JSON.stringify(normalizedCandidates);
+  } catch {
+    return undefined;
+  }
 }
 
 /** 旧保存済みの確認質問を、復元可能なときだけ現行形式へ収める。 */
