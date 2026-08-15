@@ -820,6 +820,7 @@ export const FinalMarkdownSchema = z
 function usesAllowedFinalMarkdownBlocks(markdown: string) {
   if (containsForbiddenFinalMarkdownHtml(markdown)) return false;
   if (containsInlineMarkdown(markdown)) return false;
+  if (containsReferenceStyleFinalMarkdown(markdown)) return false;
 
   return markdown.split(/\r?\n/).every((line) => {
     if (line.trim().length === 0) return true;
@@ -836,6 +837,16 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
 
     return true;
   });
+}
+
+/** 終了メモでは参照先を別行へ隠せる参照形式のリンク・画像を許可しない。 */
+function containsReferenceStyleFinalMarkdown(markdown: string) {
+  return (
+    /!?\[[^\]\r\n]+\]\[[^\]\r\n]*\]/.test(markdown) ||
+    markdown
+      .split(/\r?\n/)
+      .some((line) => /^[ \t]{0,3}\[[^\]\r\n]+\]:[ \t]*\S/.test(line))
+  );
 }
 
 /** HTML として解釈され得る要素、コメント、宣言、CDATA、処理命令を終了メモから除外する。 */

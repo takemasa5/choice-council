@@ -192,6 +192,11 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
   );
   assert.ok(
     FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "[補足] は確認済みです。"),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
       markdown: validMarkdown.replace(/^#{1,2}/gm, "   $&"),
     }).success,
   );
@@ -241,6 +246,9 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     validMarkdown.replace("相談内容", "~~打ち消し~~"),
     validMarkdown.replace("相談内容", "[リンク](https://example.com)"),
     validMarkdown.replace("相談内容", "![画像](https://example.com/image.png)"),
+    validMarkdown.replace("相談内容", "[詳細][ref]"),
+    validMarkdown.replace("相談内容", "![画像][ref]"),
+    `${validMarkdown}\n\n[ref]: https://example.com`,
     `${validMarkdown}\n\n${"あ".repeat(3001)}`,
     headingsOnlyInParagraph,
     headingsOutOfOrder,
