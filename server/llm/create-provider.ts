@@ -9,6 +9,8 @@ import {
   UnsupportedLlmProviderError,
 } from "./types";
 
+const defaultGroqModel = "openai/gpt-oss-120b";
+
 /** 環境変数からアプリ全体で使用する LLM プロバイダーを生成する。 */
 export function createLlmProviderFromEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
@@ -59,10 +61,21 @@ function createGroqProvider(environment: NodeJS.ProcessEnv): LlmProvider {
 
   return new GroqLlmProvider(
     apiKey,
-    environment.GROQ_MODEL ?? "openai/gpt-oss-120b",
+    getGroqModel(environment.GROQ_MODEL),
     undefined,
     getGroqMaxOutputTokens(environment.GROQ_MAX_OUTPUT_TOKENS),
   );
+}
+
+/** Groq でMVPの対象としているモデル名を取得する。 */
+function getGroqModel(value: string | undefined): string {
+  if (value === undefined) return defaultGroqModel;
+
+  if (value !== defaultGroqModel) {
+    throw new InvalidLlmConfigurationError("GROQ_MODEL");
+  }
+
+  return value;
 }
 
 /** Groq の最大出力トークン数を環境変数から取得する。 */

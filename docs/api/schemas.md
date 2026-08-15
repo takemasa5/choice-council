@@ -405,7 +405,7 @@ MVP では、環境変数で選択した単一の LLM プロバイダーを複�
 | `gemini`     | `GEMINI_API_KEY` | `GEMINI_MODEL` | `gemini-2.5-flash`    |
 | `groq`       | `GROQ_API_KEY`   | `GROQ_MODEL`   | `openai/gpt-oss-120b` |
 
-`groq` は GPT-OSS 120B を対象とし、Qwen は対象外とする。Groq の構造化出力は、Groq strict structured output で受理できる制約だけを含む送信用 JSON Schema を用い、`reasoning_effort` は `low`、`temperature` は `0.6` に固定する。
+`groq` は GPT-OSS 120B を対象とし、Qwen は対象外とする。`GROQ_MODEL` は `openai/gpt-oss-120b` だけを指定でき、未指定時は同値を使う。空文字を含むそれ以外の値は設定エラーとする。Groq の構造化出力は、Groq strict structured output で受理できる制約だけを含む送信用 JSON Schema を用い、`reasoning_effort` は `low`、`temperature` は `0.6` に固定する。
 
 Groq の出力は、送信用 JSON Schema とアプリ側の Zod 検証による二層構成とする。送信用 schema で構造を強制し、アプリ側の Zod で文字数、配列数、フィールド間の相関条件を含む完全な契約を検証する。
 
