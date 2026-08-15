@@ -819,6 +819,7 @@ export const FinalMarkdownSchema = z
 /** 終了メモで許可するMarkdownブロックだけを判定する。 */
 function usesAllowedFinalMarkdownBlocks(markdown: string) {
   if (containsForbiddenFinalMarkdownHtml(markdown)) return false;
+  if (containsInlineMarkdown(markdown)) return false;
 
   return markdown.split(/\r?\n/).every((line) => {
     if (line.trim().length === 0) return true;

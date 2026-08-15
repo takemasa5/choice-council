@@ -184,6 +184,14 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
   assert.match(parsedMarkdown.data.markdown, /A < B > C/);
   assert.ok(
     FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace(
+        "相談内容",
+        "価格は A < B > C、識別子は plan_v2 です。",
+      ),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
       markdown: validMarkdown.replace(/^#{1,2}/gm, "   $&"),
     }).success,
   );
@@ -225,6 +233,14 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     ),
     `${validMarkdown}\n\n> 引用`,
     `${validMarkdown}\n\n+ 許可しない箇条書き`,
+    validMarkdown.replace("相談内容", "*強調*"),
+    validMarkdown.replace("相談内容", "**強調**"),
+    validMarkdown.replace("相談内容", "_強調_"),
+    validMarkdown.replace("相談内容", "__強調__"),
+    validMarkdown.replace("相談内容", "`インラインコード`"),
+    validMarkdown.replace("相談内容", "~~打ち消し~~"),
+    validMarkdown.replace("相談内容", "[リンク](https://example.com)"),
+    validMarkdown.replace("相談内容", "![画像](https://example.com/image.png)"),
     `${validMarkdown}\n\n${"あ".repeat(3001)}`,
     headingsOnlyInParagraph,
     headingsOutOfOrder,
