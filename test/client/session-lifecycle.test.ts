@@ -567,6 +567,38 @@ test("保存済みのユーザー発言は復元時に内容を加工しない",
   );
 });
 
+test("保存済みのファシリテーター発言は通常画面の制約へ平文化する", () => {
+  const facilitatorContent = `> **${"進行コメント".repeat(30)}**\n補足`;
+  const normalized = normalizeStoredSession({
+    request: { consultation: "相談内容" },
+    response: null,
+    groupChatMessages: [
+      {
+        id: "facilitator-1",
+        speakerType: "facilitator",
+        speakerName: "ファシリテーター",
+        participantId: "facilitator",
+        content: facilitatorContent,
+        createdAt: "2026-08-11T00:00:00.000Z",
+      },
+      {
+        id: "user-1",
+        speakerType: "user",
+        speakerName: "あなた",
+        participantId: "user",
+        content: facilitatorContent,
+        createdAt: "2026-08-11T00:00:00.000Z",
+      },
+    ],
+  } as never);
+  const [facilitatorMessage, userMessage] = normalized.groupChatMessages ?? [];
+
+  assert.equal(facilitatorMessage?.speakerType, "facilitator");
+  assert.ok((facilitatorMessage?.content.length ?? 0) <= 200);
+  assert.doesNotMatch(facilitatorMessage?.content ?? "", /[\r\n*>]/);
+  assert.equal(userMessage?.content, facilitatorContent);
+});
+
 test("旧ASCII引用を含む通常のグループチャットターンを平文化する", () => {
   const normalized = normalizeStoredSession({
     request: { consultation: "相談内容" },

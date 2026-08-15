@@ -346,9 +346,9 @@ function normalizeGroupChatText(value: unknown) {
     createdAt: "2026-01-01T00:00:00.000Z",
   };
 
-  return ExpertGroupChatMessageSchema.safeParse(candidate).success
-    ? normalized
-    : "";
+  const parsedMessage = ExpertGroupChatMessageSchema.safeParse(candidate);
+
+  return parsedMessage.success ? parsedMessage.data.content : "";
 }
 
 /** 旧保存済み発言を、現行の表示schemaに適合するものだけ復元する。 */
@@ -364,17 +364,22 @@ function normalizeStoredGroupChatMessage(
   value: unknown,
 ): GroupChatMessage | null {
   const record = isRecord(value) ? value : {};
+  const isLlmGroupChatMessage =
+    record.speakerType === "expert" || record.speakerType === "facilitator";
   const hasLegacyAsciiQuote =
     record.speakerType === "expert" &&
     hasLeadingLegacyAsciiQuote(record.content);
   const currentMessage = GroupChatMessageSchema.safeParse(value);
   if (currentMessage.success) {
-    if (currentMessage.data.speakerType !== "expert") {
+    if (currentMessage.data.speakerType === "user") {
       return currentMessage.data;
     }
-    const currentExpertMessage = ExpertGroupChatMessageSchema.safeParse(value);
-    if (currentExpertMessage.success && !hasLegacyAsciiQuote) {
-      return currentExpertMessage.data;
+    if (currentMessage.data.speakerType === "expert") {
+      const currentExpertMessage =
+        ExpertGroupChatMessageSchema.safeParse(value);
+      if (currentExpertMessage.success && !hasLegacyAsciiQuote) {
+        return currentExpertMessage.data;
+      }
     }
   }
 
@@ -383,10 +388,9 @@ function normalizeStoredGroupChatMessage(
     speakerType: record.speakerType,
     speakerName: normalizeRequiredText(record.speakerName),
     participantId: normalizeRequiredText(record.participantId),
-    content:
-      record.speakerType === "expert"
-        ? normalizeGroupChatText(record.content)
-        : record.content,
+    content: isLlmGroupChatMessage
+      ? normalizeGroupChatText(record.content)
+      : record.content,
     createdAt: normalizeRequiredText(record.createdAt),
   };
   const parsedMessage = GroupChatMessageSchema.safeParse(normalizedMessage);
