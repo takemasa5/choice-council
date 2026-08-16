@@ -207,6 +207,11 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
   );
   assert.ok(
     FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "候補A | 候補B を比較する"),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
       markdown: validMarkdown.replace(
         "相談内容",
         "末尾の\\\\バックスラッシュ\\\\",
@@ -272,6 +277,18 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     validMarkdown.replace("相談内容", "1行目  \n2行目"),
     validMarkdown.replace("相談内容", "1行目\\\n2行目"),
     `${validMarkdown}\n\n[ref]: https://example.com`,
+    validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      "## 検討した選択肢\n項目 | 内容\n--- | ---\n案A | 内容A",
+    ),
+    validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      "## 検討した選択肢\n項目|内容\n:---|---:\n案A|内容A",
+    ),
+    validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      "## 検討した選択肢\n| 項目 | 内容 |\n| --- | --- |\n| 案A | 内容A |",
+    ),
     `${validMarkdown}\n\n${"あ".repeat(3001)}`,
     headingsOnlyInParagraph,
     headingsOutOfOrder,

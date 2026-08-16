@@ -844,9 +844,17 @@ function usesAllowedFinalMarkdownBlocks(markdown: string) {
     }
     if (/^[ \t]*(?:=+|-+)[ \t]*$/.test(line)) return false;
     if (/^[ \t]*\|/.test(line)) return false;
+    if (isFinalMarkdownTableDelimiterRow(line)) return false;
 
     return true;
   });
+}
+
+/** 表示器が扱わないGFM表の区切り行を終了メモから除外する。 */
+function isFinalMarkdownTableDelimiterRow(line: string) {
+  return /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$/.test(
+    line,
+  );
 }
 
 /** 表示器が扱わない入れ子の順不同リスト項目を終了メモから除外する。 */
