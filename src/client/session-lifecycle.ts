@@ -140,7 +140,13 @@ function parseStoredSession(value: unknown): StoredSession | null {
     return null;
   }
   if (!isOptionalNonEmptyString(value.groupChatContextSummary)) return null;
-  if (!isNonNegativeInteger(value.groupChatExpertRepliesSinceUser)) return null;
+  if (
+    !isValidGroupChatExpertRepliesSinceUser(
+      value.groupChatExpertRepliesSinceUser,
+    )
+  ) {
+    return null;
+  }
   if (
     value.groupChatNextTurnRetryPending !== undefined &&
     typeof value.groupChatNextTurnRetryPending !== "boolean"
@@ -278,8 +284,13 @@ function isOptionalNonEmptyString(value: unknown) {
   );
 }
 
-function isNonNegativeInteger(value: unknown) {
+function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** `GroupChatNextRequestSchema` と同じく、連続する専門家回答は2件まで許可する。 */
+function isValidGroupChatExpertRepliesSinceUser(value: unknown) {
+  return isNonNegativeInteger(value) && value <= 2;
 }
 
 function isNonEmptyStringArray(value: unknown) {

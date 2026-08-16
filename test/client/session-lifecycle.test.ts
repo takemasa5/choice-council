@@ -290,6 +290,18 @@ test("発言IDが一意な保存済みグループチャットは復元し、重
   assert.equal(restored.currentPhase, "consultation_input");
 });
 
+test("連続する専門家回答が3件以上の保存セッションは全体を破棄する", () => {
+  const stored = {
+    ...createStoredFinalMemo(validFinalMarkdown),
+    groupChatExpertRepliesSinceUser: 3,
+  };
+
+  const restored = restoreStoredSessionState(stored);
+
+  assert.equal(restored.isValid, false);
+  assert.equal(restored.currentPhase, "consultation_input");
+});
+
 test("選択済み状態をアスタリスク箇条書きで記載した保存済み終了メモは復元する", () => {
   const finalMarkdown = validFinalMarkdown.replace(
     "追加調査待ち",
