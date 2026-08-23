@@ -100,7 +100,7 @@ test("段落のソフト改行は空白として描画し、リスト継続行�
   );
   assert.doesNotMatch(
     styles,
-    /\.markdown-document p[^\{]*\{\n\x20{2}white-space: pre-wrap;/,
+    /\.markdown-document p[^{]*\{\n\x20{2}white-space: pre-wrap;/,
   );
 });
 
@@ -135,7 +135,7 @@ test("空のハイフン項目はリストとして描画しない", () => {
   );
 
   assert.doesNotMatch(markup, /<ul>|<li>/);
-  assert.match(markup, /<p>-  -\t - {2}<\/p>/);
+  assert.match(markup, /<p>-\x20{2}-\t\x20-\x20{2}<\/p>/);
 });
 
 test("水平線はリストとして描画しない", () => {

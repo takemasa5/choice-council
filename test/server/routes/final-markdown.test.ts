@@ -192,6 +192,11 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
   );
   assert.ok(
     FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "費用は A & B を比較する。"),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
       markdown: validMarkdown.replace("相談内容", "[補足] は確認済みです。"),
     }).success,
   );
@@ -254,6 +259,9 @@ test("終了メモ出力は許可したMarkdownブロックと3000字だけを�
     `${validMarkdown}\n\n<!--\nHTML コメント\n-->`,
     `${validMarkdown}\n\n<!-- HTML コメント`,
     `${validMarkdown}\n\n<!DOCTYPE html>`,
+    validMarkdown.replace("相談内容", "権利表記は &copy; です。"),
+    validMarkdown.replace("相談内容", "番号記号は &#35; です。"),
+    validMarkdown.replace("相談内容", "文字は &#x41; です。"),
     validMarkdown.replace(
       "## 現時点の状態\n暫定結論",
       "<![CDATA[非表示の内容]]>\n## 現時点の状態\n暫定結論",
@@ -534,6 +542,39 @@ test("POST /api/final-markdown/generate はアスタリスクの状態リスト�
 
   assert.equal(response.status, 200);
   assert.equal(generateCount, 1);
+});
+
+test("POST /api/final-markdown/generate は継続行を持つ状態ラベルのリスト項目を再生成する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const markdownWithStatusContinuation = validMarkdown.replace(
+    "## 現時点の状態\n暫定結論",
+    "## 現時点の状態\n- 暫定結論\n  補足説明",
+  );
+  const response = await requestJson(
+    createTestApp(
+      [
+        { markdown: markdownWithStatusContinuation },
+        { markdown: validMarkdown },
+      ],
+      "test-api-key",
+      (request) => {
+        structuredRequests.push(request as { repairInstruction?: string });
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=markdown,code=missing_standalone_status_label/,
+  );
 });
 
 test("POST /api/final-markdown/generate は別の終了状態が独立して併記された場合に再生成する", async () => {

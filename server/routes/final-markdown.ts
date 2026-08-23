@@ -120,13 +120,23 @@ function hasStandaloneStatusLabel(
 
   return lines.some((line, index) => {
     const listItem = getUnorderedListItem(line);
-    if (listItem !== null) return listItem === expectedStatusLabel;
+    if (listItem !== null) {
+      return (
+        listItem === expectedStatusLabel &&
+        !hasUnorderedListItemContinuation(lines, index)
+      );
+    }
 
     return (
       line.trim() === expectedStatusLabel &&
       isStandaloneParagraphLine(lines, index)
     );
   });
+}
+
+/** 状態ラベルのリスト項目に継続行がある場合は、単独記載として扱わない。 */
+function hasUnorderedListItemContinuation(lines: string[], index: number) {
+  return /^ {1,3}\S/.test(lines[index + 1] ?? "");
 }
 
 /** 選択されていない終了状態が、状態値として独立して併記されていないかを判定する。 */
