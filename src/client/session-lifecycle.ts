@@ -472,12 +472,22 @@ function hasStandaloneStatusLabel(section: string, statusLabel: string) {
 
   return lines.some((line, index) => {
     const listItem = getUnorderedListItem(line);
-    if (listItem !== null) return listItem === statusLabel;
+    if (listItem !== null) {
+      return (
+        listItem === statusLabel &&
+        !hasUnorderedListItemContinuation(lines, index)
+      );
+    }
 
     return (
       line.trim() === statusLabel && isStandaloneParagraphLine(lines, index)
     );
   });
+}
+
+/** 状態ラベルのリスト項目に継続行がある場合は、単独記載として扱わない。 */
+function hasUnorderedListItemContinuation(lines: string[], index: number) {
+  return /^ {1,3}\S/.test(lines[index + 1] ?? "");
 }
 
 /** 順不同リストを段落を区切るブロックとして扱う。 */

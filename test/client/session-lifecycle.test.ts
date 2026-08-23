@@ -315,6 +315,18 @@ test("選択済み状態をアスタリスク箇条書きで記載した保存�
   assert.equal(restored.currentPhase, "final_memo");
 });
 
+test("継続行を持つ状態ラベルの箇条書きを含む保存済み終了メモは全体を破棄する", () => {
+  const finalMarkdown = validFinalMarkdown.replace(
+    "追加調査待ち",
+    "- 追加調査待ち\n  補足説明",
+  );
+  const stored = createStoredFinalMemo(finalMarkdown);
+  const restored = restoreStoredSessionState(stored);
+
+  assert.equal(restored.isValid, false);
+  assert.equal(restored.currentPhase, "consultation_input");
+});
+
 test("保存済みメモの終了状態と一致しない終了メモは全体を破棄する", () => {
   const stored = createStoredFinalMemo(
     validFinalMarkdown.replace("追加調査待ち", "判断保留"),

@@ -828,6 +828,7 @@ export const FinalMarkdownSchema = z
 function usesAllowedFinalMarkdownBlocks(markdown: string) {
   if (containsForbiddenFinalMarkdownHtml(markdown)) return false;
   if (containsFinalMarkdownHtmlCharacterReference(markdown)) return false;
+  if (containsFinalMarkdownBackslashEscape(markdown)) return false;
   if (containsInlineMarkdown(markdown)) return false;
   if (containsReferenceStyleFinalMarkdown(markdown)) return false;
   if (containsFinalMarkdownHardLineBreak(markdown)) return false;
@@ -938,6 +939,11 @@ function containsForbiddenFinalMarkdownHtml(markdown: string) {
 /** 表示器と一般的なMarkdownレンダラーで表示が変わるHTML文字参照を終了メモから除外する。 */
 function containsFinalMarkdownHtmlCharacterReference(markdown: string) {
   return /&(?:[a-z][a-z0-9]+|#\d+|#x[0-9a-f]+);/i.test(markdown);
+}
+
+/** プレビューと一般的なMarkdownレンダラーで表示が変わるバックスラッシュエスケープを除外する。 */
+function containsFinalMarkdownBackslashEscape(markdown: string) {
+  return /\\(?:[!"#$%&'()*+,\-./:;<=>?@^_`{|}~]|\[|\])/.test(markdown);
 }
 
 /** 許可済みの先頭0〜3空白付きH1/H2を、必須見出し照合用に正規化する。 */
