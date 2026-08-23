@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { GroupChatPhase } from "../../src/client/phases/GroupChatPhase";
 import {
   createInitialSessionState,
+  createSessionRequest,
   createStoredSession,
   getRestoredProposalState,
   normalizeStoredSession,
@@ -1405,4 +1406,33 @@ test("案選択はセッションへ保存できる", () => {
     proposalIds: ["proposal-a", "proposal-b"],
   });
   assert.deepEqual(stored.selectedProposalIds, ["proposal-a", "proposal-b"]);
+});
+
+test("前後空白のある相談内容は保存前に入力契約どおり正規化する", () => {
+  const state = createInitialSessionState();
+  const request = createSessionRequest({
+    consultation: "  相談内容  ",
+    facts: "",
+    values: "",
+    concerns: "",
+    expectedOutcome: "",
+    state,
+  });
+  const stored = createStoredSession({
+    request,
+    state,
+    expertComments: [],
+    expertDrafts: [],
+    confirmedExperts: [],
+    groupChatMessages: [],
+    groupChatExpertRepliesSinceUser: 0,
+    initialExpertRequests: [],
+    finalMarkdown: "",
+    selectedProposalIds: [],
+  });
+
+  const restored = restoreStoredSessionState(stored);
+
+  assert.equal(stored.request.consultation, "相談内容");
+  assert.equal(restored.isValid, true);
 });

@@ -1487,7 +1487,7 @@ export function createSessionRequest({
   state: SessionState;
 }): ConsultationRequest {
   return {
-    consultation,
+    consultation: consultation.trim(),
     facts: emptyToUndefined(facts),
     values: emptyToUndefined(values),
     concerns: emptyToUndefined(concerns),
