@@ -8,10 +8,12 @@ import {
   type FacilitatorResponse,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
   sendLlmRequestFailed,
+  type StructuredOutputPostValidator,
 } from "./response-utils";
 import type { AppDependencies } from "./types";
 
@@ -61,7 +63,7 @@ function createM2FacilitatorHandler<Response extends FacilitatorResponse>(
   requestSchema: z.ZodType,
   responseSchema: z.ZodType<Response>,
   schemaName: string,
-  isAcceptedResponse: (response: Response) => boolean,
+  isAcceptedResponse: StructuredOutputPostValidator<Response>,
 ): RequestHandler {
   return async (request, response) => {
     const parsedRequest = requestSchema.safeParse(request.body);
@@ -74,14 +76,17 @@ function createM2FacilitatorHandler<Response extends FacilitatorResponse>(
     try {
       const provider = dependencies.createLlmProvider();
       const output = await parseStructuredOutputOnceWithRetry<Response>(
-        () =>
+        (attempt) =>
           provider.generateStructuredOutput({
             systemPrompt: facilitatorDeveloperPrompt,
             userInput: parsedRequest.data,
             schema: responseSchema,
             schemaName,
+            repairInstruction: attempt?.repairInstruction,
           }),
         isAcceptedResponse,
+        (failure) =>
+          logStructuredOutputFailure(request, response, schemaName, failure),
       );
 
       if (!output) {
@@ -103,17 +108,31 @@ function createM2FacilitatorHandler<Response extends FacilitatorResponse>(
  */
 function isAcceptedM2StartResponse(modelResponse: FacilitatorResponse) {
   const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);
-  if (!parsedResponse.success) return false;
+  if (!parsedResponse.success) {
+    return { path: [], code: "invalid_facilitator_response" };
+  }
 
   const response = parsedResponse.data;
-  if (response.current_phase !== "premise") return false;
+  if (response.current_phase !== "premise") {
+    return { path: ["current_phase"], code: "invalid_start_phase" };
+  }
+  if (response.user_question === null) {
+    return { path: ["user_question"], code: "missing_required_question" };
+  }
+  if (!response.user_question.required) {
+    return {
+      path: ["user_question", "required"],
+      code: "question_not_required",
+    };
+  }
+  if (response.next_action !== "wait_user") {
+    return { path: ["next_action"], code: "invalid_start_next_action" };
+  }
+  if (response.expert_requests.length !== 0) {
+    return { path: ["expert_requests"], code: "unexpected_expert_requests" };
+  }
 
-  return (
-    response.user_question !== null &&
-    response.user_question.required &&
-    response.next_action === "wait_user" &&
-    response.expert_requests.length === 0
-  );
+  return true;
 }
 
 /**
@@ -123,15 +142,25 @@ function isAcceptedM2StartResponse(modelResponse: FacilitatorResponse) {
  */
 function isAcceptedM2RespondResponse(modelResponse: FacilitatorResponse) {
   const parsedResponse = FacilitatorResponseSchema.safeParse(modelResponse);
-  if (!parsedResponse.success) return false;
+  if (!parsedResponse.success) {
+    return { path: [], code: "invalid_facilitator_response" };
+  }
 
   const response = parsedResponse.data;
-  return (
-    response.current_phase === "premise" &&
-    response.user_question === null &&
-    response.next_action === "request_experts" &&
-    response.expert_requests.length > 0
-  );
+  if (response.current_phase !== "premise") {
+    return { path: ["current_phase"], code: "invalid_respond_phase" };
+  }
+  if (response.user_question !== null) {
+    return { path: ["user_question"], code: "unexpected_user_question" };
+  }
+  if (response.next_action !== "request_experts") {
+    return { path: ["next_action"], code: "invalid_respond_next_action" };
+  }
+  if (response.expert_requests.length === 0) {
+    return { path: ["expert_requests"], code: "missing_expert_requests" };
+  }
+
+  return true;
 }
 
 /**
@@ -161,5 +190,6 @@ const facilitatorDeveloperPrompt = `
 - 専門家候補を返す場合は、相談の主要な判断軸で競合する価値・制約を持つ役割を優先する。人格的な対立を作らず、競合だけでは不足する観点だけを補完する。
 - 各 expert_requests.viewpoint には、どの価値または制約を重視する立場かを具体的に書く。
 - user_question を返す場合、options は2件以上にし、必ず「その他」を含める。
+- 通常画面に表示する文言、質問、指名理由は、Markdown や改行を含まないプレーンテキストで各150字以内にする。
 - 出力は指定 schema に厳密に従う。
 `;

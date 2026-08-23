@@ -8,6 +8,7 @@ import {
   type FacilitatorTurn,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
@@ -63,12 +64,13 @@ function createGroupChatHandler<Turn extends FacilitatorTurn>(
     }
     try {
       const output = await parseStructuredOutputOnceWithRetry<Turn>(
-        () =>
+        (attempt) =>
           dependencies.createLlmProvider().generateStructuredOutput({
             systemPrompt,
             userInput: parsedRequest.data,
             schema: responseSchema,
             schemaName,
+            repairInstruction: attempt?.repairInstruction,
           }),
         (turn) =>
           isAcceptedGroupChatTurn(
@@ -82,6 +84,8 @@ function createGroupChatHandler<Turn extends FacilitatorTurn>(
               }>;
             },
           ),
+        (failure) =>
+          logStructuredOutputFailure(request, response, schemaName, failure),
       );
       if (!output) {
         sendInvalidModelResponse(request, response);
@@ -106,14 +110,22 @@ function isAcceptedGroupChatTurn(
     }>;
   },
 ) {
-  if (!FacilitatorTurnSchema.safeParse(turn).success) return false;
+  if (!FacilitatorTurnSchema.safeParse(turn).success) {
+    return {
+      path: ["requestedSpeaker", "speakerType"],
+      code: "invalid_requested_speaker",
+    };
+  }
   if (
     turn.requestedSpeaker.speakerType === "expert" &&
     !request.confirmedExperts?.some(
       (expert) => expert.participantId === turn.requestedSpeaker.participantId,
     )
   ) {
-    return false;
+    return {
+      path: ["requestedSpeaker", "participantId"],
+      code: "unconfirmed_expert_speaker",
+    };
   }
   const lastParticipantMessage = [...(request.recentMessages ?? [])]
     .reverse()
@@ -125,12 +137,21 @@ function isAcceptedGroupChatTurn(
     lastParticipantMessage?.speakerType === "expert" &&
     lastParticipantMessage.participantId === turn.requestedSpeaker.participantId
   ) {
-    return false;
+    return {
+      path: ["requestedSpeaker", "participantId"],
+      code: "repeated_expert_speaker",
+    };
   }
-  return !(
+  if (
     request.expertRepliesSinceUser === 2 &&
     turn.requestedSpeaker.speakerType === "expert"
-  );
+  ) {
+    return {
+      path: ["requestedSpeaker", "speakerType"],
+      code: "expert_reply_limit_reached",
+    };
+  }
+  return true;
 }
 
 /** グループチャット開始用プロンプト。 */
@@ -143,6 +164,7 @@ const groupChatStartFacilitatorPrompt = `
 - requestedSpeaker.speakerType は expert、userOptions は null にする。
 - input.discussionSelection を必ず会話の起点にし、input.initialExpertComments 内の具体案を参照する。deep_dive なら選んだ案の根拠検証、compare なら2案のトレードオフ、defer なら全案を脱落させない比較軸の整理を始める。
 - 初回専門家コメントの単純な再要約ではなく、選択に沿う議論の論点、指名理由、専門家への具体的な質問を示す。
+- message、question、requestReason は、Markdown や改行を含まないプレーンテキストで各200字以内にする。
 - 出力は指定 schema に厳密に従う。
 `;
 
@@ -158,5 +180,6 @@ const groupChatNextFacilitatorPrompt = `
 - 直近の非ファシリテーター発言が専門家で、input.confirmedExperts が2人以上の場合、専門家を続けて指名するなら別の participantId を選ぶ。
 - 専門家へは、直前の主張への賛成・留保・反論と、その理由または成立条件を答えられる具体的な質問をする。
 - input.discussionContext.selection を必ず起点にし、input.discussionContext.proposals の participantId、roleName、案名、内容、利点、犠牲にする点、成立条件を具体的に参照する。deep_dive では提案者に根拠の擁護を、別の participantId の専門家に反論・代替・成立条件を具体化する質問をする。compare では選んだ2案のトレードオフを検討し、defer では全案を早期に脱落させず比較軸を整理する。
+- message、question、requestReason は、Markdown や改行を含まないプレーンテキストで各200字以内にする。
 - 出力は指定 schema に厳密に従う。
 `;

@@ -30,7 +30,7 @@
 
 状態: `決定`
 
-出力は `docs/api/schemas.md#Markdown 終了メモ` に従う。Markdown の見出し構成は下記の構成に合わせる。
+出力は `docs/api/schemas.md#Markdown 終了メモ` に従う。Markdown の見出し構成は下記の構成に合わせる。全文は 3000 字以内とし、各セクションは簡潔にする。見出し、段落、順不同リストだけで表現する。
 
 ## Markdown 構成
 

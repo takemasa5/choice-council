@@ -1,7 +1,11 @@
 import type { Request, Response } from "express";
 import { ZodError } from "zod";
 import {
+  InvalidLlmConfigurationError,
   MissingLlmApiKeyError,
+  StructuredOutputValidationError,
+  type StructuredOutputFailureClassification,
+  type StructuredOutputIssue,
   UnsupportedLlmProviderError,
 } from "../llm/types";
 import {
@@ -25,24 +29,167 @@ export const invalidModelResponseMessage =
  * 不正な構造化出力の扱い。
  */
 export async function parseStructuredOutputOnceWithRetry<T>(
-  request: () => Promise<T | null>,
-  isValid: (output: T) => boolean = () => true,
+  request: (attempt?: StructuredOutputAttempt) => Promise<T | null>,
+  isValid: StructuredOutputPostValidator<T> = () => true,
+  onFailure?: StructuredOutputFailureCallback,
+  repairOptions: StructuredOutputRepairOptions = {},
 ) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await request().catch((error: unknown) => {
-      if (error instanceof SyntaxError || error instanceof ZodError) {
-        return null;
-      }
+  let repairInstruction: string | undefined;
 
-      throw error;
-    });
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    let result: T | null = null;
+    let failure: Omit<
+      StructuredOutputFailure,
+      "attempt" | "terminationReason"
+    > | null = null;
 
-    if (result && isValid(result)) {
-      return result;
+    try {
+      result = await request({ attempt, repairInstruction });
+    } catch (error) {
+      failure = toStructuredOutputFailure(error);
+      if (!failure) throw error;
     }
+
+    if (!failure) {
+      if (result === null) {
+        failure = { classification: "empty_content", issues: [] };
+      } else {
+        const validationResult = isValid(result);
+        if (validationResult !== true) {
+          failure = toStructuredOutputFailure(
+            new StructuredOutputValidationError({
+              schemaName: "post_validation",
+              classification: "post_validation",
+              issues: validationResult === false ? [] : [validationResult],
+            }),
+          );
+        }
+      }
+    }
+
+    if (!failure) return result;
+
+    const safeFailure: StructuredOutputFailure = {
+      ...failure,
+      attempt,
+      terminationReason: attempt === 2 ? "max_attempts" : "retry",
+    };
+    onFailure?.(safeFailure);
+    repairInstruction = createRepairInstruction(safeFailure, repairOptions);
   }
 
   return null;
+}
+
+/** 構造化出力の失敗を再生成・記録に使える安全な情報へ正規化する。 */
+export interface StructuredOutputFailure {
+  schemaName?: string;
+  classification: StructuredOutputFailureClassification;
+  finishReason?: string | null;
+  issues: StructuredOutputIssue[];
+  attempt: number;
+  terminationReason: "retry" | "max_attempts";
+}
+
+/** 生成の再試行時に渡す安全な失敗通知。 */
+export interface StructuredOutputAttempt {
+  attempt: number;
+  repairInstruction?: string;
+}
+
+/** 失敗本文・入力を受け取らない安全な失敗通知コールバック。 */
+export type StructuredOutputFailureCallback = (
+  failure: StructuredOutputFailure,
+) => void;
+
+/** 再生成する構造化出力の本文形式に合わせた修復指示のオプション。 */
+export interface StructuredOutputRepairOptions {
+  allowMarkdown?: boolean;
+}
+
+/** 後続検証の失敗理由を、本文を含めずに再生成へ渡す。 */
+export type StructuredOutputPostValidator<T> = (
+  output: T,
+) => boolean | StructuredOutputIssue;
+
+/** 構造化出力の失敗を、本文を含まない運用ログとして記録する。 */
+export function logStructuredOutputFailure(
+  request: Request,
+  response: Response,
+  schemaName: string,
+  failure: StructuredOutputFailure,
+) {
+  const context = getRequestObservabilityContext(response);
+  if (!context) return;
+
+  context.logger.error({
+    event: "llm_structured_output_failed",
+    route: getSafeApiRoute(request.path),
+    schemaName,
+    attempt: failure.attempt,
+    classification: failure.classification,
+    terminationReason: failure.terminationReason,
+    finishReason: failure.finishReason,
+    issues: failure.issues.map((issue) => ({
+      path: issue.path,
+      code: issue.code,
+    })),
+  });
+}
+
+/** 既知の検証エラーだけを、安全な失敗分類へ変換する。 */
+function toStructuredOutputFailure(
+  error: unknown,
+): Omit<StructuredOutputFailure, "attempt" | "terminationReason"> | null {
+  if (error instanceof StructuredOutputValidationError) {
+    return {
+      schemaName: error.schemaName,
+      classification: error.classification,
+      finishReason: error.finishReason,
+      issues: error.issues,
+    };
+  }
+
+  if (error instanceof SyntaxError) {
+    return { classification: "invalid_json", issues: [] };
+  }
+
+  if (error instanceof ZodError) {
+    return {
+      classification: "schema_validation",
+      issues: error.issues.map((issue) => ({
+        path: issue.path.filter(
+          (segment): segment is string | number =>
+            typeof segment === "string" || typeof segment === "number",
+        ),
+        code: issue.code,
+      })),
+    };
+  }
+
+  return null;
+}
+
+/** 失敗分類とfield path/codeだけを渡してJSON再生成を求める。 */
+function createRepairInstruction(
+  failure: StructuredOutputFailure,
+  options: StructuredOutputRepairOptions,
+): string {
+  const issues = failure.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "$";
+      return `path=${path},code=${issue.code}`;
+    })
+    .join("; ");
+  const details = issues
+    ? ` failure_classification=${failure.classification}; ${issues}.`
+    : ` failure_classification=${failure.classification}.`;
+
+  const outputConstraint = options.allowMarkdown
+    ? "JSON外の説明文やコードフェンスは出力せず、指定schemaに従ってください。"
+    : "説明文やMarkdownは出力しないでください。";
+
+  return `指定schemaを満たすJSONだけを再生成してください。${outputConstraint}${details}`;
 }
 
 /** 日本語名: 入力不正レスポンスを返す関数。 */
@@ -60,7 +207,9 @@ export function sendMissingLlmApiKey(
     message:
       error.provider === "openai"
         ? "OPENAI_API_KEY が設定されていません。"
-        : "GEMINI_API_KEY が設定されていません。",
+        : error.provider === "gemini"
+          ? "GEMINI_API_KEY が設定されていません。"
+          : "GROQ_API_KEY が設定されていません。",
   });
 }
 
@@ -88,11 +237,21 @@ export function sendLlmRequestFailed(
     return;
   }
 
+  if (error instanceof InvalidLlmConfigurationError) {
+    logLlmRequestFailure(request, response, 500, getSafeLlmErrorDetails(error));
+    response.status(500).json({
+      error: "invalid_llm_configuration",
+      message: getInvalidLlmConfigurationMessage(error.variableName),
+    });
+    return;
+  }
+
   if (error instanceof UnsupportedLlmProviderError) {
     logLlmRequestFailure(request, response, 500, getSafeLlmErrorDetails(error));
     response.status(500).json({
       error: "unsupported_llm_provider",
-      message: "LLM_PROVIDER には openai または gemini を指定してください。",
+      message:
+        "LLM_PROVIDER には openai、gemini、または groq を指定してください。",
     });
     return;
   }
@@ -102,6 +261,19 @@ export function sendLlmRequestFailed(
     error: "llm_request_failed",
     message: "LLM API request failed.",
   });
+}
+
+/** 利用者へ表示できるLLM設定エラーの文言を返す。 */
+function getInvalidLlmConfigurationMessage(variableName: string): string {
+  if (variableName === "GROQ_MODEL") {
+    return "GROQ_MODEL には openai/gpt-oss-120b を指定してください。";
+  }
+
+  if (variableName === "GROQ_MAX_OUTPUT_TOKENS") {
+    return "GROQ_MAX_OUTPUT_TOKENS には 1 以上 65536 以下の整数を指定してください。";
+  }
+
+  return "LLM の設定が不正です。";
 }
 
 /** LLM 失敗時に、入力本文を含めない構造化イベントを共通で記録する。 */
@@ -134,6 +306,13 @@ function getSafeLlmErrorDetails(error: unknown) {
     return {
       errorType: "missing_llm_api_key",
       errorMessage: "LLM API key is not configured.",
+    };
+  }
+
+  if (error instanceof InvalidLlmConfigurationError) {
+    return {
+      errorType: "invalid_llm_configuration",
+      errorMessage: "LLM configuration is invalid.",
     };
   }
 

@@ -1,6 +1,6 @@
 # Prompts
 
-このディレクトリでは、OpenAI API または Gemini API へ渡すプロンプトを呼び出し単位で管理する。プロンプトの内容はプロバイダーに依存させず、バックエンドのLLMプロバイダー層で各SDKのリクエスト形式へ変換する。
+このディレクトリでは、OpenAI API、Gemini API、または Groq API へ渡すプロンプトを呼び出し単位で管理する。プロンプトの内容はプロバイダーに依存させず、バックエンドのLLMプロバイダー層で各SDKのリクエスト形式へ変換する。
 
 MVPでは以下を分ける。
 
@@ -10,6 +10,8 @@ MVPでは以下を分ける。
 - `final-markdown.md`
 
 各プロンプトは `docs/api/schemas.md` の構造化出力に従う。
+
+Groq では GPT-OSS 120B を対象とし、Qwen は対象外とする。Groq の呼び出しは JSON Schema の strict structured output を使い、`reasoning_effort=low` を指定する。
 
 ## プロンプト契約の対象範囲
 

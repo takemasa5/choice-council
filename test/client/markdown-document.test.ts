@@ -1,0 +1,211 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { MarkdownDocument } from "../../src/client/MarkdownDocument";
+
+test("許可したMarkdownブロックを見出し、段落、順不同リストとして描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown:
+        "# 意思決定メモ\n\n## 相談テーマ\n\n旅行先を決めます。\n予算を確認します。\n\n- 候補A\n* 候補B",
+    }),
+  );
+
+  assert.match(markup, /<h1>意思決定メモ<\/h1>/);
+  assert.match(markup, /<h2>相談テーマ<\/h2>/);
+  assert.match(markup, /<p>旅行先を決めます。 予算を確認します。<\/p>/);
+  assert.match(markup, /<ul><li>候補A<\/li><li>候補B<\/li><\/ul>/);
+});
+
+test("先頭3空白までのH1とH2を見出しとして描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: " # 空白付きH1\n\n   ## 空白付きH2",
+    }),
+  );
+
+  assert.match(markup, /<h1>空白付きH1<\/h1>/);
+  assert.match(markup, /<h2>空白付きH2<\/h2>/);
+  assert.doesNotMatch(markup, /<p> {1,3}#{1,2} /);
+});
+
+test("タブまたは複数空白で区切ったH1とH2を見出しとして描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "#\tタブ付きH1\n\n##   複数空白付きH2",
+    }),
+  );
+
+  assert.match(markup, /<h1>タブ付きH1<\/h1>/);
+  assert.match(markup, /<h2>複数空白付きH2<\/h2>/);
+});
+
+test("先頭1〜3空白の順不同リストを描画し、4空白は段落として扱う", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: " - 1空白の項目\n   * 3空白の項目\n    - 4空白の項目",
+    }),
+  );
+
+  assert.match(markup, /<ul><li>1空白の項目<\/li><li>3空白の項目<\/li><\/ul>/);
+  assert.doesNotMatch(markup, /<li>4空白の項目<\/li>/);
+  assert.match(markup, /<p> {4}- 4空白の項目<\/p>/);
+});
+
+test("タブまたは複数空白で区切った順不同リストを描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "-\tタブ付き項目\n*   複数空白付き項目",
+    }),
+  );
+
+  assert.match(
+    markup,
+    /<ul><li>タブ付き項目<\/li><li>複数空白付き項目<\/li><\/ul>/,
+  );
+});
+
+test("1〜3空白のリスト継続行は直前の項目として描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "- 案A\n 補足1\n  補足2\n   補足3\n- 案B",
+    }),
+  );
+
+  assert.match(
+    markup,
+    /<ul><li>案A\n補足1\n補足2\n補足3<\/li><li>案B<\/li><\/ul>/,
+  );
+  assert.doesNotMatch(markup, /<p> {1,3}補足[123]<\/p>/);
+});
+
+test("段落のソフト改行は空白として描画し、リスト継続行の改行は保持する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "段落の前半\n段落の後半\n\n- 案A\n 継続行",
+    }),
+  );
+  const styles = readFileSync(
+    new URL("../../src/client/styles.css", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(markup, /<p>段落の前半 段落の後半<\/p>/);
+  assert.match(markup, /<li>案A\n継続行<\/li>/);
+  assert.match(
+    styles,
+    /\.markdown-document li \{\n\x20{2}white-space: pre-wrap;/,
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.markdown-document p[^{]*\{\n\x20{2}white-space: pre-wrap;/,
+  );
+});
+
+test("リスト直後の先頭空白付き見出しは継続行にしない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "- 案A\n  ## 次の節\n本文",
+    }),
+  );
+
+  assert.match(markup, /<ul><li>案A<\/li><\/ul><h2>次の節<\/h2><p>本文<\/p>/);
+});
+
+test("空のアスタリスク項目を一貫してリストとして描画する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "*\n  *\n* \n*\t\n*  ",
+    }),
+  );
+
+  assert.match(
+    markup,
+    /<ul><li><\/li><li><\/li><li><\/li><li><\/li><li><\/li><\/ul>/,
+  );
+});
+
+test("空のハイフン項目はリストとして描画しない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "- \n-\t\n-  ",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<ul>|<li>/);
+  assert.match(markup, /<p>-\x20{2}-\t\x20-\x20{2}<\/p>/);
+});
+
+test("水平線はリストとして描画しない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "* * *\n\n- - -",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<ul>|<li>/);
+  assert.match(markup, /<p>\* \* \*<\/p>/);
+  assert.match(markup, /<p>- - -<\/p>/);
+});
+
+test("4空白、区切り空白なし、対応外マーカーはリストとして描画しない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "    * 4空白項目\n\n-区切りなし項目\n\n+ 対応外項目",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<ul>|<li>/);
+  assert.match(markup, /<p> {4}\* 4空白項目<\/p>/);
+  assert.match(markup, /<p>-区切りなし項目<\/p>/);
+  assert.match(markup, /<p>\+ 対応外項目<\/p>/);
+});
+
+test("HTMLは要素化せずテキストとしてエスケープする", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "<script>alert('unsafe')</script>",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<script>/);
+  assert.match(markup, /&lt;script&gt;alert/);
+});
+
+test("対応外のMarkdownは通常テキストとして表示する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "1. 番号付き項目\n2. 次の項目\n\n```\nconst value = 1;\n```",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<ol>|<code>|<pre>/);
+  assert.match(markup, /<p>1\. 番号付き項目 2\. 次の項目<\/p>/);
+  assert.match(markup, /<p>``` const value = 1; ```<\/p>/);
+});
+
+test("許可外の見出しは段落の通常テキストとして表示する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "### 許可外の見出し\n本文",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<h3>/);
+  assert.match(markup, /<p>### 許可外の見出し 本文<\/p>/);
+});
+
+test("H3以上、4空白インデント、区切り空白なしは見出しとして描画しない", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "###\t許可外H3\n\n    # 4空白H1\n\n#空白なしH1",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /<h[12]>/);
+  assert.match(markup, /<p>###\t許可外H3<\/p>/);
+  assert.match(markup, /<p> {4}# 4空白H1<\/p>/);
+  assert.match(markup, /<p>#空白なしH1<\/p>/);
+});

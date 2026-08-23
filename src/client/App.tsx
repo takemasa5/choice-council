@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConsultationStartRequest,
   DiscussionSelection,
-  ExpertRequest,
   FacilitatorTurn,
   FacilitatorResponse,
   Phase,
@@ -35,8 +34,6 @@ import {
   createStoredSession,
   getAvailableReturnPhases,
   getCurrentSessionMemo,
-  getRestoredProposalState,
-  isStoredProposalStateComplete,
   proceedToExpertSelection as proceedSessionToExpertSelection,
   restoreGroupChatAfterFinalMemoFailure as restoreSessionGroupChatAfterFinalMemoFailure,
   restoreStoredSessionState,
@@ -245,37 +242,35 @@ export function App() {
   function restoreSession(parsed: StoredSession | null) {
     if (!parsed) return;
 
-    const restoredProposalState = getRestoredProposalState(parsed);
-    const restoredSessionState = restoreStoredSessionState(parsed);
-    const storedProposalPhase =
-      parsed.currentPhase ?? parsed.response?.current_phase;
-    const isProposalRecovery =
-      (storedProposalPhase === "deliberation" ||
-        storedProposalPhase === "group_chat" ||
-        storedProposalPhase === "final_memo") &&
-      !isStoredProposalStateComplete(
-        storedProposalPhase,
-        restoredProposalState,
-      );
+    const restoration = restoreStoredSessionState(parsed);
+    if (!restoration.isValid) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+    const { session: storedSession, proposalState: restoredProposalState } =
+      restoration;
+    const restoredSessionState = restoration;
 
-    changeConsultation(parsed.request.consultation);
-    changeFacts(parsed.request.facts ?? "");
-    changeValues(parsed.request.values ?? "");
-    changeConcerns(parsed.request.concerns ?? "");
-    changeExpectedOutcome(parsed.request.expectedOutcome ?? "");
+    changeConsultation(storedSession.request.consultation);
+    changeFacts(storedSession.request.facts ?? "");
+    changeValues(storedSession.request.values ?? "");
+    changeConcerns(storedSession.request.concerns ?? "");
+    changeExpectedOutcome(storedSession.request.expectedOutcome ?? "");
     setSessionState(restoredSessionState);
     const restoredExperts =
-      parsed.confirmedExperts ?? parsed.response?.expert_requests ?? [];
+      storedSession.confirmedExperts ??
+      storedSession.response?.expert_requests ??
+      [];
     restoreSelection({
       initialCandidates: getInitialExpertRequests(
-        parsed.initialExpertRequests,
+        storedSession.initialExpertRequests,
         restoredSessionState.currentPhase,
         restoredSessionState.response,
       ),
       confirmedCandidates: restoredExperts,
       comments: restoredProposalState.expertComments,
-      drafts: parsed.expertDrafts,
-      restoredDraftProvenanceKey: parsed.expertDraftProvenanceKey,
+      drafts: storedSession.expertDrafts,
+      restoredDraftProvenanceKey: storedSession.expertDraftProvenanceKey,
     });
     const restoredCandidates =
       restoredSessionState.response?.expert_requests ?? [];
@@ -284,22 +279,22 @@ export function App() {
       JSON.stringify(restoredCandidates),
     );
     shouldSkipRestoredCandidateSyncRef.current = true;
-    if (isProposalRecovery) {
-      groupChatPhase.reset();
-      finalMemoPhase.clear();
-    } else {
-      groupChatPhase.restore({
-        messages: parsed.groupChatMessages ?? [],
-        turn: parsed.groupChatTurn ?? null,
-        contextSummary: parsed.groupChatContextSummary ?? "",
-        expertRepliesSinceUser: parsed.groupChatExpertRepliesSinceUser ?? 0,
-        isNextTurnRetryPending: parsed.groupChatNextTurnRetryPending ?? false,
-      });
-      finalMemoPhase.restore(parsed.finalMarkdown ?? "");
-    }
+    groupChatPhase.restore({
+      messages: storedSession.groupChatMessages ?? [],
+      turn: storedSession.groupChatTurn ?? null,
+      contextSummary: storedSession.groupChatContextSummary ?? "",
+      expertRepliesSinceUser:
+        storedSession.groupChatExpertRepliesSinceUser ?? 0,
+      isNextTurnRetryPending:
+        storedSession.groupChatNextTurnRetryPending ?? false,
+    });
+    finalMemoPhase.restore(storedSession.finalMarkdown ?? "");
     setDiscussionSelection(restoredProposalState.discussionSelection);
     setSelectedProposalIds(restoredProposalState.selectedProposalIds);
-    restoreQuestionAnswer(parsed.request.userQuestionAnswer, parsed.response);
+    restoreQuestionAnswer(
+      storedSession.request.userQuestionAnswer,
+      storedSession.response,
+    );
   }
 
   useEffect(() => {
@@ -559,10 +554,10 @@ export function App() {
     });
   }
 
-  function saveConfirmedExpertDrafts(experts: ExpertRequest[]) {
+  function saveConfirmedExpertDrafts() {
     facilitatorFlow.clearFailure();
     clearDiscussionSelection();
-    setSessionState((state) => saveConfirmedExperts(state, experts));
+    setSessionState((state) => saveConfirmedExperts(state));
   }
 
   function clearDiscussionSelection() {

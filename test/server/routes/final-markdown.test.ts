@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createApp } from "../../../server/app";
+import {
+  StructuredOutputValidationError,
+  type StructuredOutputRequest,
+} from "../../../server/llm/types";
+import { FinalMarkdownSchema } from "../../../src/shared/schemas/session";
 import { createTestApp, memo, requestJson } from "../../../test-support/server";
 
-test("POST /api/final-markdown/generate は会話文脈を終了メモ生成へ渡す", async () => {
-  let generatedRequest: unknown;
-  const response = await requestJson(
-    createTestApp(
-      {
-        markdown: `# 意思決定メモ
+const validMarkdown = `# 意思決定メモ
 
 ## 相談テーマ
 相談内容
@@ -40,7 +41,14 @@ test("POST /api/final-markdown/generate は会話文脈を終了メモ生成へ�
 次の行動
 
 ## セッションログ要約
-ユーザーは費用の上限を重視し、追加調査待ちを選択した。`,
+ユーザーは費用の上限を重視し、追加調査待ちを選択した。`;
+
+test("POST /api/final-markdown/generate は会話文脈を終了メモ生成へ渡す", async () => {
+  let generatedRequest: unknown;
+  const response = await requestJson(
+    createTestApp(
+      {
+        markdown: validMarkdown,
       },
       "test-api-key",
       (request) => {
@@ -83,6 +91,63 @@ test("POST /api/final-markdown/generate は会話文脈を終了メモ生成へ�
   );
 });
 
+test("POST /api/final-markdown/generate は区切り空白または先頭空白付きの状態見出しを再生成せず受理する", async () => {
+  for (const sectionHeading of [
+    "##\t現時点の状態",
+    "##   現時点の状態",
+    "   ## 現時点の状態",
+  ]) {
+    let generateCount = 0;
+    const markdown = validMarkdown.replace("## 現時点の状態", sectionHeading);
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, true);
+    const response = await requestJson(
+      createTestApp({ markdown }, "test-api-key", () => {
+        generateCount += 1;
+      }),
+      "/api/final-markdown/generate",
+      {
+        consultation: "相談内容",
+        memo: { ...memo, status: "tentative_conclusion" },
+        contextSummary: "費用の上限を確認している。",
+        recentMessages: [],
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(generateCount, 1);
+  }
+});
+
+test("POST /api/final-markdown/generate は次セクションの状態ラベルでは再生成する", async () => {
+  let generateCount = 0;
+  const markdownWithoutStatusInCurrentSection = validMarkdown.replace(
+    "## 現時点の状態\n暫定結論\n\n## 重視した価値観\n価値観",
+    "## 現時点の状態\n状態ラベルなし\n\n## 重視した価値観\n暫定結論\n価値観",
+  );
+  const response = await requestJson(
+    createTestApp(
+      [
+        { markdown: markdownWithoutStatusInCurrentSection },
+        { markdown: validMarkdown },
+      ],
+      "test-api-key",
+      () => {
+        generateCount += 1;
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(generateCount, 2);
+});
+
 test("POST /api/final-markdown/generate は上限を超える直近発言を拒否する", async () => {
   const recentMessages = Array.from({ length: 9 }, (_, index) => ({
     id: `message-${index + 1}`,
@@ -104,4 +169,448 @@ test("POST /api/final-markdown/generate は上限を超える直近発言を拒�
   );
 
   assert.equal(response.status, 400);
+});
+
+test("終了メモ出力は許可したMarkdownブロックと3000字だけを受け付ける", () => {
+  assert.ok(FinalMarkdownSchema.safeParse({ markdown: validMarkdown }).success);
+  const markdownWithAngleBrackets = validMarkdown.replace(
+    "相談内容",
+    "A < B > C",
+  );
+  const parsedMarkdown = FinalMarkdownSchema.safeParse({
+    markdown: markdownWithAngleBrackets,
+  });
+  assert.ok(parsedMarkdown.success);
+  assert.match(parsedMarkdown.data.markdown, /A < B > C/);
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace(
+        "相談内容",
+        "価格は A < B > C、識別子は plan_v2 です。",
+      ),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "費用は A & B を比較する。"),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "[補足] は確認済みです。"),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "行末の空白は1つ "),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "本文中の\\バックスラッシュ"),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace("相談内容", "候補A | 候補B を比較する"),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace(
+        "相談内容",
+        "末尾の\\\\バックスラッシュ\\\\",
+      ),
+    }).success,
+  );
+  assert.ok(
+    FinalMarkdownSchema.safeParse({
+      markdown: validMarkdown.replace(/^#{1,2}/gm, "   $&"),
+    }).success,
+  );
+
+  const headingsOnlyInParagraph = validMarkdown.replace(
+    "## 次アクション\n次の行動",
+    "次の行動には ## 次アクション を含める",
+  );
+  const headingsOutOfOrder = validMarkdown.replace(
+    "## 相談テーマ\n相談内容\n\n## 現時点の状態\n暫定結論",
+    "## 現時点の状態\n暫定結論\n\n## 相談テーマ\n相談内容",
+  );
+  const markdownWithAdditionalH1 = validMarkdown.replace(
+    "# 意思決定メモ",
+    "# 意思決定メモ\n\n# 補足\n補足内容",
+  );
+  const markdownWithAdditionalH2 = `${validMarkdown}\n\n## 補足\n補足内容`;
+  const markdownWithDuplicateRequiredH2 = validMarkdown.replace(
+    "## 次アクション\n次の行動",
+    "## 次アクション\n次の行動\n\n## 次アクション\n追加の行動",
+  );
+
+  for (const markdown of [
+    `${validMarkdown}\n\n### 許可しない見出し`,
+    `${validMarkdown}\n\n1. 番号付きリスト`,
+    `${validMarkdown}\n\n\`\`\`\nコード`,
+    `${validMarkdown}\n\n \t混在インデントのコード`,
+    `${validMarkdown}\n\n  \t混在インデントのコード`,
+    `${validMarkdown}\n\n   \t混在インデントのコード`,
+    `${validMarkdown}\n\n<div>HTML</div>`,
+    `${validMarkdown}\n\n<!-- HTML コメント -->`,
+    `${validMarkdown}\n\n<!--\nHTML コメント\n-->`,
+    `${validMarkdown}\n\n<!-- HTML コメント`,
+    `${validMarkdown}\n\n<!DOCTYPE html>`,
+    validMarkdown.replace("相談内容", "権利表記は &copy; です。"),
+    validMarkdown.replace("相談内容", "番号記号は &#35; です。"),
+    validMarkdown.replace("相談内容", "文字は &#x41; です。"),
+    validMarkdown.replace(
+      "## 現時点の状態\n暫定結論",
+      "<![CDATA[非表示の内容]]>\n## 現時点の状態\n暫定結論",
+    ),
+    validMarkdown.replace(
+      "## 現時点の状態\n暫定結論",
+      "<?processing instruction?>\n## 現時点の状態\n暫定結論",
+    ),
+    `${validMarkdown}\n\n> 引用`,
+    `${validMarkdown}\n\n+ 許可しない箇条書き`,
+    validMarkdown.replace("相談内容", "*強調*"),
+    validMarkdown.replace("相談内容", "**強調**"),
+    validMarkdown.replace("相談内容", "_強調_"),
+    validMarkdown.replace("相談内容", "__強調__"),
+    validMarkdown.replace("相談内容", "`インラインコード`"),
+    validMarkdown.replace("相談内容", "~~打ち消し~~"),
+    validMarkdown.replace("相談内容", "[リンク](https://example.com)"),
+    validMarkdown.replace("相談内容", "![画像](https://example.com/image.png)"),
+    validMarkdown.replace("相談内容", "[詳細][ref]"),
+    validMarkdown.replace("相談内容", "![画像][ref]"),
+    validMarkdown.replace("相談内容", "\\#1"),
+    validMarkdown.replace("相談内容", "\\*注記"),
+    validMarkdown.replace("相談内容", "\\[候補]"),
+    validMarkdown.replace("相談内容", "1行目  \n2行目"),
+    validMarkdown.replace("相談内容", "1行目\\\n2行目"),
+    `${validMarkdown}\n\n[ref]: https://example.com`,
+    validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      "## 検討した選択肢\n項目 | 内容\n--- | ---\n案A | 内容A",
+    ),
+    validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      "## 検討した選択肢\n項目|内容\n:---|---:\n案A|内容A",
+    ),
+    validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      "## 検討した選択肢\n| 項目 | 内容 |\n| --- | --- |\n| 案A | 内容A |",
+    ),
+    `${validMarkdown}\n\n${"あ".repeat(3001)}`,
+    headingsOnlyInParagraph,
+    headingsOutOfOrder,
+    markdownWithAdditionalH1,
+    markdownWithAdditionalH2,
+    markdownWithDuplicateRequiredH2,
+  ]) {
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, false);
+  }
+});
+
+test("終了メモ出力の箇条書き区切りと空項目は表示契約どおり検証する", () => {
+  for (const markdown of [
+    `${validMarkdown}\n\n-\tタブ区切り項目`,
+    `${validMarkdown}\n\n*   複数空白区切り項目`,
+    `${validMarkdown}\n\n*`,
+    `${validMarkdown}\n\n   *`,
+    `${validMarkdown}\n\n* `,
+    `${validMarkdown}\n\n*\t`,
+  ]) {
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, true);
+  }
+
+  for (const markdown of [
+    `${validMarkdown}\n\n-`,
+    `${validMarkdown}\n\n- `,
+    `${validMarkdown}\n\n-\t`,
+  ]) {
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, false);
+  }
+});
+
+test("終了メモ出力は順不同リストの1〜3空白継続行を受理する", () => {
+  for (const continuation of [" 補足", "  補足", "   補足"]) {
+    const markdown = validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      `## 検討した選択肢\n- 案A\n${continuation}`,
+    );
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, true);
+  }
+});
+
+test("終了メモ出力は入れ子の順不同リストを受理しない", () => {
+  for (const nestedItem of ["  - 子項目", "   * 子項目"]) {
+    const markdown = validMarkdown.replace(
+      "## 検討した選択肢\n選択肢",
+      `## 検討した選択肢\n- 親項目\n${nestedItem}`,
+    );
+    assert.equal(FinalMarkdownSchema.safeParse({ markdown }).success, false);
+  }
+
+  const topLevelList = validMarkdown.replace(
+    "## 検討した選択肢\n選択肢",
+    "## 検討した選択肢\n   - 案A\n  - 案B",
+  );
+  assert.equal(
+    FinalMarkdownSchema.safeParse({ markdown: topLevelList }).success,
+    true,
+  );
+});
+
+test("POST /api/final-markdown/generate はMarkdown違反を理由付きで再生成する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const outputs = [
+    {
+      markdown: validMarkdown.replace(
+        "## 相談テーマ\n相談内容\n\n## 現時点の状態\n暫定結論",
+        "## 現時点の状態\n暫定結論\n\n## 相談テーマ\n相談内容",
+      ),
+    },
+    { markdown: validMarkdown },
+  ];
+  const response = await requestJson(
+    createApp({
+      createLlmProvider: () =>
+        ({
+          generateStructuredOutput: async <T>(
+            request: StructuredOutputRequest<T>,
+          ) => {
+            const output = outputs[structuredRequests.length] ?? outputs[1];
+            structuredRequests.push({
+              repairInstruction: request.repairInstruction,
+            });
+            const parsedOutput = request.schema.safeParse(output);
+            if (!parsedOutput.success) {
+              throw new StructuredOutputValidationError({
+                schemaName: request.schemaName,
+                classification: "schema_validation",
+                finishReason: "stop",
+                issues: parsedOutput.error.issues.map((issue) => ({
+                  path: issue.path.filter(
+                    (segment): segment is string | number =>
+                      typeof segment === "string" ||
+                      typeof segment === "number",
+                  ),
+                  code: issue.code,
+                })),
+              });
+            }
+            return parsedOutput.data;
+          },
+        }) as never,
+    }),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(structuredRequests.length, 2);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /failure_classification=schema_validation/,
+  );
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=markdown,code=custom/,
+  );
+  assert.doesNotMatch(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /Markdownは出力しない/,
+  );
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /JSON外の説明文やコードフェンスは出力せず/,
+  );
+});
+
+test("POST /api/final-markdown/generate は状態ラベル不足を理由付きで再生成する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const invalidMarkdown = validMarkdown.replace("暫定結論", "判断保留");
+  const response = await requestJson(
+    createTestApp(
+      [{ markdown: invalidMarkdown }, { markdown: validMarkdown }],
+      "test-api-key",
+      (request) => {
+        structuredRequests.push(request as { repairInstruction?: string });
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=markdown,code=missing_standalone_status_label/,
+  );
+});
+
+test("POST /api/final-markdown/generate は否定された終了状態ラベルを再生成する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const pendingDecisionMarkdown = validMarkdown.replace("暫定結論", "判断保留");
+  const markdownWithNegatedStatus = pendingDecisionMarkdown.replace(
+    "## 現時点の状態\n判断保留",
+    "## 現時点の状態\n判断保留ではない。",
+  );
+  const response = await requestJson(
+    createTestApp(
+      [
+        { markdown: markdownWithNegatedStatus },
+        { markdown: pendingDecisionMarkdown },
+      ],
+      "test-api-key",
+      (request) => {
+        structuredRequests.push(request as { repairInstruction?: string });
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "pending_decision" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=markdown,code=missing_standalone_status_label/,
+  );
+});
+
+test("POST /api/final-markdown/generate は単独の状態ラベルと通常の補足説明を受理する", async () => {
+  let generateCount = 0;
+  const markdownWithStatusExplanation = validMarkdown.replace(
+    "## 現時点の状態\n暫定結論",
+    "## 現時点の状態\n- 暫定結論\n\n判断保留に戻る可能性もあるため、追加情報を確認する。",
+  );
+  const response = await requestJson(
+    createTestApp(
+      { markdown: markdownWithStatusExplanation },
+      "test-api-key",
+      () => {
+        generateCount += 1;
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(generateCount, 1);
+});
+
+test("POST /api/final-markdown/generate はアスタリスクの状態リストを再生成せず受理する", async () => {
+  let generateCount = 0;
+  const markdownWithAsteriskStatus = validMarkdown.replace(
+    "## 現時点の状態\n暫定結論",
+    "## 現時点の状態\n* 暫定結論",
+  );
+  const response = await requestJson(
+    createTestApp(
+      { markdown: markdownWithAsteriskStatus },
+      "test-api-key",
+      () => {
+        generateCount += 1;
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(generateCount, 1);
+});
+
+test("POST /api/final-markdown/generate は継続行を持つ状態ラベルのリスト項目を再生成する", async () => {
+  const structuredRequests: Array<{ repairInstruction?: string }> = [];
+  const markdownWithStatusContinuation = validMarkdown.replace(
+    "## 現時点の状態\n暫定結論",
+    "## 現時点の状態\n- 暫定結論\n  補足説明",
+  );
+  const response = await requestJson(
+    createTestApp(
+      [
+        { markdown: markdownWithStatusContinuation },
+        { markdown: validMarkdown },
+      ],
+      "test-api-key",
+      (request) => {
+        structuredRequests.push(request as { repairInstruction?: string });
+      },
+    ),
+    "/api/final-markdown/generate",
+    {
+      consultation: "相談内容",
+      memo: { ...memo, status: "tentative_conclusion" },
+      contextSummary: "費用の上限を確認している。",
+      recentMessages: [],
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(
+    structuredRequests[1]?.repairInstruction ?? "",
+    /path=markdown,code=missing_standalone_status_label/,
+  );
+});
+
+test("POST /api/final-markdown/generate は別の終了状態が独立して併記された場合に再生成する", async () => {
+  for (const unexpectedStatus of ["判断保留", "- 判断保留"]) {
+    const structuredRequests: Array<{ repairInstruction?: string }> = [];
+    const markdownWithUnexpectedStatus = validMarkdown.replace(
+      "## 現時点の状態\n暫定結論",
+      `## 現時点の状態\n暫定結論\n\n${unexpectedStatus}`,
+    );
+    const response = await requestJson(
+      createTestApp(
+        [
+          { markdown: markdownWithUnexpectedStatus },
+          { markdown: validMarkdown },
+        ],
+        "test-api-key",
+        (request) => {
+          structuredRequests.push(request as { repairInstruction?: string });
+        },
+      ),
+      "/api/final-markdown/generate",
+      {
+        consultation: "相談内容",
+        memo: { ...memo, status: "tentative_conclusion" },
+        contextSummary: "費用の上限を確認している。",
+        recentMessages: [],
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.match(
+      structuredRequests[1]?.repairInstruction ?? "",
+      /path=markdown,code=unexpected_standalone_status_label/,
+    );
+  }
 });
