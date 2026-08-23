@@ -15,7 +15,7 @@ test("許可したMarkdownブロックを見出し、段落、順不同リスト
 
   assert.match(markup, /<h1>意思決定メモ<\/h1>/);
   assert.match(markup, /<h2>相談テーマ<\/h2>/);
-  assert.match(markup, /<p>旅行先を決めます。\n予算を確認します。<\/p>/);
+  assert.match(markup, /<p>旅行先を決めます。 予算を確認します。<\/p>/);
   assert.match(markup, /<ul><li>候補A<\/li><li>候補B<\/li><\/ul>/);
 });
 
@@ -81,15 +81,26 @@ test("1〜3空白のリスト継続行は直前の項目として描画する", 
   assert.doesNotMatch(markup, /<p> {1,3}補足[123]<\/p>/);
 });
 
-test("リスト継続行の改行を保持するスタイルを適用する", () => {
+test("段落のソフト改行は空白として描画し、リスト継続行の改行は保持する", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MarkdownDocument, {
+      markdown: "段落の前半\n段落の後半\n\n- 案A\n 継続行",
+    }),
+  );
   const styles = readFileSync(
     new URL("../../src/client/styles.css", import.meta.url),
     "utf8",
   );
 
+  assert.match(markup, /<p>段落の前半 段落の後半<\/p>/);
+  assert.match(markup, /<li>案A\n継続行<\/li>/);
   assert.match(
     styles,
-    /\.markdown-document p,\n\.markdown-document li \{\n\x20{2}white-space: pre-wrap;/,
+    /\.markdown-document li \{\n\x20{2}white-space: pre-wrap;/,
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.markdown-document p[^\{]*\{\n\x20{2}white-space: pre-wrap;/,
   );
 });
 
@@ -124,7 +135,7 @@ test("空のハイフン項目はリストとして描画しない", () => {
   );
 
   assert.doesNotMatch(markup, /<ul>|<li>/);
-  assert.match(markup, /<p>- \n-\t\n- {2}<\/p>/);
+  assert.match(markup, /<p>-  -\t - {2}<\/p>/);
 });
 
 test("水平線はリストとして描画しない", () => {
@@ -171,8 +182,8 @@ test("対応外のMarkdownは通常テキストとして表示する", () => {
   );
 
   assert.doesNotMatch(markup, /<ol>|<code>|<pre>/);
-  assert.match(markup, /<p>1\. 番号付き項目\n2\. 次の項目<\/p>/);
-  assert.match(markup, /<p>```\nconst value = 1;\n```<\/p>/);
+  assert.match(markup, /<p>1\. 番号付き項目 2\. 次の項目<\/p>/);
+  assert.match(markup, /<p>``` const value = 1; ```<\/p>/);
 });
 
 test("許可外の見出しは段落の通常テキストとして表示する", () => {
@@ -183,7 +194,7 @@ test("許可外の見出しは段落の通常テキストとして表示する",
   );
 
   assert.doesNotMatch(markup, /<h3>/);
-  assert.match(markup, /<p>### 許可外の見出し\n本文<\/p>/);
+  assert.match(markup, /<p>### 許可外の見出し 本文<\/p>/);
 });
 
 test("H3以上、4空白インデント、区切り空白なしは見出しとして描画しない", () => {

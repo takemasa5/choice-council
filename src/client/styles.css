@@ -797,7 +797,6 @@ button:disabled {
   margin-bottom: 0;
 }
 
-.markdown-document p,
 .markdown-document li {
   white-space: pre-wrap;
 }

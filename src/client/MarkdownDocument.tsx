@@ -27,7 +27,7 @@ export function MarkdownDocument({ markdown }: { markdown: string }) {
           );
         }
 
-        return <p key={index}>{block.lines.join("\n")}</p>;
+        return <p key={index}>{block.lines.join(" ")}</p>;
       })}
     </div>
   );
