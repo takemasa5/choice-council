@@ -2,14 +2,17 @@ import type { RequestHandler } from "express";
 import {
   FinalMarkdownRequestSchema,
   FinalMarkdownSchema,
+  getFinalMarkdownHeading,
   type FinalMarkdown,
   type FinalMemoStatus,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
   sendLlmRequestFailed,
+  type StructuredOutputPostValidator,
 } from "./response-utils";
 import type { AppDependencies } from "./types";
 
@@ -48,18 +51,23 @@ export function createFinalMarkdownHandler(
       const expectedStatusLabel =
         finalMemoStatusLabels[parsedRequest.data.memo.status];
       const output = await parseStructuredOutputOnceWithRetry<FinalMarkdown>(
-        () =>
+        (attempt) =>
           provider.generateStructuredOutput({
             systemPrompt: finalMarkdownDeveloperPrompt,
             userInput: parsedRequest.data,
             schema: FinalMarkdownSchema,
             schemaName: "final_markdown",
+            repairInstruction: attempt?.repairInstruction,
           }),
-        (modelResponse) =>
-          getMarkdownSection(
-            modelResponse.markdown,
-            "## 現時点の状態",
-          ).includes(expectedStatusLabel),
+        createFinalMarkdownValidator(expectedStatusLabel),
+        (failure) =>
+          logStructuredOutputFailure(
+            request,
+            response,
+            "final_markdown",
+            failure,
+          ),
+        { allowMarkdown: true },
       );
 
       if (!output) {
@@ -74,6 +82,96 @@ export function createFinalMarkdownHandler(
   };
 }
 
+/** 選択済み終了状態の独立した記載不足を、本文を含まない再生成理由として返す。 */
+function createFinalMarkdownValidator(
+  expectedStatusLabel: string,
+): StructuredOutputPostValidator<FinalMarkdown> {
+  return (modelResponse) => {
+    const statusSection = getMarkdownSection(
+      modelResponse.markdown,
+      "## 現時点の状態",
+    );
+    if (!hasStandaloneStatusLabel(statusSection, expectedStatusLabel)) {
+      return {
+        path: ["markdown"],
+        code: "missing_standalone_status_label",
+      };
+    }
+
+    if (
+      hasStandaloneUnexpectedStatusLabel(statusSection, expectedStatusLabel)
+    ) {
+      return {
+        path: ["markdown"],
+        code: "unexpected_standalone_status_label",
+      };
+    }
+
+    return true;
+  };
+}
+
+/** 選択済み状態が、説明文ではなく単独の段落または箇条書き項目かを判定する。 */
+function hasStandaloneStatusLabel(
+  section: string,
+  expectedStatusLabel: string,
+) {
+  const lines = section.split(/\r?\n/);
+
+  return lines.some((line, index) => {
+    const listItem = getUnorderedListItem(line);
+    if (listItem !== null) {
+      return (
+        listItem === expectedStatusLabel &&
+        !hasUnorderedListItemContinuation(lines, index)
+      );
+    }
+
+    return (
+      line.trim() === expectedStatusLabel &&
+      isStandaloneParagraphLine(lines, index)
+    );
+  });
+}
+
+/** 状態ラベルのリスト項目に継続行がある場合は、単独記載として扱わない。 */
+function hasUnorderedListItemContinuation(lines: string[], index: number) {
+  return /^ {1,3}\S/.test(lines[index + 1] ?? "");
+}
+
+/** 選択されていない終了状態が、状態値として独立して併記されていないかを判定する。 */
+function hasStandaloneUnexpectedStatusLabel(
+  section: string,
+  expectedStatusLabel: string,
+) {
+  return Object.values(finalMemoStatusLabels).some(
+    (statusLabel) =>
+      statusLabel !== expectedStatusLabel &&
+      hasStandaloneStatusLabel(section, statusLabel),
+  );
+}
+
+/** MarkdownDocument と同じく、順不同リストが段落を区切るものとして扱う。 */
+function isStandaloneParagraphLine(lines: string[], index: number) {
+  const previousLine = lines[index - 1];
+  const nextLine = lines[index + 1];
+
+  return (
+    (previousLine === undefined ||
+      previousLine.trim() === "" ||
+      getUnorderedListItem(previousLine) !== null) &&
+    (nextLine === undefined ||
+      nextLine.trim() === "" ||
+      getUnorderedListItem(nextLine) !== null)
+  );
+}
+
+/** 許可済みの順不同リスト項目の表示テキストを取り出す。 */
+function getUnorderedListItem(line: string): string | null {
+  const match = line.match(/^ {0,3}(?:-|\*)[ \t]+(.+?)\s*$/);
+  return match ? match[1] : null;
+}
+
 /**
  * Markdownから指定見出しの本文だけを取り出す。
  *
@@ -81,12 +179,14 @@ export function createFinalMarkdownHandler(
  */
 function getMarkdownSection(markdown: string, heading: string): string {
   const lines = markdown.split(/\r?\n/);
-  const startIndex = lines.findIndex((line) => line.trim() === heading);
+  const startIndex = lines.findIndex(
+    (line) => getFinalMarkdownHeading(line) === heading,
+  );
   if (startIndex === -1) return "";
 
   const sectionLines: string[] = [];
   for (const line of lines.slice(startIndex + 1)) {
-    if (/^#{1,2}\s/.test(line.trim())) break;
+    if (getFinalMarkdownHeading(line) !== null) break;
     sectionLines.push(line);
   }
   return sectionLines.join("\n");
@@ -129,5 +229,6 @@ const finalMarkdownDeveloperPrompt = `
 - contextSummary と recentMessages から、重要な論点の展開、ユーザーの意思表示、終了状態に至った経緯を「セッションログ要約」へ反映する。発言全文は列挙しない。
 - 断定できないことを断定しない。
 - 医療、法律、投資、生命安全、虐待、DVなどの高リスク領域では、断定的助言ではなく判断材料の整理と相談準備に留める。
+- Markdown は見出し、段落、順不同リストだけを使う。コードブロック、番号付きリスト、HTML は使わない。全文を3000字以内にし、各セクションを簡潔にする。
 - 出力は指定 schema に厳密に従う。
 `;

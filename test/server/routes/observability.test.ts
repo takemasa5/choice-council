@@ -6,6 +6,7 @@ import {
   type ApiLogger,
   type ApiRequestLogEvent,
   type LlmRequestFailureLogEvent,
+  type StructuredOutputFailureLogEvent,
 } from "../../../server/observability/api-request-logger";
 import { memo, requestJson } from "../../../test-support/server";
 
@@ -108,9 +109,83 @@ test("LLMの上流503失敗を安全な情報だけで記録する", async () =>
   assert.doesNotMatch(JSON.stringify(events), /secret-access-token/);
 });
 
+test("後続検証失敗は入力とモデル応答を含めずに構造化ログへ記録する", async () => {
+  const events: Array<
+    | ApiRequestLogEvent
+    | LlmRequestFailureLogEvent
+    | StructuredOutputFailureLogEvent
+  > = [];
+  const secretConsultation = "入力の非公開情報";
+  const secretModelOutput = "モデル応答の非公開情報";
+  const invalidResponse = {
+    ...facilitatorStartResponse,
+    facilitator_message: secretModelOutput,
+    expert_requests: [
+      { role_name: "専門家", viewpoint: "観点", request: "確認してください" },
+    ],
+    user_question: null,
+    next_action: "request_experts",
+  } as const;
+  const response = await requestJson(
+    createApp({
+      logger: createCapturingLogger(events),
+      createLlmProvider: () =>
+        ({
+          generateStructuredOutput: async () => invalidResponse,
+        }) as never,
+    }),
+    "/api/facilitator/start",
+    { consultation: secretConsultation },
+  );
+
+  assert.equal(response.status, 502);
+  const failures = events.filter(
+    (event): event is StructuredOutputFailureLogEvent =>
+      event.event === "llm_structured_output_failed",
+  );
+  assert.deepEqual(failures, [
+    {
+      event: "llm_structured_output_failed",
+      route: "/api/facilitator/start",
+      schemaName: "facilitator_response",
+      attempt: 1,
+      classification: "post_validation",
+      terminationReason: "retry",
+      finishReason: undefined,
+      issues: [
+        {
+          path: ["user_question"],
+          code: "missing_required_question",
+        },
+      ],
+    },
+    {
+      event: "llm_structured_output_failed",
+      route: "/api/facilitator/start",
+      schemaName: "facilitator_response",
+      attempt: 2,
+      classification: "post_validation",
+      terminationReason: "max_attempts",
+      finishReason: undefined,
+      issues: [
+        {
+          path: ["user_question"],
+          code: "missing_required_question",
+        },
+      ],
+    },
+  ]);
+  assert.doesNotMatch(JSON.stringify(events), /入力の非公開情報/);
+  assert.doesNotMatch(JSON.stringify(events), /モデル応答の非公開情報/);
+});
+
 /** テストで構造化ログを検証するための注入可能なロガー。 */
 function createCapturingLogger(
-  events: Array<ApiRequestLogEvent | LlmRequestFailureLogEvent>,
+  events: Array<
+    | ApiRequestLogEvent
+    | LlmRequestFailureLogEvent
+    | StructuredOutputFailureLogEvent
+  >,
 ): ApiLogger {
   return {
     info: (event) => events.push(event),

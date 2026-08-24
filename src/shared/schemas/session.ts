@@ -2,6 +2,9 @@ import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);
 const nonEmptyStringArray = z.array(nonEmptyString);
+const sessionMemoTheme = plainText(120);
+const sessionMemoItem = plainText(80);
+const sessionMemoArray = z.array(sessionMemoItem).max(3);
 /**
  * 選択・確定できる専門家ロール数の上限。
  *
@@ -28,7 +31,6 @@ const finalMarkdownRequiredHeadings = [
   "## 次アクション",
   "## セッションログ要約",
 ] as const;
-
 const finalMemoStatusLabels = [
   "暫定結論",
   "判断保留",
@@ -64,6 +66,23 @@ export const UserQuestionSchema = z
     }
   });
 
+/** LLM が通常画面へ返す確認質問。入力用 `UserQuestionSchema` とは分離する。 */
+const FacilitatorUserQuestionSchema = z
+  .strictObject({
+    question: plainText(150),
+    options: z.array(plainText(150)).min(2),
+    required: z.boolean(),
+  })
+  .superRefine((question, context) => {
+    if (!question.options.includes("その他")) {
+      context.addIssue({
+        code: "custom",
+        message: "user_question.options must include その他",
+        path: ["options"],
+      });
+    }
+  });
+
 export const SessionMemoStatusSchema = z.enum([
   "in_progress",
   "tentative_conclusion",
@@ -86,20 +105,50 @@ export const FinalMemoStatusSchema = z.enum([
 export type FinalMemoStatus = z.infer<typeof FinalMemoStatusSchema>;
 
 export const SessionMemoSchema = z.strictObject({
-  theme: nonEmptyString,
+  theme: sessionMemoTheme,
   status: SessionMemoStatusSchema,
-  facts: nonEmptyStringArray,
-  values: nonEmptyStringArray,
-  concerns: nonEmptyStringArray,
-  options: nonEmptyStringArray,
-  decision_axes: nonEmptyStringArray,
-  expert_summaries: nonEmptyStringArray,
-  conflicts: nonEmptyStringArray,
-  open_questions: nonEmptyStringArray,
-  next_actions: nonEmptyStringArray,
+  facts: sessionMemoArray,
+  values: sessionMemoArray,
+  concerns: sessionMemoArray,
+  options: sessionMemoArray,
+  decision_axes: sessionMemoArray,
+  expert_summaries: sessionMemoArray,
+  conflicts: sessionMemoArray,
+  open_questions: sessionMemoArray,
+  next_actions: sessionMemoArray,
 });
 
 export type SessionMemo = z.infer<typeof SessionMemoSchema>;
+
+/** 通常画面のメモに許可する、Markdown構文を含まない短いプレーンテキスト。 */
+function plainText(maximumLength: number) {
+  return z
+    .string()
+    .transform((value) => value.replaceAll("<", "＜").replaceAll(">", "＞"))
+    .pipe(nonEmptyString.max(maximumLength))
+    .refine(
+      (value) =>
+        !/[\r\n]/.test(value) &&
+        !/^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```)/.test(value) &&
+        !containsHorizontalRule(value) &&
+        !containsInlineMarkdown(value),
+      "Markdown syntax is not allowed in session memo text",
+    );
+}
+
+/** 先頭の最大3空白を含む、Markdownの水平線だけを検出する。 */
+function containsHorizontalRule(value: string) {
+  return /^ {0,3}(?:-[ \t]*){3,}$|^ {0,3}(?:\*[ \t]*){3,}$|^ {0,3}(?:_[ \t]*){3,}$/.test(
+    value,
+  );
+}
+
+/** 通常文を壊さず、表示対象では許可しないインラインMarkdownだけを検出する。 */
+function containsInlineMarkdown(value: string) {
+  return /\*\*[^*\r\n]+\*\*|__[^_\r\n]+__|`[^`\r\n]+`|\*[^*\s\r\n](?:[^*\r\n]*[^*\s\r\n])?\*|(?<![\p{L}\p{N}])_[^_\s\r\n](?:[^_\r\n]*[^_\s\r\n])?_(?![\p{L}\p{N}])|~~[^~\s\r\n](?:[^~\r\n]*[^~\s\r\n])?~~|!?\[[^\]\r\n]+\]\(\s*[^)\r\n]+\)/u.test(
+    value,
+  );
+}
 
 export const FinalSessionMemoSchema = SessionMemoSchema.extend({
   status: FinalMemoStatusSchema,
@@ -178,6 +227,13 @@ export const ExpertRequestSchema = z.strictObject({
 
 export type ExpertRequest = z.infer<typeof ExpertRequestSchema>;
 
+/** LLM が通常画面へ返す専門家依頼。入力用 `ExpertRequestSchema` とは分離する。 */
+const FacilitatorExpertRequestSchema = z.strictObject({
+  role_name: plainText(150),
+  viewpoint: plainText(150),
+  request: plainText(150),
+});
+
 export const ExpertCommentRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   currentPhase: PhaseSchema,
@@ -188,7 +244,7 @@ export const ExpertCommentRequestSchema = z.strictObject({
 export type ExpertCommentRequest = z.infer<typeof ExpertCommentRequestSchema>;
 
 /** 初回専門家コメントで提示する、後続の検討対象となる具体案。 */
-export const ExpertProposalSchema = z.strictObject({
+const ExpertProposalInputSchema = z.strictObject({
   id: nonEmptyString,
   name: nonEmptyString,
   content: nonEmptyString,
@@ -197,17 +253,38 @@ export const ExpertProposalSchema = z.strictObject({
   conditions: nonEmptyStringArray.min(1),
 });
 
+export const ExpertProposalSchema = z.strictObject({
+  id: nonEmptyString,
+  name: plainText(120),
+  content: plainText(120),
+  benefits: z.array(plainText(80)).min(1),
+  sacrifices: z.array(plainText(80)).min(1),
+  conditions: z.array(plainText(80)).min(1),
+});
+
 /** 日本語名: 専門家提案。 */
 export type ExpertProposal = z.infer<typeof ExpertProposalSchema>;
+
+const ExpertCommentInputSchema = z.strictObject({
+  role_name: nonEmptyString,
+  viewpoint: nonEmptyString,
+  summary: nonEmptyString,
+  proposal: ExpertProposalInputSchema,
+  key_point: nonEmptyString,
+  concern: nonEmptyString,
+  question_to_user: nonEmptyString,
+  confidence: z.enum(["high", "medium", "low"]),
+  needs_research: z.boolean(),
+});
 
 export const ExpertCommentSchema = z.strictObject({
   role_name: nonEmptyString,
   viewpoint: nonEmptyString,
-  summary: nonEmptyString,
+  summary: plainText(300),
   proposal: ExpertProposalSchema,
-  key_point: nonEmptyString,
-  concern: nonEmptyString,
-  question_to_user: nonEmptyString,
+  key_point: plainText(120),
+  concern: plainText(120),
+  question_to_user: plainText(120),
   confidence: z.enum(["high", "medium", "low"]),
   needs_research: z.boolean(),
 });
@@ -249,7 +326,7 @@ export type DiscussionSelection = z.infer<typeof DiscussionSelectionSchema>;
 export const GroupChatProposalSchema = z.strictObject({
   participantId: nonEmptyString,
   roleName: nonEmptyString,
-  proposal: ExpertProposalSchema,
+  proposal: ExpertProposalInputSchema,
 });
 
 /** 日本語名: 提案者を含むグループチャット用の具体案。 */
@@ -325,7 +402,7 @@ export type GroupChatExpert = z.infer<typeof GroupChatExpertSchema>;
  *
  * 仕様対応: `docs/api/schemas.md#グループチャット`。
  */
-export const GroupChatMessageSchema = z.strictObject({
+const GroupChatMessageInputSchema = z.strictObject({
   id: nonEmptyString,
   speakerType: z.enum(["facilitator", "expert", "user"]),
   speakerName: nonEmptyString,
@@ -334,8 +411,21 @@ export const GroupChatMessageSchema = z.strictObject({
   createdAt: nonEmptyString,
 });
 
+export const GroupChatMessageSchema = GroupChatMessageInputSchema;
+
+/** 専門家LLMが返す、通常画面向けのグループチャット発言。 */
+export const ExpertGroupChatMessageSchema = GroupChatMessageInputSchema.extend({
+  speakerType: z.literal("expert"),
+  content: plainText(200),
+});
+
 /** 日本語名: グループチャット発言。 */
 export type GroupChatMessage = z.infer<typeof GroupChatMessageSchema>;
+
+/** 日本語名: 専門家LLMのグループチャット発言。 */
+export type ExpertGroupChatMessage = z.infer<
+  typeof ExpertGroupChatMessageSchema
+>;
 
 const RequestedSpeakerSchema = z.strictObject({
   speakerType: z.enum(["expert", "user"]),
@@ -350,11 +440,11 @@ const RequestedSpeakerSchema = z.strictObject({
  */
 export const FacilitatorTurnSchema = z
   .strictObject({
-    message: nonEmptyString,
+    message: plainText(200),
     requestedSpeaker: RequestedSpeakerSchema,
-    requestReason: nonEmptyString,
-    question: nonEmptyString,
-    userOptions: nonEmptyStringArray.nullable(),
+    requestReason: plainText(200),
+    question: plainText(200),
+    userOptions: z.array(plainText(200)).nullable(),
     memoUpdate: SessionMemoSchema.nullable(),
     contextSummaryUpdate: nonEmptyString.nullable(),
   })
@@ -408,14 +498,14 @@ export type FacilitatorTurn = z.infer<typeof FacilitatorTurnSchema>;
  * 依頼する。Gemini に渡す JSON Schema でもユーザー向け選択肢を禁止する。
  */
 export const GroupChatStartTurnSchema = z.strictObject({
-  message: nonEmptyString,
+  message: plainText(200),
   requestedSpeaker: z.strictObject({
     speakerType: z.literal("expert"),
     speakerName: nonEmptyString,
     participantId: nonEmptyString,
   }),
-  requestReason: nonEmptyString,
-  question: nonEmptyString,
+  requestReason: plainText(200),
+  question: plainText(200),
   userOptions: z.null(),
   memoUpdate: SessionMemoSchema.nullable(),
   contextSummaryUpdate: nonEmptyString.nullable(),
@@ -433,7 +523,7 @@ export const GroupChatStartRequestSchema = z
       .array(GroupChatExpertSchema)
       .min(1)
       .max(maximumExpertRequestCount),
-    initialExpertComments: z.array(ExpertCommentSchema),
+    initialExpertComments: z.array(ExpertCommentInputSchema),
     discussionSelection: DiscussionSelectionSchema,
   })
   .superRefine((request, context) => {
@@ -506,7 +596,7 @@ export const GroupChatExpertReplyRequestSchema = z
     memo: SessionMemoSchema,
     contextSummary: nonEmptyString,
     recentMessages: z
-      .array(GroupChatMessageSchema)
+      .array(GroupChatMessageInputSchema)
       .max(recentGroupChatMessageLimit),
     expert: GroupChatExpertSchema,
     facilitatorQuestion: nonEmptyString,
@@ -540,7 +630,7 @@ export const GroupChatNextRequestSchema = z
     memo: SessionMemoSchema,
     contextSummary: nonEmptyString,
     recentMessages: z
-      .array(GroupChatMessageSchema)
+      .array(GroupChatMessageInputSchema)
       .max(recentGroupChatMessageLimit),
     confirmedExperts: z
       .array(GroupChatExpertSchema)
@@ -585,14 +675,14 @@ export const SessionMemoRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   currentPhase: PhaseSchema,
   previousMemo: SessionMemoSchema.optional(),
-  facilitatorResponse: z.lazy(() => FacilitatorResponseSchema).optional(),
-  expertComments: z.array(ExpertCommentSchema).optional(),
+  facilitatorResponse: z.lazy(() => FacilitatorResponseInputSchema).optional(),
+  expertComments: z.array(ExpertCommentInputSchema).optional(),
   userAction: nonEmptyString.optional(),
 });
 
 export type SessionMemoRequest = z.infer<typeof SessionMemoRequestSchema>;
 
-export const FacilitatorResponseSchema = z
+const FacilitatorResponseInputSchema = z
   .strictObject({
     current_phase: PhaseSchema,
     current_phase_label: nonEmptyString,
@@ -602,6 +692,47 @@ export const FacilitatorResponseSchema = z
       .array(ExpertRequestSchema)
       .max(maximumExpertRequestCount),
     user_question: UserQuestionSchema.nullable(),
+    memo_updates: SessionMemoSchema,
+    next_action: z.enum([
+      "wait_user",
+      "request_experts",
+      "update_memo",
+      "move_phase",
+      "finish",
+    ]),
+  })
+  .superRefine((response, context) => {
+    if (response.user_question && response.expert_requests.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: "expert_requests must be empty when user_question is present",
+        path: ["expert_requests"],
+      });
+    }
+
+    if (
+      response.next_action === "request_experts" &&
+      response.expert_requests.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "expert_requests must not be empty when next_action is request_experts",
+        path: ["expert_requests"],
+      });
+    }
+  });
+
+export const FacilitatorResponseSchema = z
+  .strictObject({
+    current_phase: PhaseSchema,
+    current_phase_label: plainText(150),
+    phase_goal: plainText(150),
+    facilitator_message: plainText(150),
+    expert_requests: z
+      .array(FacilitatorExpertRequestSchema)
+      .max(maximumExpertRequestCount),
+    user_question: FacilitatorUserQuestionSchema.nullable(),
     memo_updates: SessionMemoSchema,
     next_action: z.enum([
       "wait_user",
@@ -643,11 +774,11 @@ export type FacilitatorResponse = z.infer<typeof FacilitatorResponseSchema>;
  */
 export const FacilitatorRespondResponseSchema = z.strictObject({
   current_phase: z.literal("premise"),
-  current_phase_label: nonEmptyString,
-  phase_goal: nonEmptyString,
-  facilitator_message: nonEmptyString,
+  current_phase_label: plainText(150),
+  phase_goal: plainText(150),
+  facilitator_message: plainText(150),
   expert_requests: z
-    .array(ExpertRequestSchema)
+    .array(FacilitatorExpertRequestSchema)
     .min(1)
     .max(maximumExpertRequestCount),
   user_question: z.null(),
@@ -661,17 +792,25 @@ export type FacilitatorRespondResponse = z.infer<
 
 export const FinalMarkdownSchema = z
   .strictObject({
-    markdown: nonEmptyString,
+    markdown: nonEmptyString.max(3000),
   })
   .superRefine((output, context) => {
-    for (const heading of finalMarkdownRequiredHeadings) {
-      if (!output.markdown.includes(heading)) {
-        context.addIssue({
-          code: "custom",
-          message: `markdown must include ${heading}`,
-          path: ["markdown"],
-        });
-      }
+    if (!usesAllowedFinalMarkdownBlocks(output.markdown)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "markdown must use only headings, paragraphs, and unordered lists",
+        path: ["markdown"],
+      });
+    }
+
+    if (!usesExactFinalMarkdownHeadings(output.markdown)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "markdown must contain exactly the required H1/H2 headings in order",
+        path: ["markdown"],
+      });
     }
 
     if (
@@ -685,15 +824,158 @@ export const FinalMarkdownSchema = z
     }
   });
 
+/** 終了メモで許可するMarkdownブロックだけを判定する。 */
+function usesAllowedFinalMarkdownBlocks(markdown: string) {
+  if (containsForbiddenFinalMarkdownHtml(markdown)) return false;
+  if (containsFinalMarkdownHtmlCharacterReference(markdown)) return false;
+  if (containsFinalMarkdownBackslashEscape(markdown)) return false;
+  if (containsInlineMarkdown(markdown)) return false;
+  if (containsReferenceStyleFinalMarkdown(markdown)) return false;
+  if (containsFinalMarkdownHardLineBreak(markdown)) return false;
+  if (containsNestedFinalMarkdownListItem(markdown)) return false;
+
+  return markdown.split(/\r?\n/).every((line) => {
+    if (line.trim().length === 0) return true;
+    if (isFinalMarkdownCodeBlockIndent(line)) return false;
+    if (getFinalMarkdownHeading(line)) return true;
+    if (/^[ \t]*(?:`{3,}|~{3,}|#{3,}|>|\+\s|\d+[.)]\s)/.test(line)) {
+      return false;
+    }
+    if (/^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(line)) {
+      return false;
+    }
+    if (/^[ \t]*(?:=+|-+)[ \t]*$/.test(line)) return false;
+    if (/^[ \t]*\|/.test(line)) return false;
+    if (isFinalMarkdownTableDelimiterRow(line)) return false;
+
+    return true;
+  });
+}
+
+/** 表示器が扱わないGFM表の区切り行を終了メモから除外する。 */
+function isFinalMarkdownTableDelimiterRow(line: string) {
+  return /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$/.test(
+    line,
+  );
+}
+
+/** 表示器が扱わない入れ子の順不同リスト項目を終了メモから除外する。 */
+function containsNestedFinalMarkdownListItem(markdown: string) {
+  let listIndentation: number | null = null;
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const itemIndentation = getFinalMarkdownListItemIndentation(line);
+    if (itemIndentation !== null) {
+      if (listIndentation !== null && itemIndentation >= listIndentation + 2) {
+        return true;
+      }
+
+      listIndentation = Math.min(
+        listIndentation ?? itemIndentation,
+        itemIndentation,
+      );
+      continue;
+    }
+
+    if (line.trim().length === 0 || /^ {1,3}\S/.test(line)) continue;
+    listIndentation = null;
+  }
+
+  return false;
+}
+
+/** 表示器が順不同リストとして扱う行の、先頭空白数を取得する。 */
+function getFinalMarkdownListItemIndentation(line: string) {
+  const match = line.match(/^( {0,3})(?:-|\*)(?:[ \t]+|$)/);
+  return match ? match[1].length : null;
+}
+
+/** 段落内で描画しないMarkdownハード改行を終了メモから除外する。 */
+function containsFinalMarkdownHardLineBreak(markdown: string) {
+  return markdown
+    .split(/\r?\n/)
+    .some(
+      (line) =>
+        / {2,}$/.test(line) || (line.match(/\\+$/)?.[0].length ?? 0) % 2 === 1,
+    );
+}
+
+/** Markdownの4列タブ停止に従い、インデントコードブロックになる行を除外する。 */
+function isFinalMarkdownCodeBlockIndent(line: string) {
+  let indentationColumns = 0;
+
+  for (const character of line) {
+    if (character === " ") {
+      indentationColumns += 1;
+    } else if (character === "\t") {
+      indentationColumns += 4 - (indentationColumns % 4);
+    } else {
+      return indentationColumns >= 4;
+    }
+
+    if (indentationColumns >= 4) return true;
+  }
+
+  return false;
+}
+
+/** 終了メモでは参照先を別行へ隠せる参照形式のリンク・画像を許可しない。 */
+function containsReferenceStyleFinalMarkdown(markdown: string) {
+  return (
+    /!?\[[^\]\r\n]+\]\[[^\]\r\n]*\]/.test(markdown) ||
+    markdown
+      .split(/\r?\n/)
+      .some((line) => /^[ \t]{0,3}\[[^\]\r\n]+\]:[ \t]*\S/.test(line))
+  );
+}
+
+/** HTML として解釈され得る要素、コメント、宣言、CDATA、処理命令を終了メモから除外する。 */
+function containsForbiddenFinalMarkdownHtml(markdown: string) {
+  return /<\/?[a-z][^>]*>|<!--(?:[\s\S]*?-->|[\s\S]*$)|<![a-z][^>]*>|<!\[CDATA\[(?:[\s\S]*?\]\]>|[\s\S]*$)|<\?(?:[\s\S]*?\?>|[\s\S]*$)/i.test(
+    markdown,
+  );
+}
+
+/** 表示器と一般的なMarkdownレンダラーで表示が変わるHTML文字参照を終了メモから除外する。 */
+function containsFinalMarkdownHtmlCharacterReference(markdown: string) {
+  return /&(?:[a-z][a-z0-9]+|#\d+|#x[0-9a-f]+);/i.test(markdown);
+}
+
+/** プレビューと一般的なMarkdownレンダラーで表示が変わるバックスラッシュエスケープを除外する。 */
+function containsFinalMarkdownBackslashEscape(markdown: string) {
+  return /\\(?:[!"#$%&'()*+,\-./:;<=>?@^_`{|}~]|\[|\])/.test(markdown);
+}
+
+/** 許可済みの先頭0〜3空白付きH1/H2を、必須見出し照合用に正規化する。 */
+export function getFinalMarkdownHeading(line: string) {
+  const match = line.match(/^ {0,3}(#{1,2})[ \t]+(.+?)[ \t]*$/);
+  return match ? `${match[1]} ${match[2]}` : null;
+}
+
+/** 認識済みのH1/H2が、必須見出しと仕様順・件数とも完全一致するかを判定する。 */
+function usesExactFinalMarkdownHeadings(markdown: string) {
+  const headings = markdown
+    .split(/\r?\n/)
+    .map(getFinalMarkdownHeading)
+    .filter((heading): heading is string => heading !== null);
+
+  return (
+    headings.length === finalMarkdownRequiredHeadings.length &&
+    headings.every(
+      (heading, index) => heading === finalMarkdownRequiredHeadings[index],
+    )
+  );
+}
+
 export type FinalMarkdown = z.infer<typeof FinalMarkdownSchema>;
 
 export const FinalMarkdownRequestSchema = z.strictObject({
   consultation: nonEmptyString,
   memo: FinalSessionMemoSchema,
-  expertComments: z.array(ExpertCommentSchema).optional(),
+  expertComments: z.array(ExpertCommentInputSchema).optional(),
   contextSummary: nonEmptyString,
   recentMessages: z
-    .array(GroupChatMessageSchema)
+    .array(GroupChatMessageInputSchema)
     .max(recentGroupChatMessageLimit),
 });
 

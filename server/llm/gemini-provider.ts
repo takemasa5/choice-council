@@ -1,6 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
-import type { LlmProvider, StructuredOutputRequest } from "./types";
+import {
+  StructuredOutputValidationError,
+  type LlmProvider,
+  type StructuredOutputRequest,
+} from "./types";
 
 /** Gemini API で構造化出力を生成するプロバイダー。 */
 export class GeminiLlmProvider implements LlmProvider {
@@ -15,23 +19,53 @@ export class GeminiLlmProvider implements LlmProvider {
     systemPrompt,
     userInput,
     schema,
+    schemaName,
+    repairInstruction,
   }: StructuredOutputRequest<T>): Promise<T | null> {
     const responseJsonSchema = toGeminiJsonSchema(schema);
     const result = await this.client.models.generateContent({
       model: this.model,
       contents: JSON.stringify(userInput, null, 2),
       config: {
-        systemInstruction: systemPrompt,
+        systemInstruction: repairInstruction
+          ? `${systemPrompt}\n\n${repairInstruction}`
+          : systemPrompt,
         responseMimeType: "application/json",
         responseJsonSchema,
       },
     });
 
-    if (!result.text) return null;
+    if (!result.text) {
+      throw new StructuredOutputValidationError({
+        schemaName,
+        classification: "empty_content",
+      });
+    }
 
-    const parsedJson: unknown = JSON.parse(result.text);
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(result.text);
+    } catch {
+      throw new StructuredOutputValidationError({
+        schemaName,
+        classification: "invalid_json",
+      });
+    }
+
     const parsedOutput = schema.safeParse(parsedJson);
-    return parsedOutput.success ? parsedOutput.data : null;
+    if (parsedOutput.success) return parsedOutput.data;
+
+    throw new StructuredOutputValidationError({
+      schemaName,
+      classification: "schema_validation",
+      issues: parsedOutput.error.issues.map((issue) => ({
+        path: issue.path.filter(
+          (segment): segment is string | number =>
+            typeof segment === "string" || typeof segment === "number",
+        ),
+        code: issue.code,
+      })),
+    });
   }
 }
 

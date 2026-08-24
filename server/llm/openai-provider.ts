@@ -16,13 +16,21 @@ export class OpenAiLlmProvider implements LlmProvider {
     userInput,
     schema,
     schemaName,
+    repairInstruction,
   }: StructuredOutputRequest<T>): Promise<T | null> {
     const result = await this.client.responses.parse({
       model: this.model,
       input: [
         {
           role: "developer",
-          content: [{ type: "input_text", text: systemPrompt }],
+          content: [
+            {
+              type: "input_text",
+              text: repairInstruction
+                ? `${systemPrompt}\n\n${repairInstruction}`
+                : systemPrompt,
+            },
+          ],
         },
         {
           role: "user",

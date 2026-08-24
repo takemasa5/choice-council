@@ -1,3 +1,5 @@
+import { MarkdownDocument } from "../MarkdownDocument";
+
 /** 日本語名: 終了メモの生成、表示、保存を担当するフェーズUI。 */
 export function FinalMemoPhase({
   isGenerating,
@@ -22,7 +24,7 @@ export function FinalMemoPhase({
           aria-label="Markdown終了メモ"
         >
           <h3>Markdown終了メモ</h3>
-          <pre>{finalMarkdown}</pre>
+          <MarkdownDocument markdown={finalMarkdown} />
         </section>
       )}
     </>

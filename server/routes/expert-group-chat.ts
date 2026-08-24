@@ -1,10 +1,12 @@
+import { randomUUID } from "node:crypto";
 import type { RequestHandler } from "express";
 import {
+  ExpertGroupChatMessageSchema,
   GroupChatExpertReplyRequestSchema,
-  GroupChatMessageSchema,
-  type GroupChatMessage,
+  type ExpertGroupChatMessage,
 } from "../../src/shared/schemas/session";
 import {
+  logStructuredOutputFailure,
   parseStructuredOutputOnceWithRetry,
   sendInvalidModelResponse,
   sendInvalidRequest,
@@ -24,28 +26,33 @@ export function createGroupChatExpertReplyHandler(
       sendInvalidRequest(response, parsedRequest.error.flatten());
       return;
     }
-    const existingMessageIds = new Set(
-      parsedRequest.data.recentMessages.map((message) => message.id),
-    );
     try {
-      const output = await parseStructuredOutputOnceWithRetry<GroupChatMessage>(
-        () =>
-          dependencies.createLlmProvider().generateStructuredOutput({
-            systemPrompt: groupChatExpertPrompt,
-            userInput: parsedRequest.data,
-            schema: GroupChatMessageSchema,
-            schemaName: "group_chat_message",
-          }),
-        (message) =>
-          GroupChatMessageSchema.safeParse(message).success &&
-          !existingMessageIds.has(message.id),
-      );
+      const output =
+        await parseStructuredOutputOnceWithRetry<ExpertGroupChatMessage>(
+          (attempt) =>
+            dependencies.createLlmProvider().generateStructuredOutput({
+              systemPrompt: groupChatExpertPrompt,
+              userInput: parsedRequest.data,
+              schema: ExpertGroupChatMessageSchema,
+              schemaName: "group_chat_message",
+              repairInstruction: attempt?.repairInstruction,
+            }),
+          isValidExpertGroupChatMessage,
+          (failure) =>
+            logStructuredOutputFailure(
+              request,
+              response,
+              "group_chat_message",
+              failure,
+            ),
+        );
       if (!output) {
         sendInvalidModelResponse(request, response);
         return;
       }
       response.json({
         ...output,
+        id: createGroupChatMessageId(),
         speakerType: "expert",
         speakerName: parsedRequest.data.expert.role_name,
         participantId: parsedRequest.data.expert.participantId,
@@ -54,6 +61,19 @@ export function createGroupChatExpertReplyHandler(
       sendLlmRequestFailed(request, response, error);
     }
   };
+}
+
+/** LLM応答の構造を確認し、表示本文以外のメタデータはサーバー側で確定する。 */
+function isValidExpertGroupChatMessage(message: ExpertGroupChatMessage) {
+  if (!ExpertGroupChatMessageSchema.safeParse(message).success) {
+    return { path: [], code: "invalid_group_chat_message" };
+  }
+  return true;
+}
+
+/** モデルが返したIDを使わず、会話履歴と独立して新しい専門家発言IDを付与する。 */
+function createGroupChatMessageId() {
+  return `expert-${randomUUID()}`;
 }
 
 /** グループチャット専門家回答用プロンプト。仕様対応: `docs/api/schemas.md#グループチャット`。 */
@@ -65,4 +85,5 @@ const groupChatExpertPrompt = `
 - input.discussionContext.selection を回答の起点にし、input.discussionContext.proposals の participantId、roleName、案名、内容、利点、犠牲にする点、成立条件を具体的に参照する。deep_dive では、自分の participantId が提案者なら根拠を擁護し、別の participantId が提案者なら具体的な反論・代替・成立条件を述べる。compare では2案のトレードオフを述べる。defer では全案を脱落させず比較軸を整理する。
 - 初回コメントを言い換えるだけで終わらせず、ファシリテーターの質問に沿って議論を前進させる。
 - 自分の指定観点を越えて結論を決めず、他の専門家の指名や次の進行は行わない。
+- content は Markdown や改行を含まないプレーンテキストで200字以内にする。
 `;

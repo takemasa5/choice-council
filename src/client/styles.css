@@ -762,18 +762,43 @@ button:disabled {
   padding: 14px;
 }
 
-.final-markdown-preview pre {
+.markdown-document {
   background: #fff;
   border: 1px solid #ded8ca;
   border-radius: 6px;
   color: #21302a;
   line-height: 1.6;
-  margin: 0;
   max-height: 320px;
   overflow: auto;
   padding: 12px;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.markdown-document h1,
+.markdown-document h2,
+.markdown-document p,
+.markdown-document ul {
+  margin: 0 0 12px;
+}
+
+.markdown-document h1 {
+  font-size: 1.2rem;
+}
+
+.markdown-document h2 {
+  font-size: 1rem;
+}
+
+.markdown-document ul {
+  padding-left: 1.4rem;
+}
+
+.markdown-document > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-document li {
+  white-space: pre-wrap;
 }
 
 .empty {
